@@ -5,13 +5,14 @@ import { useChapter } from '@/hooks/useChapter'
 import { useHighlights, useNotes } from '@/hooks/useUserData'
 import VerseView from './VerseView'
 import VersePopover from './VersePopover'
-import InterlinearVerse from './InterlinearVerse'
+import InterlinearReader from './InterlinearReader'
 import { BookIcon } from './icons'
 
 export default function ReadingPanel(): JSX.Element {
   const parallels = useAppStore((s) => s.parallels)
   const book = useAppStore((s) => s.book)
   const chapter = useAppStore((s) => s.chapter)
+  const interlinear = useAppStore((s) => s.interlinear)
   const bookName = BOOK_BY_ID[book]?.name ?? book
 
   // Absolute scrollTop sync across parallel columns.
@@ -40,19 +41,25 @@ export default function ReadingPanel(): JSX.Element {
 
       <ReplacementsBar />
 
-      <div className="flex-1 min-h-0 flex divide-x divide-line">
-        {parallels.map((t, i) => (
-          <Column
-            key={t + i}
-            translation={t}
-            book={book}
-            chapter={chapter}
-            showLabel={parallels.length > 1}
-            registerRef={(el) => (refs.current[i] = el)}
-            onScroll={() => onScroll(i)}
-          />
-        ))}
-      </div>
+      {interlinear ? (
+        <div className="flex-1 min-h-0">
+          <InterlinearReader book={book} chapter={chapter} />
+        </div>
+      ) : (
+        <div className="flex-1 min-h-0 flex divide-x divide-line">
+          {parallels.map((t, i) => (
+            <Column
+              key={t + i}
+              translation={t}
+              book={book}
+              chapter={chapter}
+              showLabel={parallels.length > 1}
+              registerRef={(el) => (refs.current[i] = el)}
+              onScroll={() => onScroll(i)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -70,8 +77,6 @@ function Column({ translation, book, chapter, showLabel, registerRef, onScroll }
   const { data, loading, error } = useChapter(translation, book, chapter)
   const meta = useAppStore((s) => s.translations.find((x) => x.id === translation))
   const strongsVisible = useAppStore((s) => s.strongsVisible)
-  const interlinear = useAppStore((s) => s.interlinear)
-  const canInterlinear = !!data?.verses.some((v) => v.tokens && v.tokens.length > 0)
   const highlights = useHighlights(translation, book, chapter)
   const { byVerse } = useNotes(book, chapter)
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -136,19 +141,6 @@ function Column({ translation, book, chapter, showLabel, registerRef, onScroll }
           <StateBlock title="Not available">
             This chapter isn&rsquo;t available in {meta?.name ?? translation}.
           </StateBlock>
-        ) : interlinear && canInterlinear ? (
-          <div>
-            {data.verses.map((v) =>
-              v.tokens && v.tokens.length > 0 ? (
-                <InterlinearVerse key={v.verse} v={v} />
-              ) : (
-                <p key={v.verse} className="font-serif text-scripture text-ink mb-2">
-                  <sup className="text-[0.62em] text-accent/70 mr-0.5">{v.verse}</sup>
-                  {v.text}
-                </p>
-              )
-            )}
-          </div>
         ) : (
           <div
             dir={rtl ? 'rtl' : 'ltr'}
@@ -157,12 +149,6 @@ function Column({ translation, book, chapter, showLabel, registerRef, onScroll }
               strongsVisible ? 'text-left leading-[2.15]' : 'text-justify'
             } ${rtl ? 'font-hebrew text-right' : 'font-serif'}`}
           >
-            {interlinear && !canInterlinear && (
-              <p className="text-xs text-faint mb-3">
-                Interlinear data isn&rsquo;t available for {meta?.abbrev ?? translation} — showing
-                text.
-              </p>
-            )}
             {data.verses.map((v) => (
               <VerseView
                 key={v.verse}
