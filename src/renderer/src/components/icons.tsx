@@ -61,3 +61,9 @@ export const HighlighterIcon = (p: P) => (
     <path d="m9 11 6 6M4 21l3.5-1L18 9.5 14.5 6 4 16.5z" />
   </svg>
 )
+export const InterlinearIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M4 6h16M4 18h16" />
+    <path d="M7 10v4M12 10v4M17 10v4" />
+  </svg>
+)

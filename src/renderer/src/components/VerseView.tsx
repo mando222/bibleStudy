@@ -9,11 +9,16 @@ interface Props {
   onOpenMenu: (verse: number, e: React.MouseEvent) => void
 }
 
-/** Renders one verse inline: token/Strong's-aware, with optional highlight + note marker. */
+/** Renders one verse inline. Uses word tokens when Strong's is on OR a word-replace is
+ *  active; otherwise plain (clean) text. Applies "agape" replacements per Strong's number. */
 export default function VerseView({ v, highlight, hasNote, onOpenMenu }: Props): JSX.Element {
   const strongsVisible = useAppStore((s) => s.strongsVisible)
   const selectStrongs = useAppStore((s) => s.selectStrongs)
   const selected = useAppStore((s) => s.selectedStrongs)
+  const replacements = useAppStore((s) => s.replacements)
+
+  const replActive = Object.keys(replacements).length > 0
+  const useTokens = (strongsVisible || replActive) && !!v.tokens && v.tokens.length > 0
 
   const bg = highlight
     ? {
@@ -40,10 +45,11 @@ export default function VerseView({ v, highlight, hasNote, onOpenMenu }: Props):
         </sup>
       )}
       <span style={bg}>
-        {v.tokens && v.tokens.length > 0 ? (
-          v.tokens.map((tok) => {
+        {useTokens ? (
+          v.tokens!.map((tok) => {
             const clickable = !!tok.strongs
             const isSel = selected != null && selected === tok.strongs
+            const replaced = tok.strongs ? replacements[tok.strongs] : undefined
             return (
               <span key={tok.position}>
                 <span
@@ -56,7 +62,13 @@ export default function VerseView({ v, highlight, hasNote, onOpenMenu }: Props):
                       : ''
                   }
                 >
-                  {tok.surface}
+                  {replaced ? (
+                    <span className="text-accent font-medium" title={tok.surface}>
+                      {replaced}
+                    </span>
+                  ) : (
+                    tok.surface
+                  )}
                 </span>
                 {strongsVisible && tok.strongs && (
                   <sup

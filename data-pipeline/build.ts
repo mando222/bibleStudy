@@ -6,7 +6,7 @@
  * data-pipeline/schema.sql for the shape it produces.
  */
 import { DatabaseSync } from 'node:sqlite'
-import { readFileSync, mkdirSync, rmSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { BOOKS, BOOK_BY_USFM } from '../src/shared/books'
@@ -54,8 +54,21 @@ const TRANSLATIONS: TranslationSource[] = [
     license: 'Public Domain',
     attribution: 'World English Bible. Public Domain (eBible.org).',
     sortOrder: 3
+  },
+  {
+    id: 'YLT',
+    helloaoId: 'eng_ylt',
+    abbrev: 'YLT',
+    name: "Young's Literal Translation",
+    license: 'Public Domain',
+    attribution: "Young's Literal Translation (1898). Public Domain.",
+    sortOrder: 6
   }
 ]
+
+// Julia Smith 1876 — clean DBS digital text served per-chapter on studybible.info.
+const JULIA_SMITH_BASE = 'https://studybible.info/JuliaSmith'
+const JULIA_SMITH_BOOK: Record<string, string> = { Song: 'Song of Songs' } // else use book.name
 
 const STRONGS_SOURCES = {
   greek:
@@ -66,6 +79,10 @@ const STRONGS_SOURCES = {
 
 // KJV with inline [G####]/[H####] Strong's tags, one JSON per book (canonical order).
 const KJV_STRONGS_BASE = 'https://raw.githubusercontent.com/kaiserlik/kjv/main'
+
+// BSB word-level interlinear table: one row per original-language word, aligned to the
+// BSB English rendering, with Strong's + morphology. ~85MB; cached in sources/.
+const BSB_TABLES_URL = 'https://bereanbible.com/bsb_tables.tsv'
 
 // ---- helpers ---------------------------------------------------------------
 
@@ -123,6 +140,163 @@ function parseKjvTokens(en: string): Tok[] {
     if (!surface && !punct) continue
     out.push({ surface: surface || clean, trailer: `${punct} `, strongs: tags[0] ?? null })
   }
+  return out
+}
+
+/** Tag the BSB with per-word Strong's + original-language alignment from bsb_tables.tsv.
+ *  Produces BSB verse_tokens: surface=English gloss, lemma=original word, translit, morph, strongs. */
+async function tagBsb(db: DatabaseSync): Promise<number> {
+  const path = join(HERE, 'sources', 'bsb_tables.tsv')
+  if (!existsSync(path)) {
+    process.stdout.write(' downloading bsb_tables.tsv (~85MB)…')
+    const res = await fetch(BSB_TABLES_URL)
+    if (!res.ok) throw new Error(`GET bsb_tables.tsv → ${res.status}`)
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, Buffer.from(await res.arrayBuffer()))
+  }
+
+  const bookByName = new Map(BOOKS.map((b) => [b.name, b.id]))
+  bookByName.set('Psalm', 'Ps') // BSB uses the singular
+
+  const insTok = db.prepare(
+    `INSERT OR REPLACE INTO verse_tokens
+       (translation_id, book_id, chapter, verse, position, surface, trailer, strongs, lemma, translit, morph, gloss)
+     VALUES ('BSB', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`
+  )
+
+  const lines = readFileSync(path, 'utf8').split('\n')
+  let book = ''
+  let chapter = 0
+  let verse = 0
+  let valid = false
+  let pos = 0
+  let count = 0
+
+  db.exec('BEGIN')
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i]
+    if (!line) continue
+    const c = line.split('\t')
+    if (c.length < 13) continue
+
+    const rawVid = (c[12] ?? '').trim()
+    if (rawVid) {
+      const m = /^(.*) (\d+):(\d+)$/.exec(rawVid)
+      const bid = m ? bookByName.get(m[1]) : undefined
+      if (m && bid) {
+        book = bid
+        chapter = Number(m[2])
+        verse = Number(m[3])
+        valid = true
+        pos = 0
+      } else {
+        valid = false
+      }
+    }
+    if (!valid) continue
+
+    const orig = (c[5] ?? '').trim()
+    if (!orig) continue // padding row (no original word)
+    const eng = (c[18] ?? '').trim()
+    if (!eng || eng === '-') continue // untranslated particle → skip for reading/interlinear
+
+    const strH = (c[10] ?? '').trim()
+    const strG = (c[11] ?? '').trim()
+    const strongs = strH ? `H${strH}` : strG ? `G${strG}` : null
+    const translit = (c[7] ?? '').trim() || null
+    const morph = (c[9] ?? '').trim() || null
+    const pnc = c[19] ?? ''
+
+    insTok.run(book, chapter, verse, pos, eng, `${pnc} `, strongs, orig, translit, morph)
+    pos++
+    count++
+  }
+  db.exec('COMMIT')
+  db.prepare('UPDATE translations SET has_strongs = 1 WHERE id = ?').run('BSB')
+  return count
+}
+
+interface JsVerse {
+  book: string
+  chapter: number
+  verse: number
+  text: string
+}
+
+const HTML_ENTITIES: Record<string, string> = {
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'",
+  '&nbsp;': ' ',
+  '&#8217;': '’',
+  '&#8216;': '‘',
+  '&#8220;': '“',
+  '&#8221;': '”',
+  '&#8212;': '—'
+}
+
+function cleanJsText(t: string): string {
+  return t
+    .replace(/<sup>[\s\S]*?<\/sup>/g, ' ') // footnote markers
+    .replace(/<[^>]+>/g, ' ') // tags
+    .replace(/&[#a-z0-9]+;/gi, (e) => HTML_ENTITIES[e] ?? ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** Scrape the public-domain Julia Smith text from studybible.info (cached in sources/). */
+async function fetchJuliaSmith(): Promise<JsVerse[]> {
+  const cache = join(HERE, 'sources', 'juliasmith.json')
+  if (existsSync(cache)) return JSON.parse(readFileSync(cache, 'utf8')) as JsVerse[]
+
+  const tasks: { book: string; sbName: string; ch: number }[] = []
+  for (const b of BOOKS) {
+    const sbName = JULIA_SMITH_BOOK[b.id] ?? b.name
+    for (let ch = 1; ch <= b.chapters; ch++) tasks.push({ book: b.id, sbName, ch })
+  }
+
+  const boundRe = /<div|<a class="reference"|<sup><a class="version_info"|<\/article>/
+  const out: JsVerse[] = []
+  let idx = 0
+  let done = 0
+
+  async function worker(): Promise<void> {
+    while (idx < tasks.length) {
+      const t = tasks[idx++]
+      const url = `${JULIA_SMITH_BASE}/${encodeURIComponent(`${t.sbName} ${t.ch}`)}`
+      let h = ''
+      for (let attempt = 0; attempt < 3 && !h; attempt++) {
+        try {
+          const r = await fetch(url, { headers: { 'User-Agent': 'OpenBibleStudy/0.1 (+build)' } })
+          if (r.ok) h = await r.text()
+        } catch {
+          /* retry */
+        }
+      }
+      if (h) {
+        const anchor = /<sup><a class="verse_ref JuliaSmith"[^>]*>(\d+)<\/a><\/sup>/g
+        const ms = [...h.matchAll(anchor)]
+        for (let i = 0; i < ms.length; i++) {
+          const m = ms[i]
+          const s = (m.index ?? 0) + m[0].length
+          let e = i + 1 < ms.length ? ms[i + 1].index ?? h.length : h.length
+          if (i + 1 >= ms.length) {
+            const bm = boundRe.exec(h.slice(s))
+            if (bm) e = s + bm.index
+          }
+          const text = cleanJsText(h.slice(s, e))
+          if (text) out.push({ book: t.book, chapter: t.ch, verse: Number(m[1]), text })
+        }
+      }
+      if (++done % 100 === 0) process.stdout.write('.')
+    }
+  }
+
+  await Promise.all(Array.from({ length: 5 }, () => worker()))
+  mkdirSync(dirname(cache), { recursive: true })
+  writeFileSync(cache, JSON.stringify(out))
   return out
 }
 
@@ -210,6 +384,29 @@ async function main(): Promise<void> {
     process.stdout.write(` ${verseCount} verses, ${chapterSet.size} chapters\n`)
   }
 
+  // Julia Smith 1876 (scraped from studybible.info, cached)
+  process.stdout.write('• Julia Smith: fetching')
+  const jsVerses = await fetchJuliaSmith()
+  insTrans.run(
+    'JuliaSmith',
+    'Smith',
+    'Julia Smith (1876)',
+    'eng',
+    'Public Domain',
+    'Julia E. Smith Parker Translation (1876). Public Domain. Text via studybible.info (Digital Bible Society).',
+    4
+  )
+  const jsChapters = new Set<string>()
+  db.exec('BEGIN')
+  for (const v of jsVerses) {
+    insVerse.run('JuliaSmith', v.book, v.chapter, v.verse, v.text)
+    insFts.run(v.text, 'JuliaSmith', v.book, v.chapter, v.verse)
+    jsChapters.add(`${v.book}:${v.chapter}`)
+  }
+  db.exec('COMMIT')
+  summary.push({ id: 'Smith', verses: jsVerses.length, chapters: jsChapters.size })
+  process.stdout.write(` ${jsVerses.length} verses, ${jsChapters.size} chapters\n`)
+
   // Strong's lexicon
   process.stdout.write('• Strong’s lexicon: fetching…')
   const insLex = db.prepare(
@@ -289,11 +486,16 @@ async function main(): Promise<void> {
   ).n
   process.stdout.write(` ${tokenCount} tokens\n`)
 
+  // BSB word-level Strong's + original-language alignment → verse_tokens
+  process.stdout.write('• BSB interlinear tagging:')
+  const bsbTokens = await tagBsb(db)
+  process.stdout.write(` ${bsbTokens} tokens\n`)
+
   const insMeta = db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?,?)')
   insMeta.run('schema_version', '1')
   insMeta.run(
     'sources',
-    'helloao Free Use Bible API; openscriptures/strongs (CC-BY-SA); kaiserlik/kjv (KJV+Strong’s)'
+    'helloao Free Use Bible API; openscriptures/strongs (CC-BY-SA); kaiserlik/kjv (KJV+Strong’s); bereanbible.com bsb_tables (BSB interlinear, public domain)'
   )
 
   // ---- assertions --------------------------------------------------------
@@ -302,8 +504,20 @@ async function main(): Promise<void> {
   if (bookCount !== 66) errors.push(`expected 66 books, got ${bookCount}`)
 
   for (const s of summary) {
+    // Julia Smith is scraped and may have minor gaps; assert it more loosely.
+    if (s.id === 'Smith') {
+      if (s.verses < 28000) errors.push(`Julia Smith: only ${s.verses} verses (expected ~31k)`)
+      continue
+    }
     if (s.chapters < 1180 || s.chapters > 1200) errors.push(`${s.id}: ${s.chapters} chapters (expected ~1189)`)
     if (s.verses < 30000) errors.push(`${s.id}: only ${s.verses} verses`)
+  }
+
+  const jsJn = db
+    .prepare("SELECT text FROM verses WHERE translation_id='JuliaSmith' AND book_id='John' AND chapter=1 AND verse=1")
+    .get() as { text: string } | undefined
+  if (!jsJn || !/God was the Word/i.test(jsJn.text)) {
+    errors.push(`Julia Smith John 1:1 unexpected: ${jsJn?.text ?? '(missing)'}`)
   }
 
   const jn11 = db
@@ -334,6 +548,29 @@ async function main(): Promise<void> {
     .get() as { strongs: string } | undefined
   if (wordG3056?.strongs !== 'G3056') {
     errors.push(`KJV John 1:1 'Word' should tag G3056, got ${JSON.stringify(wordG3056)}`)
+  }
+
+  const bsbCount = (
+    db.prepare("SELECT COUNT(*) n FROM verse_tokens WHERE translation_id='BSB'").get() as {
+      n: number
+    }
+  ).n
+  if (bsbCount < 400000) errors.push(`BSB tokens only ${bsbCount} (expected ~430k)`)
+  const bsbWord = db
+    .prepare(
+      "SELECT strongs, lemma FROM verse_tokens WHERE translation_id='BSB' AND book_id='John' AND chapter=1 AND verse=1 AND surface='Word'"
+    )
+    .get() as { strongs: string; lemma: string } | undefined
+  if (bsbWord?.strongs !== 'G3056') {
+    errors.push(`BSB John 1:1 'Word' should tag G3056, got ${JSON.stringify(bsbWord)}`)
+  }
+  const bsbGod = db
+    .prepare(
+      "SELECT strongs FROM verse_tokens WHERE translation_id='BSB' AND book_id='Gen' AND chapter=1 AND verse=1 AND surface='God'"
+    )
+    .get() as { strongs: string } | undefined
+  if (bsbGod?.strongs !== 'H430') {
+    errors.push(`BSB Gen 1:1 'God' should tag H430, got ${JSON.stringify(bsbGod)}`)
   }
 
   db.close()

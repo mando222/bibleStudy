@@ -1,12 +1,14 @@
 import { useAppStore } from '@/store/useAppStore'
 import { BOOK_BY_ID } from '@shared/books'
-import { BookIcon, SunIcon, MoonIcon, HashIcon, ColumnsIcon } from './icons'
+import { BookIcon, SunIcon, MoonIcon, HashIcon, ColumnsIcon, InterlinearIcon } from './icons'
 
 export default function TopBar(): JSX.Element {
   const theme = useAppStore((s) => s.theme)
   const toggleTheme = useAppStore((s) => s.toggleTheme)
   const strongsVisible = useAppStore((s) => s.strongsVisible)
   const toggleStrongs = useAppStore((s) => s.toggleStrongs)
+  const interlinear = useAppStore((s) => s.interlinear)
+  const toggleInterlinear = useAppStore((s) => s.toggleInterlinear)
   const book = useAppStore((s) => s.book)
   const chapter = useAppStore((s) => s.chapter)
   const translations = useAppStore((s) => s.translations)
@@ -96,6 +98,19 @@ export default function TopBar(): JSX.Element {
       >
         <HashIcon className="w-4 h-4" />
         Strong&rsquo;s
+      </button>
+
+      <button
+        onClick={toggleInterlinear}
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-sm border transition-colors whitespace-nowrap ${
+          interlinear
+            ? 'bg-accent-soft border-accent text-accent'
+            : 'border-line hover:bg-elevated text-muted'
+        }`}
+        title="Interlinear (word-by-word original language)"
+      >
+        <InterlinearIcon className="w-4 h-4" />
+        Interlinear
       </button>
 
       <button

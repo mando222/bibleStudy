@@ -22,8 +22,16 @@ interface AppState {
   // Study features
   strongsVisible: boolean
   toggleStrongs: () => void
+  interlinear: boolean
+  toggleInterlinear: () => void
   selectedStrongs: string | null
   studyTab: StudyTab
+
+  // Word-replace ("agape"): Strong's number → display text (lemma/translit), per session.
+  replacements: Record<string, string>
+  setReplacement: (strongs: string, text: string) => void
+  clearReplacement: (strongs: string) => void
+  clearReplacements: () => void
 
   // Bumped whenever notes/highlights change, to trigger re-fetch.
   userDataNonce: number
@@ -58,8 +66,20 @@ export const useAppStore = create<AppState>()(
 
       strongsVisible: false,
       toggleStrongs: () => set({ strongsVisible: !get().strongsVisible }),
+      interlinear: false,
+      toggleInterlinear: () => set({ interlinear: !get().interlinear }),
       selectedStrongs: null,
       studyTab: 'lexicon',
+
+      replacements: {},
+      setReplacement: (strongs, text) =>
+        set({ replacements: { ...get().replacements, [strongs]: text } }),
+      clearReplacement: (strongs) => {
+        const next = { ...get().replacements }
+        delete next[strongs]
+        set({ replacements: next })
+      },
+      clearReplacements: () => set({ replacements: {} }),
 
       userDataNonce: 0,
       bumpUserData: () => set({ userDataNonce: get().userDataNonce + 1 }),
@@ -87,7 +107,8 @@ export const useAppStore = create<AppState>()(
         parallels: s.parallels,
         book: s.book,
         chapter: s.chapter,
-        strongsVisible: s.strongsVisible
+        strongsVisible: s.strongsVisible,
+        interlinear: s.interlinear
       })
     }
   )

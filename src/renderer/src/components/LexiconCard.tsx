@@ -59,6 +59,8 @@ export default function LexiconCard({ id }: { id: string | null }): JSX.Element 
         {entry.pronunciation && <span className="text-faint"> · {entry.pronunciation}</span>}
       </div>
 
+      <ReplaceControls id={entry.id} lemma={entry.lemma} translit={entry.translit} />
+
       <div className="mt-4 border-t border-line pt-3 space-y-3">
         {entry.definition && (
           <Field label="Definition">
@@ -73,6 +75,51 @@ export default function LexiconCard({ id }: { id: string | null }): JSX.Element 
       </div>
 
       <Concordance id={entry.id} occurrences={entry.occurrences} />
+    </div>
+  )
+}
+
+/** "Agape" word-replace: swap every occurrence of this Strong's with the Greek/Hebrew word
+ *  (or its transliteration) directly in the reading text. */
+function ReplaceControls({
+  id,
+  lemma,
+  translit
+}: {
+  id: string
+  lemma: string
+  translit: string
+}): JSX.Element {
+  const active = useAppStore((s) => s.replacements[id])
+  const setReplacement = useAppStore((s) => s.setReplacement)
+  const clearReplacement = useAppStore((s) => s.clearReplacement)
+
+  const chip = (on: boolean): string =>
+    `px-2 py-0.5 rounded-md text-sm border transition-colors ${
+      on ? 'bg-accent text-white border-accent' : 'border-line hover:bg-elevated text-ink'
+    }`
+
+  return (
+    <div className="mt-3 flex items-center gap-2 flex-wrap">
+      <span className="text-[11px] uppercase tracking-wider text-faint">Replace in text</span>
+      {lemma && (
+        <button onClick={() => setReplacement(id, lemma)} className={chip(active === lemma)}>
+          {lemma}
+        </button>
+      )}
+      {translit && (
+        <button onClick={() => setReplacement(id, translit)} className={chip(active === translit)}>
+          {translit}
+        </button>
+      )}
+      {active && (
+        <button
+          onClick={() => clearReplacement(id)}
+          className="text-xs text-muted hover:text-accent underline"
+        >
+          Reset
+        </button>
+      )}
     </div>
   )
 }

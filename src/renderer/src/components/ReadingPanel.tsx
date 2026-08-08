@@ -5,6 +5,7 @@ import { useChapter } from '@/hooks/useChapter'
 import { useHighlights, useNotes } from '@/hooks/useUserData'
 import VerseView from './VerseView'
 import VersePopover from './VersePopover'
+import InterlinearVerse from './InterlinearVerse'
 import { BookIcon } from './icons'
 
 export default function ReadingPanel(): JSX.Element {
@@ -37,6 +38,8 @@ export default function ReadingPanel(): JSX.Element {
         <div className="text-xs text-muted">{parallels.join('  ·  ')}</div>
       </div>
 
+      <ReplacementsBar />
+
       <div className="flex-1 min-h-0 flex divide-x divide-line">
         {parallels.map((t, i) => (
           <Column
@@ -67,6 +70,8 @@ function Column({ translation, book, chapter, showLabel, registerRef, onScroll }
   const { data, loading, error } = useChapter(translation, book, chapter)
   const meta = useAppStore((s) => s.translations.find((x) => x.id === translation))
   const strongsVisible = useAppStore((s) => s.strongsVisible)
+  const interlinear = useAppStore((s) => s.interlinear)
+  const canInterlinear = !!data?.verses.some((v) => v.tokens && v.tokens.length > 0)
   const highlights = useHighlights(translation, book, chapter)
   const { byVerse } = useNotes(book, chapter)
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -131,6 +136,19 @@ function Column({ translation, book, chapter, showLabel, registerRef, onScroll }
           <StateBlock title="Not available">
             This chapter isn&rsquo;t available in {meta?.name ?? translation}.
           </StateBlock>
+        ) : interlinear && canInterlinear ? (
+          <div>
+            {data.verses.map((v) =>
+              v.tokens && v.tokens.length > 0 ? (
+                <InterlinearVerse key={v.verse} v={v} />
+              ) : (
+                <p key={v.verse} className="font-serif text-scripture text-ink mb-2">
+                  <sup className="text-[0.62em] text-accent/70 mr-0.5">{v.verse}</sup>
+                  {v.text}
+                </p>
+              )
+            )}
+          </div>
         ) : (
           <div
             dir={rtl ? 'rtl' : 'ltr'}
@@ -139,6 +157,12 @@ function Column({ translation, book, chapter, showLabel, registerRef, onScroll }
               strongsVisible ? 'text-left leading-[2.15]' : 'text-justify'
             } ${rtl ? 'font-hebrew text-right' : 'font-serif'}`}
           >
+            {interlinear && !canInterlinear && (
+              <p className="text-xs text-faint mb-3">
+                Interlinear data isn&rsquo;t available for {meta?.abbrev ?? translation} — showing
+                text.
+              </p>
+            )}
             {data.verses.map((v) => (
               <VerseView
                 key={v.verse}
@@ -165,6 +189,41 @@ function Column({ translation, book, chapter, showLabel, registerRef, onScroll }
           onClose={() => setMenu(null)}
         />
       )}
+    </div>
+  )
+}
+
+function ReplacementsBar(): JSX.Element | null {
+  const replacements = useAppStore((s) => s.replacements)
+  const clearReplacement = useAppStore((s) => s.clearReplacement)
+  const clearReplacements = useAppStore((s) => s.clearReplacements)
+  const entries = Object.entries(replacements)
+  if (entries.length === 0) return null
+  return (
+    <div className="shrink-0 border-b border-line bg-accent-soft/40 px-4 py-1.5 flex items-center gap-2 flex-wrap">
+      <span className="text-[11px] uppercase tracking-wider text-accent/80">Replacing</span>
+      {entries.map(([s, text]) => (
+        <span
+          key={s}
+          className="inline-flex items-center gap-1 text-xs bg-panel border border-line rounded-full pl-2 pr-1 py-0.5"
+        >
+          <span className="text-faint tabular-nums">{s}</span>
+          <span className="text-accent">→ {text}</span>
+          <button
+            onClick={() => clearReplacement(s)}
+            className="w-4 h-4 rounded-full hover:bg-elevated text-faint hover:text-accent leading-none"
+            title="Undo"
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      <button
+        onClick={clearReplacements}
+        className="text-xs text-muted hover:text-accent ml-1 underline"
+      >
+        Reset all
+      </button>
     </div>
   )
 }
