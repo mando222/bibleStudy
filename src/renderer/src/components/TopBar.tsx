@@ -1,6 +1,6 @@
 import { useAppStore } from '@/store/useAppStore'
 import { BOOK_BY_ID } from '@shared/books'
-import { BookIcon, SunIcon, MoonIcon, HashIcon, ColumnsIcon, InterlinearIcon } from './icons'
+import { BookIcon, SunIcon, MoonIcon, HashIcon, ColumnsIcon, InterlinearIcon, InfoIcon } from './icons'
 
 export default function TopBar(): JSX.Element {
   const theme = useAppStore((s) => s.theme)
@@ -9,6 +9,7 @@ export default function TopBar(): JSX.Element {
   const toggleStrongs = useAppStore((s) => s.toggleStrongs)
   const interlinear = useAppStore((s) => s.interlinear)
   const toggleInterlinear = useAppStore((s) => s.toggleInterlinear)
+  const setAboutOpen = useAppStore((s) => s.setAboutOpen)
   const book = useAppStore((s) => s.book)
   const chapter = useAppStore((s) => s.chapter)
   const translations = useAppStore((s) => s.translations)
@@ -119,6 +120,14 @@ export default function TopBar(): JSX.Element {
         title="Toggle light / dark"
       >
         {theme === 'light' ? <MoonIcon className="w-4 h-4" /> : <SunIcon className="w-4 h-4" />}
+      </button>
+
+      <button
+        onClick={() => setAboutOpen(true)}
+        className="p-2 rounded-md hover:bg-elevated text-muted"
+        title="About & credits"
+      >
+        <InfoIcon className="w-4 h-4" />
       </button>
     </header>
   )

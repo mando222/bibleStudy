@@ -79,6 +79,26 @@ export const BOOKS: BookMeta[] = [
   { id: 'Rev', usfm: 'REV', name: 'Revelation', testament: 'NT', chapters: 22 }
 ]
 
+// Approximate chronological order (by historical/composition sequence) — book level.
+export const CHRONO_ORDER: string[] = [
+  'Gen', 'Job', 'Exod', 'Lev', 'Num', 'Deut', 'Josh', 'Judg', 'Ruth', '1Sam',
+  '2Sam', '1Chr', 'Ps', '2Chr', 'Prov', 'Eccl', 'Song', '1Kgs', '2Kgs', 'Obad',
+  'Joel', 'Jonah', 'Amos', 'Hos', 'Isa', 'Mic', 'Nah', 'Zeph', 'Hab', 'Jer',
+  'Lam', 'Ezek', 'Dan', 'Ezra', 'Hag', 'Zech', 'Esth', 'Neh', 'Mal',
+  'Matt', 'Mark', 'Luke', 'John', 'Acts', 'Jas', 'Gal', '1Thess', '2Thess', '1Cor',
+  '2Cor', 'Rom', 'Col', 'Phlm', 'Eph', 'Phil', '1Tim', 'Titus', '1Pet', '2Pet',
+  'Heb', '2Tim', 'Jude', '1John', '2John', '3John', 'Rev'
+]
+
+const CHRONO_RANK: Record<string, number> = Object.fromEntries(
+  CHRONO_ORDER.map((id, i) => [id, i])
+)
+
+/** Books in chronological order (any not listed fall back to canonical position at the end). */
+export const BOOKS_CHRONO: BookMeta[] = [...BOOKS].sort(
+  (a, b) => (CHRONO_RANK[a.id] ?? 999 + a.chapters) - (CHRONO_RANK[b.id] ?? 999)
+)
+
 export const BOOK_BY_ID: Record<string, BookMeta> = Object.fromEntries(
   BOOKS.map((b) => [b.id, b])
 )

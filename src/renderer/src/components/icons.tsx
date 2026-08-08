@@ -67,3 +67,9 @@ export const InterlinearIcon = (p: P) => (
     <path d="M7 10v4M12 10v4M17 10v4" />
   </svg>
 )
+export const InfoIcon = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 11v5M12 8h.01" />
+  </svg>
+)

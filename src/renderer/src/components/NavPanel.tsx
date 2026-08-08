@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BOOKS, type BookMeta } from '@shared/books'
+import { BOOKS, BOOKS_CHRONO, type BookMeta } from '@shared/books'
 import { useAppStore } from '@/store/useAppStore'
 import { SearchIcon, ChevronRight } from './icons'
 
@@ -7,19 +7,26 @@ export default function NavPanel(): JSX.Element {
   const book = useAppStore((s) => s.book)
   const chapter = useAppStore((s) => s.chapter)
   const goTo = useAppStore((s) => s.goTo)
+  const chronological = useAppStore((s) => s.chronological)
+  const toggleChronological = useAppStore((s) => s.toggleChronological)
   const [openBook, setOpenBook] = useState<string | null>(book)
   const [filter, setFilter] = useState('')
 
   const q = filter.trim().toLowerCase()
-  const matches = q ? BOOKS.filter((b) => b.name.toLowerCase().includes(q)) : BOOKS
+  const source = chronological ? BOOKS_CHRONO : BOOKS
+  const matches = q ? source.filter((b) => b.name.toLowerCase().includes(q)) : source
   const ot = matches.filter((b) => b.testament === 'OT')
   const nt = matches.filter((b) => b.testament === 'NT')
 
   const rowProps = { openBook, setOpenBook, current: book, currentChapter: chapter, goTo }
+  const segBtn = (active: boolean): string =>
+    `flex-1 py-1 transition-colors ${
+      active ? 'bg-accent-soft text-accent font-medium' : 'text-muted hover:bg-elevated'
+    }`
 
   return (
     <div className="h-full flex flex-col bg-panel">
-      <div className="p-2 border-b border-line">
+      <div className="p-2 border-b border-line space-y-2">
         <div className="relative">
           <SearchIcon className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
           <input
@@ -29,17 +36,36 @@ export default function NavPanel(): JSX.Element {
             className="w-full bg-elevated border border-line rounded-md pl-8 pr-2 py-1.5 text-sm outline-none focus:border-accent placeholder:text-faint"
           />
         </div>
+        <div className="flex rounded-md border border-line overflow-hidden text-xs" title="Book order">
+          <button onClick={() => chronological && toggleChronological()} className={segBtn(!chronological)}>
+            Canonical
+          </button>
+          <button onClick={() => !chronological && toggleChronological()} className={segBtn(chronological)}>
+            Chronological
+          </button>
+        </div>
       </div>
 
       <nav className="flex-1 overflow-y-auto py-1">
-        {ot.length > 0 && <SectionLabel>Old Testament</SectionLabel>}
-        {ot.map((b) => (
-          <BookRow key={b.id} b={b} {...rowProps} />
-        ))}
-        {nt.length > 0 && <SectionLabel>New Testament</SectionLabel>}
-        {nt.map((b) => (
-          <BookRow key={b.id} b={b} {...rowProps} />
-        ))}
+        {chronological ? (
+          <>
+            <SectionLabel>Chronological order</SectionLabel>
+            {matches.map((b) => (
+              <BookRow key={b.id} b={b} {...rowProps} />
+            ))}
+          </>
+        ) : (
+          <>
+            {ot.length > 0 && <SectionLabel>Old Testament</SectionLabel>}
+            {ot.map((b) => (
+              <BookRow key={b.id} b={b} {...rowProps} />
+            ))}
+            {nt.length > 0 && <SectionLabel>New Testament</SectionLabel>}
+            {nt.map((b) => (
+              <BookRow key={b.id} b={b} {...rowProps} />
+            ))}
+          </>
+        )}
       </nav>
     </div>
   )

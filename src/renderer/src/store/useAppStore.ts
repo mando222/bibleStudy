@@ -13,6 +13,10 @@ interface AppState {
   translations: Translation[]
   setTranslations: (t: Translation[]) => void
 
+  // About / credits modal
+  aboutOpen: boolean
+  setAboutOpen: (v: boolean) => void
+
   // Reading selection
   primary: string // primary translation id
   parallels: string[] // additional translation ids shown side-by-side (incl. primary at [0])
@@ -40,6 +44,8 @@ interface AppState {
   bumpUserData: () => void
 
   // Navigation
+  chronological: boolean
+  toggleChronological: () => void
   scrollToVerse: number | null
   goToVerse: (book: string, chapter: number, verse: number) => void
   clearScroll: () => void
@@ -60,6 +66,9 @@ export const useAppStore = create<AppState>()(
 
       translations: [],
       setTranslations: (translations) => set({ translations }),
+
+      aboutOpen: false,
+      setAboutOpen: (aboutOpen) => set({ aboutOpen }),
 
       primary: 'KJV',
       parallels: ['KJV'],
@@ -88,6 +97,8 @@ export const useAppStore = create<AppState>()(
       userDataNonce: 0,
       bumpUserData: () => set({ userDataNonce: get().userDataNonce + 1 }),
 
+      chronological: false,
+      toggleChronological: () => set({ chronological: !get().chronological }),
       scrollToVerse: null,
       goToVerse: (book, chapter, verse) => set({ book, chapter, scrollToVerse: verse }),
       clearScroll: () => set({ scrollToVerse: null }),
@@ -113,7 +124,8 @@ export const useAppStore = create<AppState>()(
         chapter: s.chapter,
         strongsVisible: s.strongsVisible,
         interlinear: s.interlinear,
-        interlinearEdition: s.interlinearEdition
+        interlinearEdition: s.interlinearEdition,
+        chronological: s.chronological
       })
     }
   )

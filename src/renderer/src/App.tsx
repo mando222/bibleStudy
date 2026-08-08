@@ -5,6 +5,7 @@ import TopBar from '@/components/TopBar'
 import NavPanel from '@/components/NavPanel'
 import ReadingPanel from '@/components/ReadingPanel'
 import StudyPanel from '@/components/StudyPanel'
+import AboutModal from '@/components/AboutModal'
 
 export default function App(): JSX.Element {
   const theme = useAppStore((s) => s.theme)
@@ -44,6 +45,7 @@ export default function App(): JSX.Element {
           <StudyPanel />
         </Panel>
       </PanelGroup>
+      <AboutModal />
     </div>
   )
 }
