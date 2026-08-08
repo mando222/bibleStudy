@@ -24,6 +24,8 @@ interface AppState {
   toggleStrongs: () => void
   interlinear: boolean
   toggleInterlinear: () => void
+  interlinearEdition: string // '' = auto (Masoretic for OT, Critical for NT)
+  setInterlinearEdition: (id: string) => void
   selectedStrongs: string | null
   studyTab: StudyTab
 
@@ -68,6 +70,8 @@ export const useAppStore = create<AppState>()(
       toggleStrongs: () => set({ strongsVisible: !get().strongsVisible }),
       interlinear: false,
       toggleInterlinear: () => set({ interlinear: !get().interlinear }),
+      interlinearEdition: '',
+      setInterlinearEdition: (interlinearEdition) => set({ interlinearEdition }),
       selectedStrongs: null,
       studyTab: 'lexicon',
 
@@ -108,7 +112,8 @@ export const useAppStore = create<AppState>()(
         book: s.book,
         chapter: s.chapter,
         strongsVisible: s.strongsVisible,
-        interlinear: s.interlinear
+        interlinear: s.interlinear,
+        interlinearEdition: s.interlinearEdition
       })
     }
   )

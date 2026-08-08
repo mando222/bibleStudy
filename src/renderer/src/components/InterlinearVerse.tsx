@@ -3,12 +3,12 @@ import { useAppStore } from '@/store/useAppStore'
 
 /** Word-by-word interlinear: each word is a vertical cell —
  *  original (Greek/Hebrew) / transliteration / English gloss / Strong's / morphology. */
-export default function InterlinearVerse({ v }: { v: Verse }): JSX.Element {
+export default function InterlinearVerse({ v, rtl }: { v: Verse; rtl?: boolean }): JSX.Element {
   const selectStrongs = useAppStore((s) => s.selectStrongs)
   const selected = useAppStore((s) => s.selectedStrongs)
 
   return (
-    <div className="flex flex-wrap gap-x-2.5 gap-y-3 items-start mb-4">
+    <div dir={rtl ? 'rtl' : 'ltr'} className="flex flex-wrap gap-x-2.5 gap-y-3 items-start mb-4">
       <span className="text-xs font-sans font-semibold text-accent/70 pt-1.5 tabular-nums">
         {v.verse}
       </span>

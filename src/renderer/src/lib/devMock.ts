@@ -7,7 +7,9 @@ import type {
   BibleApi,
   ChapterContent,
   ConcordanceHit,
+  Edition,
   Highlight,
+  InterlinearContent,
   Note,
   SearchResponse
 } from '@shared/types'
@@ -17,6 +19,8 @@ interface MockData {
   chapters: Record<string, ChapterContent>
   strongs: Record<string, unknown>
   search: SearchResponse
+  editions: Edition[]
+  interlinear: Record<string, InterlinearContent>
 }
 
 export async function installDevMock(): Promise<void> {
@@ -61,6 +65,15 @@ export async function installDevMock(): Promise<void> {
       }
       return { total: hits.length, hits }
     },
+    listEditions: async () => data.editions ?? [],
+    getInterlinear: async (book, chapter, edition) =>
+      data.interlinear?.[`${edition}/${book}/${chapter}`] ?? {
+        book,
+        chapter,
+        edition,
+        direction: 'ltr',
+        verses: []
+      },
     search: async (q) => {
       const term = q.text.trim().toLowerCase()
       if (!term) return { total: 0, hits: [] }

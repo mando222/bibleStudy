@@ -55,6 +55,32 @@ CREATE TABLE verse_tokens (
 
 CREATE INDEX idx_tokens_strongs ON verse_tokens (strongs);
 
+-- Selectable original-language editions for the interlinear (Masoretic, TR, Byzantine, Critical, …).
+CREATE TABLE editions (
+  id         TEXT PRIMARY KEY,   -- 'MT' | 'NA' | 'TR' | 'BYZ' | 'LXX'
+  name       TEXT NOT NULL,
+  language   TEXT NOT NULL,      -- 'hbo' | 'grc'
+  testament  TEXT NOT NULL,      -- 'OT' | 'NT'
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+-- One row per original-language word of an edition (the interlinear backbone).
+CREATE TABLE original_tokens (
+  edition   TEXT NOT NULL,
+  book_id   TEXT NOT NULL,
+  chapter   INTEGER NOT NULL,
+  verse     INTEGER NOT NULL,
+  position  INTEGER NOT NULL,
+  original  TEXT NOT NULL,       -- the Greek/Hebrew word
+  translit  TEXT,
+  strongs   TEXT,
+  morph     TEXT,
+  gloss     TEXT,                -- English gloss
+  PRIMARY KEY (edition, book_id, chapter, verse, position)
+) WITHOUT ROWID;
+
+CREATE INDEX idx_ot_loc ON original_tokens (edition, book_id, chapter, verse);
+
 CREATE TABLE strongs_lexicon (
   id            TEXT PRIMARY KEY,  -- 'G26' / 'H430'
   language      TEXT NOT NULL,     -- 'greek' | 'hebrew'

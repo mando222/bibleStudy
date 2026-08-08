@@ -70,6 +70,42 @@ const TRANSLATIONS: TranslationSource[] = [
 const JULIA_SMITH_BASE = 'https://studybible.info/JuliaSmith'
 const JULIA_SMITH_BOOK: Record<string, string> = { Song: 'Song of Songs' } // else use book.name
 
+// STEPBible Translators Amalgamated OT+NT (CC BY 4.0) — tagged original-language editions.
+const STEP_BASE =
+  'https://raw.githubusercontent.com/STEPBible/STEPBible-Data/master/Translators%20Amalgamated%20OT%2BNT'
+const TAGNT_FILES: [string, string][] = [
+  ['tagnt_mat-jhn.txt', `${STEP_BASE}/TAGNT%20Mat-Jhn%20-%20Translators%20Amalgamated%20Greek%20NT%20-%20STEPBible.org%20CC-BY.txt`],
+  ['tagnt_act-rev.txt', `${STEP_BASE}/TAGNT%20Act-Rev%20-%20Translators%20Amalgamated%20Greek%20NT%20-%20STEPBible.org%20CC-BY.txt`]
+]
+const TAHOT_FILES: [string, string][] = [
+  ['tahot_gen-deu.txt', `${STEP_BASE}/TAHOT%20Gen-Deu%20-%20Translators%20Amalgamated%20Hebrew%20OT%20-%20STEPBible.org%20CC%20BY.txt`],
+  ['tahot_jos-est.txt', `${STEP_BASE}/TAHOT%20Jos-Est%20-%20Translators%20Amalgamated%20Hebrew%20OT%20-%20STEPBible.org%20CC%20BY.txt`],
+  ['tahot_job-sng.txt', `${STEP_BASE}/TAHOT%20Job-Sng%20-%20Translators%20Amalgamated%20Hebrew%20OT%20-%20STEPBible.org%20CC%20BY.txt`],
+  ['tahot_isa-mal.txt', `${STEP_BASE}/TAHOT%20Isa-Mal%20-%20Translators%20Amalgamated%20Hebrew%20OT%20-%20STEPBible.org%20CC%20BY.txt`]
+]
+
+const EDITIONS: { id: string; name: string; language: string; testament: string; sort: number }[] = [
+  { id: 'MT', name: 'Masoretic (WLC)', language: 'hbo', testament: 'OT', sort: 1 },
+  { id: 'NA', name: 'Critical (NA/SBL)', language: 'grc', testament: 'NT', sort: 2 },
+  { id: 'TR', name: 'Textus Receptus', language: 'grc', testament: 'NT', sort: 3 },
+  { id: 'BYZ', name: 'Byzantine', language: 'grc', testament: 'NT', sort: 4 }
+]
+
+// STEPBible book abbreviation (dotted ref) → our book id. Uppercased abbrev matches our USFM
+// codes except a few; override those here.
+const STEP_BOOK_OVERRIDE: Record<string, string> = { NAH: 'Nah' } // Nahum: STEP 'Nah' vs USFM 'NAM'
+
+function stepBookId(abbrev: string): string | undefined {
+  const up = abbrev.toUpperCase()
+  return BOOK_BY_USFM[up]?.id ?? STEP_BOOK_OVERRIDE[up]
+}
+
+/** Normalise a STEPBible extended Strong's (e.g. "H0430G", "{H1254A}", "G1722") → "H430"/"G1722". */
+function normStrongs(raw: string): string | null {
+  const m = /([GH])0*(\d+)/.exec(raw)
+  return m ? `${m[1]}${m[2]}` : null
+}
+
 const STRONGS_SOURCES = {
   greek:
     'https://raw.githubusercontent.com/openscriptures/strongs/master/greek/strongs-greek-dictionary.js',
@@ -314,6 +350,110 @@ interface Complete {
   books: CompleteBook[]
 }
 
+async function downloadCached(name: string, url: string): Promise<string> {
+  const p = join(HERE, 'sources', name)
+  if (!existsSync(p)) {
+    const r = await fetch(url)
+    if (!r.ok) throw new Error(`GET ${name} → ${r.status}`)
+    mkdirSync(dirname(p), { recursive: true })
+    writeFileSync(p, Buffer.from(await r.arrayBuffer()))
+  }
+  return p
+}
+
+const STEP_ROW = /^[A-Za-z0-9]+\.\d+\.\d+#\d+/
+
+/** Build TR / Byzantine / Critical (NA) Greek editions from TAGNT (per-word edition membership). */
+async function buildGreekEditions(db: DatabaseSync): Promise<number> {
+  const ins = db.prepare(
+    `INSERT OR REPLACE INTO original_tokens (edition, book_id, chapter, verse, position, original, translit, strongs, morph, gloss)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`
+  )
+  let count = 0
+  for (const [name, url] of TAGNT_FILES) {
+    const path = await downloadCached(name, url)
+    const lines = readFileSync(path, 'utf8').split('\n')
+    let curVerse = ''
+    const pos: Record<string, number> = { NA: 0, TR: 0, BYZ: 0 }
+    db.exec('BEGIN')
+    for (const line of lines) {
+      if (!STEP_ROW.test(line)) continue
+      const c = line.split('\t')
+      const m = /^([A-Za-z0-9]+)\.(\d+)\.(\d+)#\d+/.exec(c[0])
+      if (!m) continue
+      const book = stepBookId(m[1])
+      if (!book) continue
+      const chapter = Number(m[2])
+      const verse = Number(m[3])
+      const vk = `${book}.${chapter}.${verse}`
+      if (vk !== curVerse) {
+        curVerse = vk
+        pos.NA = 0
+        pos.TR = 0
+        pos.BYZ = 0
+      }
+      const sp = c[1].indexOf(' (')
+      const original = (sp >= 0 ? c[1].slice(0, sp) : c[1]).trim()
+      const translit = sp >= 0 ? c[1].slice(sp + 2).replace(/\)\s*$/, '').trim() : null
+      const gloss = (c[2] || '').trim() || null
+      const [sRaw, morph] = (c[3] || '').split('=')
+      const strongs = normStrongs(sRaw || '')
+      const ed = c[5] || ''
+      const mem: string[] = []
+      if (/NA2[78]|SBL/.test(ed)) mem.push('NA')
+      if (/(^|\+)TR(\+|$)/.test(ed)) mem.push('TR')
+      if (/Byz/.test(ed)) mem.push('BYZ')
+      for (const e of mem) {
+        ins.run(e, book, chapter, verse, pos[e]++, original, translit, strongs, morph || null, gloss)
+        count++
+      }
+    }
+    db.exec('COMMIT')
+  }
+  return count
+}
+
+/** Build the Masoretic (MT) Hebrew edition from TAHOT. */
+async function buildHebrewEdition(db: DatabaseSync): Promise<number> {
+  const ins = db.prepare(
+    `INSERT OR REPLACE INTO original_tokens (edition, book_id, chapter, verse, position, original, translit, strongs, morph, gloss)
+     VALUES ('MT',?,?,?,?,?,?,?,?,?)`
+  )
+  let count = 0
+  for (const [name, url] of TAHOT_FILES) {
+    const path = await downloadCached(name, url)
+    const lines = readFileSync(path, 'utf8').split('\n')
+    let curVerse = ''
+    let pos = 0
+    db.exec('BEGIN')
+    for (const line of lines) {
+      if (!STEP_ROW.test(line)) continue
+      const c = line.split('\t')
+      const m = /^([A-Za-z0-9]+)\.(\d+)\.(\d+)#\d+/.exec(c[0])
+      if (!m) continue
+      const book = stepBookId(m[1])
+      if (!book) continue
+      const chapter = Number(m[2])
+      const verse = Number(m[3])
+      const vk = `${book}.${chapter}.${verse}`
+      if (vk !== curVerse) {
+        curVerse = vk
+        pos = 0
+      }
+      const original = (c[1] || '').replace(/\//g, '').trim()
+      if (!original) continue
+      const translit = (c[2] || '').replace(/\//g, '').trim() || null
+      const gloss = (c[3] || '').replace(/\//g, ' ').replace(/\s+/g, ' ').trim() || null
+      const strongs = normStrongs(c[8] || c[4] || '')
+      const morph = (c[5] || '').trim() || null
+      ins.run(book, chapter, verse, pos++, original, translit, strongs, morph, gloss)
+      count++
+    }
+    db.exec('COMMIT')
+  }
+  return count
+}
+
 // ---- build -----------------------------------------------------------------
 
 async function main(): Promise<void> {
@@ -491,6 +631,17 @@ async function main(): Promise<void> {
   const bsbTokens = await tagBsb(db)
   process.stdout.write(` ${bsbTokens} tokens\n`)
 
+  // Original-language editions (selectable interlinear bases)
+  const insEdition = db.prepare(
+    'INSERT OR REPLACE INTO editions (id, name, language, testament, sort_order) VALUES (?,?,?,?,?)'
+  )
+  for (const e of EDITIONS) insEdition.run(e.id, e.name, e.language, e.testament, e.sort)
+  process.stdout.write('• Interlinear editions: Hebrew (Masoretic)…')
+  const mtCount = await buildHebrewEdition(db)
+  process.stdout.write(` ${mtCount} · Greek (TR/Byz/Critical)…`)
+  const grcCount = await buildGreekEditions(db)
+  process.stdout.write(` ${grcCount}\n`)
+
   const insMeta = db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?,?)')
   insMeta.run('schema_version', '1')
   insMeta.run(
@@ -572,6 +723,30 @@ async function main(): Promise<void> {
   if (bsbGod?.strongs !== 'H430') {
     errors.push(`BSB Gen 1:1 'God' should tag H430, got ${JSON.stringify(bsbGod)}`)
   }
+
+  // Original-language editions
+  const mtGen = db
+    .prepare(
+      "SELECT strongs FROM original_tokens WHERE edition='MT' AND book_id='Gen' AND chapter=1 AND verse=1 ORDER BY position LIMIT 1"
+    )
+    .get() as { strongs: string } | undefined
+  if (mtGen?.strongs !== 'H7225') errors.push(`MT Gen 1:1 first word should be H7225, got ${JSON.stringify(mtGen)}`)
+
+  const naJohn = db
+    .prepare(
+      "SELECT COUNT(*) n FROM original_tokens WHERE edition='NA' AND book_id='John' AND chapter=1 AND verse=1 AND strongs='G3056'"
+    )
+    .get() as { n: number }
+  if (naJohn.n < 1) errors.push('NA John 1:1 should contain G3056 (λόγος)')
+
+  // TR vs Critical must actually differ — the Comma Johanneum (1 John 5:7) is in TR, not NA.
+  const trComma = (
+    db.prepare("SELECT COUNT(*) n FROM original_tokens WHERE edition='TR' AND book_id='1John' AND chapter=5 AND verse=7").get() as { n: number }
+  ).n
+  const naComma = (
+    db.prepare("SELECT COUNT(*) n FROM original_tokens WHERE edition='NA' AND book_id='1John' AND chapter=5 AND verse=7").get() as { n: number }
+  ).n
+  if (!(trComma > naComma)) errors.push(`TR 1John 5:7 (${trComma}) should have more words than NA (${naComma})`)
 
   db.close()
 

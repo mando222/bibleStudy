@@ -98,6 +98,22 @@ export interface ConcordanceOptions {
   offset?: number
 }
 
+/** A selectable original-language edition for the interlinear. */
+export interface Edition {
+  id: string
+  name: string
+  language: string // 'hbo' | 'grc'
+  testament: 'OT' | 'NT'
+}
+
+export interface InterlinearContent {
+  book: string
+  chapter: number
+  edition: string
+  direction: TextDirection
+  verses: { verse: number; tokens: VerseToken[] }[]
+}
+
 // ---- User data (notes + highlighting), stored in a separate user.sqlite ----
 
 export type HighlightColor = 'yellow' | 'green' | 'blue' | 'pink' | 'orange'
@@ -132,6 +148,8 @@ export interface BibleApi {
   getChapter(ref: ChapterRef): Promise<ChapterContent>
   getStrongs(id: string): Promise<StrongsEntry | null>
   getConcordance(strongs: string, opts?: ConcordanceOptions): Promise<ConcordanceResponse>
+  listEditions(): Promise<Edition[]>
+  getInterlinear(book: string, chapter: number, edition: string): Promise<InterlinearContent>
   search(query: SearchQuery): Promise<SearchResponse>
 
   listHighlights(ref: ChapterRef): Promise<Highlight[]>

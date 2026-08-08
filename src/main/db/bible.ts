@@ -14,7 +14,9 @@ import type {
   SearchHit,
   ConcordanceOptions,
   ConcordanceResponse,
-  ConcordanceHit
+  ConcordanceHit,
+  Edition,
+  InterlinearContent
 } from '../../shared/types'
 
 let db: DatabaseSync | null = null
@@ -210,6 +212,56 @@ function markSurfaces(text: string, surfaces: string): string {
     out = out.replace(new RegExp(`\\b(${esc})\\b`, 'gi'), '{{$1}}')
   }
   return out
+}
+
+export function listEditions(): Edition[] {
+  if (!isReady()) return []
+  const rows = required()
+    .prepare('SELECT id, name, language, testament FROM editions ORDER BY sort_order')
+    .all() as Record<string, unknown>[]
+  return rows.map((r) => ({
+    id: r.id as string,
+    name: r.name as string,
+    language: r.language as string,
+    testament: r.testament as 'OT' | 'NT'
+  }))
+}
+
+/** The interlinear backbone for a chapter in a chosen original-language edition. */
+export function getInterlinear(book: string, chapter: number, edition: string): InterlinearContent {
+  const d = required()
+  const ed = d.prepare('SELECT language FROM editions WHERE id = ?').get(edition) as
+    | { language: string }
+    | undefined
+  const direction = ed?.language === 'hbo' ? 'rtl' : 'ltr'
+
+  const rows = d
+    .prepare(
+      `SELECT verse, position, original, translit, strongs, morph, gloss
+       FROM original_tokens WHERE edition = ? AND book_id = ? AND chapter = ? ORDER BY verse, position`
+    )
+    .all(edition, book, chapter) as Record<string, unknown>[]
+
+  const byVerse = new Map<number, InterlinearContent['verses'][number]['tokens']>()
+  for (const r of rows) {
+    const v = r.verse as number
+    if (!byVerse.has(v)) byVerse.set(v, [])
+    byVerse.get(v)!.push({
+      position: r.position as number,
+      surface: (r.gloss as string) ?? '', // English gloss under the word
+      trailer: ' ',
+      strongs: (r.strongs as string) ?? null,
+      lemma: r.original as string, // the Greek/Hebrew word (shown prominently)
+      translit: (r.translit as string) ?? null,
+      morph: (r.morph as string) ?? null,
+      gloss: (r.gloss as string) ?? null
+    })
+  }
+  const verses = [...byVerse.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([verse, tokens]) => ({ verse, tokens }))
+
+  return { book, chapter, edition, direction, verses }
 }
 
 export function search(q: SearchQuery): SearchResponse {

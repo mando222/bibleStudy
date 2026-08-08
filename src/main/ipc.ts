@@ -16,6 +16,10 @@ export function registerIpc(): void {
   ipcMain.handle('bible:getConcordance', (_e, strongs: string, opts) =>
     bible.getConcordance(strongs, opts)
   )
+  ipcMain.handle('bible:listEditions', () => bible.listEditions())
+  ipcMain.handle('bible:getInterlinear', (_e, book: string, chapter: number, edition: string) =>
+    bible.getInterlinear(book, chapter, edition)
+  )
   ipcMain.handle('bible:search', (_e, q: SearchQuery) => bible.search(q))
 
   ipcMain.handle('user:listHighlights', (_e, ref: ChapterRef) => user.listHighlights(ref))

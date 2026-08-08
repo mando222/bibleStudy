@@ -1,10 +1,8 @@
-import { useChapter } from '@/hooks/useChapter'
+import { useEditions, useInterlinear } from '@/hooks/useInterlinear'
+import { useAppStore } from '@/store/useAppStore'
+import { BOOK_BY_ID } from '@shared/books'
 import InterlinearVerse from './InterlinearVerse'
 import { BookIcon } from './icons'
-
-// The BSB word-alignment carries the actual original-language text (WLC Hebrew / Nestle-TR Greek),
-// so the interlinear is anchored on it regardless of the reading translation selected.
-const ORIGINAL_SOURCE = 'BSB'
 
 export default function InterlinearReader({
   book,
@@ -13,14 +11,40 @@ export default function InterlinearReader({
   book: string
   chapter: number
 }): JSX.Element {
-  const { data, loading, error } = useChapter(ORIGINAL_SOURCE, book, chapter)
-  const hasOriginal = !!data?.verses.some((v) => v.tokens?.some((t) => t.lemma))
+  const editions = useEditions()
+  const stored = useAppStore((s) => s.interlinearEdition)
+  const setEdition = useAppStore((s) => s.setInterlinearEdition)
+
+  const testament = BOOK_BY_ID[book]?.testament ?? 'NT'
+  const applicable = editions.filter((e) => e.testament === testament)
+  // Use the stored choice if it applies to this testament, else the default (first applicable).
+  const effective = applicable.find((e) => e.id === stored)?.id ?? applicable[0]?.id ?? ''
+
+  const { data, loading, error } = useInterlinear(book, chapter, effective)
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-5xl mx-auto px-8 py-6">
-        <div className="text-[11px] uppercase tracking-wider text-faint mb-5">
-          Interlinear · original Greek / Hebrew — gloss &amp; alignment from BSB
+        <div className="flex items-center gap-3 mb-5">
+          <span className="text-[11px] uppercase tracking-wider text-faint">
+            Interlinear · base text
+          </span>
+          <select
+            value={effective}
+            onChange={(e) => setEdition(e.target.value)}
+            className="bg-elevated border border-line rounded-md text-sm px-2 py-1 text-ink outline-none focus:border-accent"
+          >
+            {applicable.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
+              </option>
+            ))}
+          </select>
+          {data && data.verses.length > 0 && (
+            <span className="text-xs text-faint">
+              {data.direction === 'rtl' ? 'Hebrew · read right-to-left' : 'Greek'}
+            </span>
+          )}
         </div>
 
         {loading ? (
@@ -29,18 +53,22 @@ export default function InterlinearReader({
               <div key={i} className="h-8 rounded bg-line/50" style={{ width: `${80 - (i % 3) * 12}%` }} />
             ))}
           </div>
-        ) : error || !data || !hasOriginal ? (
+        ) : error || !data || data.verses.length === 0 ? (
           <div className="mt-16 flex flex-col items-center text-center">
             <BookIcon className="w-10 h-10 text-faint mb-3" />
-            <p className="text-sm text-ink font-medium">Original text unavailable</p>
+            <p className="text-sm text-ink font-medium">No original text</p>
             <p className="text-sm text-muted max-w-xs mt-1">
-              Original-language data isn&rsquo;t available for this passage yet.
+              This edition doesn&rsquo;t cover this passage.
             </p>
           </div>
         ) : (
-          data.verses.map((v) =>
-            v.tokens && v.tokens.length > 0 ? <InterlinearVerse key={v.verse} v={v} /> : null
-          )
+          data.verses.map((v) => (
+            <InterlinearVerse
+              key={v.verse}
+              v={{ verse: v.verse, text: '', tokens: v.tokens }}
+              rtl={data.direction === 'rtl'}
+            />
+          ))
         )}
       </div>
     </div>
