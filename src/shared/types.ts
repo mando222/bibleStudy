@@ -1,0 +1,144 @@
+// Shared domain + IPC contract types, used by main, preload, and renderer.
+
+export type TextDirection = 'ltr' | 'rtl'
+
+export interface Translation {
+  id: string
+  abbrev: string
+  name: string
+  language: string // ISO code: 'eng', 'hbo', 'grc', ...
+  direction: TextDirection
+  isOriginal: boolean
+  hasStrongs: boolean
+  license: string
+  attribution: string
+}
+
+/** One word within a verse, for Strong's overlay + interlinear. */
+export interface VerseToken {
+  position: number
+  surface: string // the word as printed
+  trailer: string // punctuation/whitespace that follows (for faithful re-rendering)
+  strongs: string | null // e.g. "G26" / "H430"
+  lemma: string | null
+  translit: string | null
+  morph: string | null
+  gloss: string | null
+}
+
+export interface Verse {
+  verse: number
+  text: string
+  tokens: VerseToken[] | null // null when the translation has no word-level data
+}
+
+export interface ChapterRef {
+  translation: string
+  book: string
+  chapter: number
+}
+
+export interface ChapterContent extends ChapterRef {
+  bookName: string
+  direction: TextDirection
+  verses: Verse[]
+}
+
+export interface StrongsEntry {
+  id: string // "G26"
+  language: 'greek' | 'hebrew'
+  lemma: string
+  translit: string
+  pronunciation: string | null
+  definition: string
+  kjvDef: string | null
+  occurrences: number
+}
+
+export interface SearchQuery {
+  text: string
+  translation: string
+  testament?: 'OT' | 'NT' | 'all'
+  book?: string | null
+  limit?: number
+  offset?: number
+}
+
+export interface SearchHit {
+  book: string
+  bookName: string
+  chapter: number
+  verse: number
+  snippet: string // FTS-highlighted excerpt
+}
+
+export interface SearchResponse {
+  total: number
+  hits: SearchHit[]
+}
+
+/** A verse where a given Strong's number occurs (word-study concordance). */
+export interface ConcordanceHit {
+  book: string
+  bookName: string
+  chapter: number
+  verse: number
+  surface: string // the English word(s) that carry this Strong's here
+  snippet: string // full verse text with the matched word(s) marked {{…}}
+}
+
+export interface ConcordanceResponse {
+  total: number
+  hits: ConcordanceHit[]
+}
+
+export interface ConcordanceOptions {
+  translation?: string
+  limit?: number
+  offset?: number
+}
+
+// ---- User data (notes + highlighting), stored in a separate user.sqlite ----
+
+export type HighlightColor = 'yellow' | 'green' | 'blue' | 'pink' | 'orange'
+
+export interface Highlight {
+  id: number
+  translation: string
+  book: string
+  chapter: number
+  verse: number
+  startToken: number | null // null = whole verse
+  endToken: number | null
+  color: HighlightColor
+  createdAt: number
+}
+export type HighlightInput = Omit<Highlight, 'id' | 'createdAt'>
+
+export interface Note {
+  id: number
+  book: string
+  chapter: number
+  verse: number
+  body: string
+  createdAt: number
+  updatedAt: number
+}
+export type NoteInput = { id?: number; book: string; chapter: number; verse: number; body: string }
+
+/** The full API surface exposed on `window.api` via contextBridge. */
+export interface BibleApi {
+  listTranslations(): Promise<Translation[]>
+  getChapter(ref: ChapterRef): Promise<ChapterContent>
+  getStrongs(id: string): Promise<StrongsEntry | null>
+  getConcordance(strongs: string, opts?: ConcordanceOptions): Promise<ConcordanceResponse>
+  search(query: SearchQuery): Promise<SearchResponse>
+
+  listHighlights(ref: ChapterRef): Promise<Highlight[]>
+  saveHighlight(input: HighlightInput): Promise<Highlight>
+  deleteHighlight(id: number): Promise<void>
+
+  listNotes(ref: { book: string; chapter: number }): Promise<Note[]>
+  saveNote(input: NoteInput): Promise<Note>
+  deleteNote(id: number): Promise<void>
+}
