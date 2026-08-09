@@ -225,6 +225,7 @@ export interface AiIndexStatus {
   bibleIndexed: number
   bibleTotal: number
   building: boolean
+  stale?: boolean // indexed by a different embedding model → needs a rebuild
 }
 
 export interface AiApi {

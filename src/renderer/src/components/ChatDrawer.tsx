@@ -17,9 +17,11 @@ export default function ChatDrawer(): JSX.Element {
   const goToVerse = useAppStore((s) => s.goToVerse)
   const pendingContext = useAppStore((s) => s.pendingContext)
   const clearPendingContext = useAppStore((s) => s.clearPendingContext)
+  const savedChat = useAppStore((s) => s.chatMessages)
+  const persistChat = useAppStore((s) => s.setChatMessages)
 
   const [status, setStatus] = useState<AiStatus | null>(null)
-  const [messages, setMessages] = useState<Msg[]>([])
+  const [messages, setMessages] = useState<Msg[]>(() => savedChat)
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   // A stable id per conversation so the main process can keep a KV-cached session and cancel it.
@@ -73,7 +75,7 @@ export default function ChatDrawer(): JSX.Element {
     const unsub = window.ai?.onIndexProgress(setIdx)
     return unsub
   }, [primary])
-  const indexDone = !!idx && idx.bibleTotal > 0 && idx.bibleIndexed >= idx.bibleTotal
+  const indexDone = !!idx && idx.bibleTotal > 0 && idx.bibleIndexed >= idx.bibleTotal && !idx.stale
   const indexPct = idx && idx.bibleTotal ? Math.round((100 * idx.bibleIndexed) / idx.bibleTotal) : 0
 
   const refreshStatus = (): void => {
@@ -94,6 +96,14 @@ export default function ChatDrawer(): JSX.Element {
     } finally {
       setSetupBusy(false)
       refreshStatus()
+      // Build the semantic Bible index in the background so "search by meaning" just works.
+      window.ai
+        ?.indexStatus(primary)
+        .then((s) => {
+          const done = s.bibleTotal > 0 && s.bibleIndexed >= s.bibleTotal && !s.stale
+          if (!done && !s.building) void window.ai?.buildBibleIndex(primary)
+        })
+        .catch(() => undefined)
     }
   }
 
@@ -134,6 +144,33 @@ export default function ChatDrawer(): JSX.Element {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [messages])
+
+  // Persist the transcript once a turn settles (not on every streamed token).
+  useEffect(() => {
+    if (!busy) persistChat(messages)
+  }, [busy, messages, persistChat])
+
+  // Re-run the last question, replacing its answer.
+  const regenerate = async (): Promise<void> => {
+    if (busy || !window.ai) return
+    let idx = messages.length - 1
+    while (idx >= 0 && messages[idx].role !== 'user') idx--
+    if (idx < 0) return
+    const history = messages.slice(0, idx + 1).map((m) => ({ role: m.role, content: m.content }))
+    setMessages([...messages.slice(0, idx + 1), { role: 'assistant', content: '' }])
+    setBusy(true)
+    try {
+      await window.ai.chat(convId, history, ground ? { translation: primary } : null)
+    } catch (e) {
+      setBusy(false)
+      setMessages((prev) => {
+        const copy = [...prev]
+        const last = copy[copy.length - 1]
+        if (last?.role === 'assistant') last.content += `\n\n⚠️ ${e instanceof Error ? e.message : e}`
+        return copy
+      })
+    }
+  }
 
   const send = async (): Promise<void> => {
     const q = input.trim()
@@ -317,7 +354,7 @@ export default function ChatDrawer(): JSX.Element {
                   onClick={() => void window.ai?.buildBibleIndex(primary)}
                   className="text-xs text-accent hover:underline"
                 >
-                  Build index
+                  {idx?.stale ? 'Rebuild index' : 'Build index'}
                 </button>
               )}
             </div>
@@ -346,7 +383,16 @@ export default function ChatDrawer(): JSX.Element {
               </div>
             ) : (
               messages.map((m, i) => (
-                <Bubble key={i} m={m} goToVerse={goToVerse} />
+                <Bubble
+                  key={i}
+                  m={m}
+                  goToVerse={goToVerse}
+                  onRegenerate={
+                    m.role === 'assistant' && i === messages.length - 1 && !busy
+                      ? regenerate
+                      : undefined
+                  }
+                />
               ))
             )}
             {busy && <div className="text-xs text-faint px-1">Thinking…</div>}
@@ -415,10 +461,12 @@ export default function ChatDrawer(): JSX.Element {
 
 function Bubble({
   m,
-  goToVerse
+  goToVerse,
+  onRegenerate
 }: {
   m: Msg
   goToVerse: (b: string, c: number, v: number) => void
+  onRegenerate?: () => void
 }): JSX.Element {
   if (m.role === 'user') {
     return (
@@ -440,13 +488,28 @@ function Bubble({
             {m.citations.slice(0, 8).map((c, i) => (
               <button
                 key={i}
-                onClick={() => goToVerse(c.book, c.chapter, c.verse)}
+                onClick={() => (c.source ? undefined : goToVerse(c.book, c.chapter, c.verse))}
                 title={c.text}
                 className="text-[11px] px-1.5 py-0.5 rounded-md border border-line text-accent hover:bg-accent-soft"
               >
                 {c.source ? c.source : `${c.bookName} ${c.chapter}:${c.verse}`}
               </button>
             ))}
+          </div>
+        )}
+        {m.content && (
+          <div className="flex gap-3 mt-1 px-1 text-[11px] text-faint">
+            <button
+              onClick={() => void navigator.clipboard?.writeText(m.content)}
+              className="hover:text-accent"
+            >
+              Copy
+            </button>
+            {onRegenerate && (
+              <button onClick={onRegenerate} className="hover:text-accent">
+                Regenerate
+              </button>
+            )}
           </div>
         )}
       </div>

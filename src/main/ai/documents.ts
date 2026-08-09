@@ -47,7 +47,7 @@ export async function importDocument(path: string): Promise<AiDoc> {
   const embeddings: number[][] = []
   for (let i = 0; i < chunks.length; i += 16) {
     const batch = chunks.slice(i, i + 16)
-    const vecs = await embed(batch)
+    const vecs = await embed(batch, 'document')
     if (vecs.length !== batch.length)
       throw new Error('Embedding failed — the assistant’s model may still be downloading.')
     embeddings.push(...vecs)
@@ -70,7 +70,7 @@ export async function retrieveDocs(
   qvec?: number[]
 ): Promise<{ text: string; source: string }[]> {
   try {
-    const v = qvec ?? (await embed([query]))[0]
+    const v = qvec ?? (await embed([query], 'query'))[0]
     if (!v) return []
     const { searchChunks } = await import('./vectors')
     return searchChunks(v, k)

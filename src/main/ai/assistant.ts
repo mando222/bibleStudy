@@ -2,17 +2,34 @@ import { retrieveByKeywords } from '../db/bible'
 import { BOOK_BY_ID } from '../../shared/books'
 import { chatTurn, embed } from './provider'
 import { retrieveDocs } from './documents'
+import { retrieveGuide } from './appGuide'
 import { hasBibleIndex, searchBible } from './vectors'
 import type { ChatMessage, ChatCitation } from '../../shared/types'
 
-const SYSTEM =
-  'You are a careful Bible-study assistant inside an offline study app. Ground every factual and ' +
-  "scriptural claim ONLY in the provided Scripture context and the user's active documents — do " +
-  'not rely on memory for quotations or references. Quote verses only if they appear in the ' +
-  'context, and cite them inline as (Book Chapter:Verse). If the context does not contain the ' +
-  'answer, say so plainly (e.g. "The provided passages don\'t address that") instead of guessing, ' +
-  'and never invent or paraphrase verses, references, or numbers. Prefer "I\'m not certain" over a ' +
-  'confident guess. Be concise, warm, and accurate.'
+const APP_INTRO =
+  'You are the careful study assistant built into Open Bible Study — a local, offline desktop app ' +
+  "with multiple translations, Strong's numbers, an interlinear with the original Greek and Hebrew, " +
+  'scholarly lexicons, notes and highlighting, search, and a Divine Names toggle. ' +
+  'When the user asks how to do something in the app, use the "App guide" context to give the exact ' +
+  'steps, and never invent features or menus that are not in that guide. '
+
+// Grounded mode (default): answer only from the retrieved context — for careful study.
+const SYSTEM_GROUNDED =
+  APP_INTRO +
+  'Ground every factual and scriptural claim ONLY in the provided Scripture context and the ' +
+  "user's active documents — do not rely on memory for quotations or references. Quote verses only " +
+  'if they appear in the context, and cite them inline as (Book Chapter:Verse). ' +
+  'If the context does not contain the answer, say so plainly (e.g. "The provided passages don\'t ' +
+  'address that") instead of guessing, and never invent or paraphrase verses, references, or ' +
+  'numbers. Prefer "I\'m not certain" over a confident guess. Be concise, warm, and accurate.'
+
+// General mode (grounding off): answer from your own knowledge, but stay careful with references.
+const SYSTEM_GENERAL =
+  APP_INTRO +
+  'Answer helpfully from your own knowledge as a knowledgeable Bible-study aid, and use any ' +
+  'provided context when it is relevant. When you cite Scripture, use the form (Book Chapter:Verse) ' +
+  'and get references right; if you are unsure of a quotation or reference, say so rather than ' +
+  'inventing it. Be concise, warm, and accurate.'
 
 const STOP = new Set(
   (
@@ -122,13 +139,21 @@ export async function* answer(
   let qvec: number[] | undefined
   if (lastUser) {
     try {
-      qvec = (await embed([lastUser]))[0]
+      qvec = (await embed([lastUser], 'query'))[0]
     } catch {
       qvec = undefined
     }
   }
 
-  // Active user documents (semantic) always contribute; Scripture (hybrid) when grounding is on.
+  // App-guide sections when the question is about using the app; user documents; Scripture.
+  const guideCites: ChatCitation[] = (lastUser ? retrieveGuide(lastUser) : []).map((h) => ({
+    book: '',
+    bookName: h.source,
+    chapter: 0,
+    verse: 0,
+    text: h.text,
+    source: h.source
+  }))
   const docHits = lastUser ? await retrieveDocs(lastUser, 5, qvec) : []
   const docCites: ChatCitation[] = docHits.map((h) => ({
     book: '',
@@ -140,7 +165,7 @@ export async function* answer(
   }))
   const bibleCites =
     grounding && lastUser ? await retrieveBible(lastUser, grounding.translation, qvec) : []
-  const citations = assembleContext([...extraContext, ...docCites, ...bibleCites])
+  const citations = assembleContext([...extraContext, ...guideCites, ...docCites, ...bibleCites])
   yield { citations }
 
   const ctx = citations.length
@@ -152,10 +177,11 @@ export async function* answer(
         .join('\n')
     : ''
   const userPrompt = ctx ? `${ctx}\n\nQuestion: ${lastUser}` : lastUser
+  const system = grounding ? SYSTEM_GROUNDED : SYSTEM_GENERAL
 
   for await (const tok of chatTurn({
     conversationId,
-    system: SYSTEM,
+    system,
     priorTurns,
     userPrompt,
     signal

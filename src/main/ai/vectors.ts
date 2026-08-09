@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import * as sqliteVec from 'sqlite-vec'
 import { app } from 'electron'
 import { join, sep } from 'node:path'
+import { embedModelId } from './provider'
 import type { AiDoc } from '../../shared/types'
 
 // A separate ai.sqlite (userData) holds the RAG document store + vector index.
@@ -33,13 +34,41 @@ export function aiDb(): DatabaseSync {
   return db
 }
 
+function metaGet(key: string): string | undefined {
+  return (aiDb().prepare('SELECT value FROM meta WHERE key=?').get(key) as { value: string } | undefined)
+    ?.value
+}
+function metaSet(key: string, value: string): void {
+  aiDb().prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(key, value)
+}
+
+/** True when the stored index was built by the model we're about to query with. */
+function indexModelMatches(): boolean {
+  const cur = metaGet('embed_model')
+  return cur != null && cur === embedModelId()
+}
+
+/** Forget the recorded embedding identity so the next write re-initializes it (used on rebuild). */
+export function resetEmbedMeta(): void {
+  const d = aiDb()
+  d.prepare("DELETE FROM meta WHERE key IN ('dim','embed_model')").run()
+}
+
 function ensureVecTable(dim: number): void {
   const d = aiDb()
-  const cur = d.prepare("SELECT value FROM meta WHERE key='dim'").get() as { value: string } | undefined
-  if (!cur) {
-    d.prepare("INSERT INTO meta (key, value) VALUES ('dim', ?)").run(String(dim))
-  } else if (Number(cur.value) !== dim) {
-    throw new Error(`Embedding dimension changed (${cur.value} → ${dim}). Remove and re-import documents.`)
+  const model = embedModelId()
+  const curDim = metaGet('dim')
+  const curModel = metaGet('embed_model')
+  if (!curDim) {
+    metaSet('dim', String(dim))
+    metaSet('embed_model', model)
+  } else {
+    if (Number(curDim) !== dim)
+      throw new Error(`Embedding dimension changed (${curDim} → ${dim}). Remove and re-import documents.`)
+    // A different model of the same dimension produces incomparable vectors — refuse silently-wrong writes.
+    if (curModel && curModel !== model)
+      throw new Error(`Embedding model changed (${curModel} → ${model}). Rebuild the index and re-import documents.`)
+    if (!curModel) metaSet('embed_model', model)
   }
   d.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS chunk_vec USING vec0(embedding float[${dim}])`)
 }
@@ -65,14 +94,19 @@ export function addChunks(docId: string, items: { text: string; embedding: numbe
   d.exec('COMMIT')
 }
 
-/** KNN over ACTIVE documents' chunks. */
+/** KNN over ACTIVE documents' chunks. Skips (FTS-only fallback) if the index model differs. */
 export function searchChunks(queryEmbedding: number[], k = 5): { text: string; source: string }[] {
   const d = aiDb()
   const hasVec = d.prepare("SELECT name FROM sqlite_master WHERE name='chunk_vec'").get()
-  if (!hasVec) return []
-  const near = d
-    .prepare('SELECT rowid, distance FROM chunk_vec WHERE embedding MATCH ? ORDER BY distance LIMIT ?')
-    .all(JSON.stringify(queryEmbedding), k * 5) as { rowid: number; distance: number }[]
+  if (!hasVec || !indexModelMatches()) return []
+  let near: { rowid: number; distance: number }[]
+  try {
+    near = d
+      .prepare('SELECT rowid, distance FROM chunk_vec WHERE embedding MATCH ? ORDER BY distance LIMIT ?')
+      .all(JSON.stringify(queryEmbedding), k * 5) as { rowid: number; distance: number }[]
+  } catch {
+    return [] // e.g. a dimension mismatch — fall back to keyword retrieval
+  }
   const getChunk = d.prepare(
     'SELECT c.text AS text, dd.name AS name, dd.active AS active FROM chunks c JOIN documents dd ON dd.id = c.doc_id WHERE c.id = ?'
   )
@@ -117,6 +151,29 @@ export function indexedCount(translation: string): number {
   }).n
 }
 
+/** True when a translation is indexed but by a different embedding model (needs a rebuild). */
+export function bibleIndexStale(translation: string): boolean {
+  return indexedCount(translation) > 0 && !indexModelMatches()
+}
+
+/** Drop a translation's semantic verse index (before rebuilding after a model change). */
+export function clearBibleIndex(translation: string): void {
+  const d = aiDb()
+  if (!d.prepare("SELECT name FROM sqlite_master WHERE name='bible_meta'").get()) return
+  const ids = (
+    d.prepare('SELECT rowid FROM bible_meta WHERE translation = ?').all(translation) as {
+      rowid: number
+    }[]
+  ).map((r) => r.rowid)
+  d.exec('BEGIN')
+  if (d.prepare("SELECT name FROM sqlite_master WHERE name='bible_vec'").get()) {
+    const del = d.prepare('DELETE FROM bible_vec WHERE rowid = ?')
+    for (const id of ids) del.run(BigInt(id))
+  }
+  d.prepare('DELETE FROM bible_meta WHERE translation = ?').run(translation)
+  d.exec('COMMIT')
+}
+
 export function indexedVerseKeys(translation: string): Set<string> {
   const d = aiDb()
   if (!d.prepare("SELECT name FROM sqlite_master WHERE name='bible_meta'").get()) return new Set()
@@ -152,9 +209,15 @@ export function searchBible(
 ): { book: string; chapter: number; verse: number; text: string }[] {
   const d = aiDb()
   if (!d.prepare("SELECT name FROM sqlite_master WHERE name='bible_vec'").get()) return []
-  const near = d
-    .prepare('SELECT rowid, distance FROM bible_vec WHERE embedding MATCH ? ORDER BY distance LIMIT ?')
-    .all(JSON.stringify(queryEmbedding), k * 4) as { rowid: number; distance: number }[]
+  if (!indexModelMatches()) return [] // built by a different model → skip semantic, use FTS
+  let near: { rowid: number; distance: number }[]
+  try {
+    near = d
+      .prepare('SELECT rowid, distance FROM bible_vec WHERE embedding MATCH ? ORDER BY distance LIMIT ?')
+      .all(JSON.stringify(queryEmbedding), k * 4) as { rowid: number; distance: number }[]
+  } catch {
+    return []
+  }
   const get = d.prepare(
     'SELECT translation, book, chapter, verse, text FROM bible_meta WHERE rowid = ?'
   )

@@ -29,6 +29,7 @@ interface ChatState {
   context: any
   modelPath: string
   conversationId: string
+  system: string
   turns: number // user turns already processed by this session
 }
 let chat: ChatState | null = null
@@ -124,6 +125,7 @@ export async function* chatTurn(opts: {
     chat &&
     chat.conversationId === opts.conversationId &&
     chat.modelPath === opts.modelFile &&
+    chat.system === opts.system &&
     chat.turns === priorUserTurns
 
   if (!warm) {
@@ -150,6 +152,7 @@ export async function* chatTurn(opts: {
       context,
       modelPath: opts.modelFile,
       conversationId: opts.conversationId,
+      system: opts.system,
       turns: priorUserTurns
     }
   }

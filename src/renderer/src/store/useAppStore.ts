@@ -1,9 +1,16 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Translation } from '@shared/types'
+import type { Translation, ChatCitation } from '@shared/types'
 
 export type Theme = 'light' | 'dark'
 export type StudyTab = 'lexicon' | 'notes' | 'search' | 'apparatus'
+
+/** One turn in the assistant transcript (persisted so a conversation survives a restart). */
+export interface ChatMsg {
+  role: 'user' | 'assistant'
+  content: string
+  citations?: ChatCitation[]
+}
 
 // "Restore the divine names": render the Hebrew names in place of their traditional English
 // forms (LORD → Yahweh, God → Elohim, …). Applied through the word-replace map, so it only
@@ -70,6 +77,9 @@ interface AppState {
   pendingContext: PendingContext | null
   askAssistantAbout: (ctx: PendingContext) => void
   clearPendingContext: () => void
+  // Persisted assistant transcript (restored on relaunch).
+  chatMessages: ChatMsg[]
+  setChatMessages: (m: ChatMsg[]) => void
 
   // Reading selection
   primary: string // primary translation id
@@ -141,6 +151,8 @@ export const useAppStore = create<AppState>()(
       pendingContext: null,
       askAssistantAbout: (pendingContext) => set({ pendingContext, assistantOpen: true }),
       clearPendingContext: () => set({ pendingContext: null }),
+      chatMessages: [],
+      setChatMessages: (chatMessages) => set({ chatMessages }),
 
       primary: 'KJV',
       parallels: ['KJV'],
@@ -229,7 +241,8 @@ export const useAppStore = create<AppState>()(
         interlinearParses: s.interlinearParses,
         chronological: s.chronological,
         divineNames: s.divineNames,
-        divineNameConfig: s.divineNameConfig
+        divineNameConfig: s.divineNameConfig,
+        chatMessages: s.chatMessages
       })
     }
   )

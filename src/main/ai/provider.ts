@@ -81,16 +81,41 @@ export async function disposeChat(): Promise<void> {
   await llamacpp.disposeChat()
 }
 
-export async function embed(texts: string[]): Promise<number[][]> {
+// nomic-embed-text expects task-instruction prefixes: documents indexed as "search_document:"
+// and queries as "search_query:". Applied to nomic models (our bundled default + Ollama's nomic).
+type EmbedRole = 'document' | 'query'
+const PREFIX: Record<EmbedRole, string> = {
+  document: 'search_document: ',
+  query: 'search_query: '
+}
+
+export async function embed(texts: string[], role: EmbedRole = 'document'): Promise<number[][]> {
   const active = await activeProvider()
   if (active === 'bundled') {
-    return modelPresent(MODELS.embed) ? llamacpp.embed(modelPath(MODELS.embed), texts) : []
+    if (!modelPresent(MODELS.embed)) return []
+    return llamacpp.embed(modelPath(MODELS.embed), texts.map((t) => PREFIX[role] + t))
   }
   if (active === 'ollama') {
     const cfg = getConfig()
-    return ollamaEmbed(cfg.baseUrl, cfg.embedModel, texts)
+    const inputs = /nomic/i.test(cfg.embedModel) ? texts.map((t) => PREFIX[role] + t) : texts
+    return ollamaEmbed(cfg.baseUrl, cfg.embedModel, inputs)
   }
   return []
+}
+
+/**
+ * A stable identity for the active embedding model, so the vector store can refuse to compare
+ * vectors made by different models (silently wrong retrieval). The ":sd" scheme tag marks the
+ * search_document/query prefixing above — bumping it invalidates indexes built the old way.
+ */
+export function embedModelId(): string {
+  const cfg = getConfig()
+  const scheme = 'sd1'
+  if (cfg.provider === 'ollama') return `ollama:${cfg.embedModel}:${scheme}`
+  if (cfg.provider === 'bundled') return `bundled:${MODELS.embed.id}:${scheme}`
+  return modelPresent(MODELS.embed)
+    ? `bundled:${MODELS.embed.id}:${scheme}`
+    : `ollama:${cfg.embedModel}:${scheme}`
 }
 
 export async function status(): Promise<AiStatus> {
