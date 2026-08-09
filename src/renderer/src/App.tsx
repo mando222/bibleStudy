@@ -10,8 +10,9 @@ import QuickReplaceModal from '@/components/QuickReplaceModal'
 import ChatDrawer from '@/components/ChatDrawer'
 import ActivityRail from '@/components/ActivityRail'
 import WordsView from '@/components/WordsView'
-import ActivityStub from '@/components/ActivityStub'
-import { GenealogyIcon, TimelineIcon, MapPinIcon } from '@/components/icons'
+import GenealogiesView from '@/components/GenealogiesView'
+import TimelinesView from '@/components/TimelinesView'
+import MapsView from '@/components/MapsView'
 
 export default function App(): JSX.Element {
   const theme = useAppStore((s) => s.theme)
@@ -44,30 +45,9 @@ export default function App(): JSX.Element {
         <div className="flex-1 min-w-0">
           {activity === 'bible' && <BibleWorkspace />}
           {activity === 'words' && <WordsView />}
-          {activity === 'genealogies' && (
-            <ActivityStub
-              Icon={GenealogyIcon}
-              title="Genealogies"
-              blurb="Trace the family trees of Scripture — who descended from whom, from Adam through the patriarchs to Jesus — each name linked back to its verses."
-              sources="Theographic knowledge graph — biblical people & relationships (CC-BY-SA)."
-            />
-          )}
-          {activity === 'timelines' && (
-            <ActivityStub
-              Icon={TimelineIcon}
-              title="Timelines"
-              blurb="A zoomable timeline of biblical events and people, with each event linked to the passage that records it."
-              sources="Theographic events — dates, participants, and verse links (CC-BY-SA)."
-            />
-          )}
-          {activity === 'maps' && (
-            <ActivityStub
-              Icon={MapPinIcon}
-              title="Maps"
-              blurb="Interactive maps of the places in Scripture — where events happened, with the verses that mention each location. Fully offline."
-              sources="OpenBible.info geocoding (CC-BY) + Natural Earth basemap (public domain)."
-            />
-          )}
+          {activity === 'genealogies' && <GenealogiesView />}
+          {activity === 'timelines' && <TimelinesView />}
+          {activity === 'maps' && <MapsView />}
         </div>
       </div>
       <AboutModal />

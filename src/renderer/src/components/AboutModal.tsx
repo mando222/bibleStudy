@@ -27,6 +27,18 @@ const ORIGINALS: Source[] = [
   { what: 'Verse-text distribution', detail: 'helloao Free Use Bible API', license: 'Open', url: 'https://bible.helloao.org' }
 ]
 
+const STUDY_DATA: Source[] = [
+  { what: 'People, places & events', detail: 'Genealogies, Maps & Timelines — with verse references', license: 'CC BY-SA 4.0 — Theographic Bible Metadata', url: 'https://github.com/robertrouse/theographic-bible-metadata' },
+  { what: 'Place coordinates', detail: 'Biblical geocoding (via Theographic)', license: 'CC BY — OpenBible.info', url: 'https://www.openbible.info/geo/' },
+  { what: "Easton's Bible Dictionary", detail: 'Public-domain person summaries', license: 'Public Domain (1897)', url: 'https://www.ccel.org/ccel/easton/ebd2.html' }
+]
+
+const AI: Source[] = [
+  { what: 'Llama 3.2 (1B / 3B) Instruct', detail: 'Assistant — downloaded on demand', license: 'Llama 3.2 Community License — Meta', url: 'https://huggingface.co/meta-llama' },
+  { what: 'Qwen2.5 7B Instruct', detail: 'Assistant (Quality tier)', license: 'Apache 2.0 — Alibaba', url: 'https://huggingface.co/Qwen' },
+  { what: 'Nomic Embed Text v1.5', detail: 'Embeddings for semantic search', license: 'Apache 2.0 — Nomic AI', url: 'https://huggingface.co/nomic-ai' }
+]
+
 export default function AboutModal(): JSX.Element | null {
   const open = useAppStore((s) => s.aboutOpen)
   const setOpen = useAppStore((s) => s.setAboutOpen)
@@ -156,6 +168,18 @@ export default function AboutModal(): JSX.Element | null {
 
           <Section title="Original languages & lexicons">
             {ORIGINALS.map((s) => (
+              <SourceRow key={s.what} s={s} />
+            ))}
+          </Section>
+
+          <Section title="Study data (people · places · events)">
+            {STUDY_DATA.map((s) => (
+              <SourceRow key={s.what} s={s} />
+            ))}
+          </Section>
+
+          <Section title="AI assistant (optional, downloaded on demand)">
+            {AI.map((s) => (
               <SourceRow key={s.what} s={s} />
             ))}
           </Section>

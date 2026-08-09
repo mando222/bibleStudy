@@ -301,6 +301,44 @@ export interface LexBrowseResult {
   entries: LexBrowseEntry[]
 }
 
+// ---- Genealogies / Maps / Timelines (Theographic) ----
+export interface PersonRef {
+  id: number
+  name: string
+}
+export interface PersonListItem {
+  id: number
+  name: string
+  gender: string | null
+  birthYear: number | null
+  deathYear: number | null
+  verseCount: number
+}
+export interface PersonDetail extends PersonListItem {
+  summary: string | null
+  father: PersonRef | null
+  mother: PersonRef | null
+  spouses: PersonRef[]
+  children: PersonRef[]
+  verses: string[] // "Book.ch.v"
+}
+export interface PlaceItem {
+  id: number
+  name: string
+  lat: number
+  lon: number
+  featureType: string | null
+  verseCount: number
+}
+export interface EventItem {
+  id: number
+  title: string
+  startYear: number | null
+  participants: PersonRef[]
+  places: PersonRef[]
+  verses: string[]
+}
+
 /** The full API surface exposed on `window.api` via contextBridge. */
 export interface BibleApi {
   version(): Promise<string>
@@ -308,6 +346,11 @@ export interface BibleApi {
   getChapter(ref: ChapterRef): Promise<ChapterContent>
   getStrongs(id: string): Promise<StrongsEntry | null>
   browseLexicon(opts: LexBrowseOptions): Promise<LexBrowseResult>
+  getPeople(query?: string, limit?: number): Promise<PersonListItem[]>
+  getPerson(id: number): Promise<PersonDetail | null>
+  getPlaces(): Promise<PlaceItem[]>
+  getPlaceVerses(id: number): Promise<string[]>
+  getEvents(): Promise<EventItem[]>
   getLexiconEntries(strongs: string): Promise<LexiconGroup[]>
   getLexiconByWord(word: string): Promise<string | null>
   getConcordance(strongs: string, opts?: ConcordanceOptions): Promise<ConcordanceResponse>

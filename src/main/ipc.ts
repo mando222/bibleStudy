@@ -1,5 +1,6 @@
 import { ipcMain, dialog, BrowserWindow, app } from 'electron'
 import * as bible from './db/bible'
+import * as graph from './db/graph'
 import * as user from './db/user'
 import type {
   ChapterRef,
@@ -20,6 +21,11 @@ export function registerIpc(): void {
   )
   ipcMain.handle('bible:getStrongs', (_e, id: string) => bible.getStrongs(id))
   ipcMain.handle('bible:browseLexicon', (_e, opts) => bible.browseLexicon(opts))
+  ipcMain.handle('bible:getPeople', (_e, q: string, limit: number) => graph.getPeople(q, limit))
+  ipcMain.handle('bible:getPerson', (_e, id: number) => graph.getPerson(id))
+  ipcMain.handle('bible:getPlaces', () => graph.getPlaces())
+  ipcMain.handle('bible:getPlaceVerses', (_e, id: number) => graph.getPlaceVerses(id))
+  ipcMain.handle('bible:getEvents', () => graph.getEvents())
   ipcMain.handle('bible:getLexiconEntries', (_e, strongs: string) =>
     bible.getLexiconEntries(strongs)
   )

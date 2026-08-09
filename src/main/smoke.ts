@@ -7,6 +7,7 @@ import {
   getLexiconEntries,
   getChapterApparatus
 } from './db/bible'
+import { getPeople, getPerson, getPlaces, getEvents } from './db/graph'
 import { aiDb } from './ai/vectors'
 import { openUserDb } from './db/user'
 
@@ -63,6 +64,23 @@ export async function runSmokeTest(): Promise<void> {
       () => {
         if (!getChapter({ translation: 'MT', book: 'Gen', chapter: 1 }).verses.length)
           throw new Error('no MT Genesis')
+      }
+    ],
+    [
+      'Genealogies: person → verse references (Moses)',
+      () => {
+        const moses = getPeople('Moses', 5)[0]
+        if (!moses) throw new Error('no Moses')
+        const detail = getPerson(moses.id)
+        if (!detail || detail.verses.length < 50) throw new Error('Moses verse refs missing')
+      }
+    ],
+    ['Maps: geolocated places', () => { if (getPlaces().length < 500) throw new Error('few places') }],
+    [
+      'Timelines: events carry verse references',
+      () => {
+        const ev = getEvents()
+        if (ev.length < 100 || !ev.some((e) => e.verses.length)) throw new Error('events missing verses')
       }
     ],
     ['sqlite-vec native extension loads', () => aiDb()],

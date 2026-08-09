@@ -57,6 +57,12 @@ function required(): DatabaseSync {
   return db as DatabaseSync
 }
 
+/** The bundled DB handle (opening it if needed), for sibling query modules. Null if absent. */
+export function bibleDb(): DatabaseSync | null {
+  if (!db) openBibleDb()
+  return db
+}
+
 export function listTranslations(): Translation[] {
   if (!isReady()) return []
   const rows = required()
