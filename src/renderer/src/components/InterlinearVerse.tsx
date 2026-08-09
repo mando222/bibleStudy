@@ -2,8 +2,18 @@ import type { Verse } from '@shared/types'
 import { useAppStore } from '@/store/useAppStore'
 
 /** Word-by-word interlinear: each word is a vertical cell —
- *  original (Greek/Hebrew) / transliteration / English gloss / Strong's / morphology. */
-export default function InterlinearVerse({ v, rtl }: { v: Verse; rtl?: boolean }): JSX.Element {
+ *  original (Greek/Hebrew) / transliteration / English gloss / stacked translations / Strong's / morphology. */
+export default function InterlinearVerse({
+  v,
+  rtl,
+  stack = [],
+  labels = {}
+}: {
+  v: Verse
+  rtl?: boolean
+  stack?: string[]
+  labels?: Record<string, string>
+}): JSX.Element {
   const selectStrongs = useAppStore((s) => s.selectStrongs)
   const selected = useAppStore((s) => s.selectedStrongs)
 
@@ -33,6 +43,12 @@ export default function InterlinearVerse({ v, rtl }: { v: Verse; rtl?: boolean }
             )}
             {tok.translit && <span className="text-xs italic text-muted mt-0.5">{tok.translit}</span>}
             <span className="text-xs text-ink mt-0.5">{tok.surface}</span>
+            {stack.map((tid) => (
+              <span key={tid} className="text-xs text-ink/80 mt-0.5">
+                <span className="text-[9px] uppercase text-faint mr-1">{labels[tid] ?? tid}</span>
+                {tok.aligned?.[tid] ?? '·'}
+              </span>
+            ))}
             {tok.strongs && (
               <span className="text-[10px] text-accent tabular-nums mt-0.5">{tok.strongs}</span>
             )}

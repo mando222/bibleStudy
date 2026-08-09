@@ -14,13 +14,20 @@ export default function InterlinearReader({
   const editions = useEditions()
   const stored = useAppStore((s) => s.interlinearEdition)
   const setEdition = useAppStore((s) => s.setInterlinearEdition)
+  const translations = useAppStore((s) => s.translations)
+  const stack = useAppStore((s) => s.interlinearStack)
+  const toggleStack = useAppStore((s) => s.toggleInterlinearStack)
 
   const testament = BOOK_BY_ID[book]?.testament ?? 'NT'
   const applicable = editions.filter((e) => e.testament === testament)
   // Use the stored choice if it applies to this testament, else the default (first applicable).
   const effective = applicable.find((e) => e.id === stored)?.id ?? applicable[0]?.id ?? ''
 
-  const { data, loading, error } = useInterlinear(book, chapter, effective)
+  // Translations that carry Strong's tags can be aligned word-for-word onto the original.
+  const stackable = translations.filter((t) => t.hasStrongs)
+  const labels = Object.fromEntries(stackable.map((t) => [t.id, t.abbrev]))
+
+  const { data, loading, error } = useInterlinear(book, chapter, effective, stack)
 
   return (
     <div className="h-full overflow-y-auto">
@@ -45,6 +52,28 @@ export default function InterlinearReader({
               {data.direction === 'rtl' ? 'Hebrew · read right-to-left' : 'Greek'}
             </span>
           )}
+          {stackable.length > 0 && (
+            <div className="flex items-center gap-1.5 ml-auto">
+              <span className="text-[11px] uppercase tracking-wider text-faint">Stack</span>
+              {stackable.map((t) => {
+                const on = stack.includes(t.id)
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => toggleStack(t.id)}
+                    title={`Align ${t.name} under each word (by Strong's)`}
+                    className={`text-xs px-2 py-1 rounded-md border transition-colors ${
+                      on
+                        ? 'bg-accent-soft border-accent text-accent'
+                        : 'border-line text-muted hover:bg-elevated'
+                    }`}
+                  >
+                    {t.abbrev}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
 
         {loading ? (
@@ -67,6 +96,8 @@ export default function InterlinearReader({
               key={v.verse}
               v={{ verse: v.verse, text: '', tokens: v.tokens }}
               rtl={data.direction === 'rtl'}
+              stack={stack}
+              labels={labels}
             />
           ))
         )}

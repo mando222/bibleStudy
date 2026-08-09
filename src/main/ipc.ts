@@ -25,8 +25,10 @@ export function registerIpc(): void {
     bible.getConcordance(strongs, opts)
   )
   ipcMain.handle('bible:listEditions', () => bible.listEditions())
-  ipcMain.handle('bible:getInterlinear', (_e, book: string, chapter: number, edition: string) =>
-    bible.getInterlinear(book, chapter, edition)
+  ipcMain.handle(
+    'bible:getInterlinear',
+    (_e, book: string, chapter: number, edition: string, translations?: string[]) =>
+      bible.getInterlinear(book, chapter, edition, translations ?? [])
   )
   ipcMain.handle('bible:getChapterApparatus', (_e, book: string, chapter: number) =>
     bible.getChapterApparatus(book, chapter)

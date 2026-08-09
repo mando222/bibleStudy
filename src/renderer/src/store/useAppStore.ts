@@ -70,6 +70,8 @@ interface AppState {
   toggleInterlinear: () => void
   interlinearEdition: string // '' = auto (Masoretic for OT, Critical for NT)
   setInterlinearEdition: (id: string) => void
+  interlinearStack: string[] // translation ids stacked under each original word
+  toggleInterlinearStack: (id: string) => void
   selectedStrongs: string | null
   studyTab: StudyTab
 
@@ -132,6 +134,11 @@ export const useAppStore = create<AppState>()(
       toggleInterlinear: () => set({ interlinear: !get().interlinear }),
       interlinearEdition: '',
       setInterlinearEdition: (interlinearEdition) => set({ interlinearEdition }),
+      interlinearStack: [],
+      toggleInterlinearStack: (id) => {
+        const cur = get().interlinearStack
+        set({ interlinearStack: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] })
+      },
       selectedStrongs: null,
       studyTab: 'lexicon',
 
@@ -197,6 +204,7 @@ export const useAppStore = create<AppState>()(
         strongsVisible: s.strongsVisible,
         interlinear: s.interlinear,
         interlinearEdition: s.interlinearEdition,
+        interlinearStack: s.interlinearStack,
         chronological: s.chronological,
         divineNames: s.divineNames,
         divineNameConfig: s.divineNameConfig

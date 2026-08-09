@@ -271,7 +271,12 @@ export function listEditions(): Edition[] {
 }
 
 /** The interlinear backbone for a chapter in a chosen original-language edition. */
-export function getInterlinear(book: string, chapter: number, edition: string): InterlinearContent {
+export function getInterlinear(
+  book: string,
+  chapter: number,
+  edition: string,
+  translations: string[] = []
+): InterlinearContent {
   const d = required()
   const ed = d.prepare('SELECT language FROM editions WHERE id = ?').get(edition) as
     | { language: string }
@@ -300,6 +305,39 @@ export function getInterlinear(book: string, chapter: number, edition: string): 
       gloss: (r.gloss as string) ?? null
     })
   }
+
+  // Stack English translations under each original word, aligned by Strong's number within a verse.
+  for (const tid of translations) {
+    const trows = d
+      .prepare(
+        `SELECT verse, surface, strongs FROM verse_tokens
+         WHERE translation_id = ? AND book_id = ? AND chapter = ? AND strongs IS NOT NULL
+         ORDER BY verse, position`
+      )
+      .all(tid, book, chapter) as { verse: number; surface: string; strongs: string }[]
+    const queues = new Map<number, Map<string, string[]>>() // verse → strongs → surfaces (in order)
+    for (const r of trows) {
+      let q = queues.get(r.verse)
+      if (!q) {
+        q = new Map()
+        queues.set(r.verse, q)
+      }
+      const arr = q.get(r.strongs)
+      if (arr) arr.push(r.surface)
+      else q.set(r.strongs, [r.surface])
+    }
+    for (const [verse, tokens] of byVerse) {
+      const q = queues.get(verse)
+      if (!q) continue
+      for (const tok of tokens) {
+        if (!tok.strongs) continue
+        const arr = q.get(tok.strongs)
+        const w = arr?.shift()
+        if (w) tok.aligned = { ...(tok.aligned ?? {}), [tid]: w }
+      }
+    }
+  }
+
   const verses = [...byVerse.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([verse, tokens]) => ({ verse, tokens }))

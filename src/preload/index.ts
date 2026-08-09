@@ -8,8 +8,8 @@ const api: BibleApi = {
   getLexiconEntries: (strongs) => ipcRenderer.invoke('bible:getLexiconEntries', strongs),
   getConcordance: (strongs, opts) => ipcRenderer.invoke('bible:getConcordance', strongs, opts),
   listEditions: () => ipcRenderer.invoke('bible:listEditions'),
-  getInterlinear: (book, chapter, edition) =>
-    ipcRenderer.invoke('bible:getInterlinear', book, chapter, edition),
+  getInterlinear: (book, chapter, edition, translations) =>
+    ipcRenderer.invoke('bible:getInterlinear', book, chapter, edition, translations),
   getChapterApparatus: (book, chapter) =>
     ipcRenderer.invoke('bible:getChapterApparatus', book, chapter),
   search: (query) => ipcRenderer.invoke('bible:search', query),

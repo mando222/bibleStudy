@@ -24,6 +24,7 @@ export interface VerseToken {
   translit: string | null
   morph: string | null
   gloss: string | null
+  aligned?: Record<string, string> // interlinear: stacked translation id → aligned word(s)
 }
 
 export interface Verse {
@@ -268,7 +269,12 @@ export interface BibleApi {
   getLexiconEntries(strongs: string): Promise<LexiconGroup[]>
   getConcordance(strongs: string, opts?: ConcordanceOptions): Promise<ConcordanceResponse>
   listEditions(): Promise<Edition[]>
-  getInterlinear(book: string, chapter: number, edition: string): Promise<InterlinearContent>
+  getInterlinear(
+    book: string,
+    chapter: number,
+    edition: string,
+    translations?: string[]
+  ): Promise<InterlinearContent>
   getChapterApparatus(book: string, chapter: number): Promise<VerseVariant[]>
   search(query: SearchQuery): Promise<SearchResponse>
 
