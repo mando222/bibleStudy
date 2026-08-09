@@ -79,6 +79,23 @@ export function getPerson(id: number): PersonDetail | null {
   }
 }
 
+/** The paternal lineage trace: the chain of fathers from the root ancestor down to this person. */
+export function getAncestry(id: number): PersonRef[] {
+  const d = db()
+  const stmt = d.prepare('SELECT id, name, father_id FROM people WHERE id = ?')
+  const chain: PersonRef[] = []
+  const seen = new Set<number>()
+  let cur: number | null = id
+  while (cur != null && !seen.has(cur) && chain.length < 80) {
+    seen.add(cur)
+    const p = stmt.get(cur) as { id: number; name: string; father_id: number | null } | undefined
+    if (!p) break
+    chain.push({ id: p.id, name: p.name })
+    cur = p.father_id ?? null
+  }
+  return chain.reverse() // earliest ancestor first
+}
+
 /** Geolocated places for the map. */
 export function getPlaces(): PlaceItem[] {
   const rows = db()

@@ -348,6 +348,7 @@ export interface BibleApi {
   browseLexicon(opts: LexBrowseOptions): Promise<LexBrowseResult>
   getPeople(query?: string, limit?: number): Promise<PersonListItem[]>
   getPerson(id: number): Promise<PersonDetail | null>
+  getAncestry(id: number): Promise<PersonRef[]>
   getPlaces(): Promise<PlaceItem[]>
   getPlaceVerses(id: number): Promise<string[]>
   getEvents(): Promise<EventItem[]>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { PersonListItem, PersonDetail } from '@shared/types'
+import type { PersonListItem, PersonDetail, PersonRef } from '@shared/types'
 import { useAppStore } from '@/store/useAppStore'
 import { SearchIcon } from './icons'
 import VerseRefs from './VerseRefs'
@@ -17,6 +17,8 @@ export default function GenealogiesView(): JSX.Element {
   const [list, setList] = useState<PersonListItem[]>([])
   const [id, setId] = useState<number | null>(null)
   const [person, setPerson] = useState<PersonDetail | null>(null)
+  const [ancestry, setAncestry] = useState<PersonRef[]>([])
+  const [mode, setMode] = useState<'family' | 'tree'>('family')
   const focusPersonId = useAppStore((s) => s.focusPersonId)
   const clearFocus = useAppStore((s) => s.clearFocus)
 
@@ -36,8 +38,13 @@ export default function GenealogiesView(): JSX.Element {
   }, [q])
 
   useEffect(() => {
-    if (id == null) return setPerson(null)
+    if (id == null) {
+      setPerson(null)
+      setAncestry([])
+      return
+    }
     window.api.getPerson(id).then(setPerson).catch(() => setPerson(null))
+    window.api.getAncestry(id).then(setAncestry).catch(() => setAncestry([]))
   }, [id])
 
   return (
@@ -86,10 +93,57 @@ export default function GenealogiesView(): JSX.Element {
             )}
 
             <div className="mt-5">
-              <div className="text-[11px] uppercase tracking-wider text-faint mb-2">
-                Family tree
+              <div className="flex gap-1 mb-3">
+                {(['family', 'tree'] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setMode(m)}
+                    className={`px-2.5 py-0.5 rounded text-xs border ${
+                      mode === m
+                        ? 'bg-accent-soft border-accent text-accent'
+                        : 'border-line text-muted hover:bg-elevated'
+                    }`}
+                  >
+                    {m === 'family' ? 'Family' : 'Tree'}
+                  </button>
+                ))}
               </div>
-              <FamilyTree person={person} />
+              {mode === 'family' ? (
+                <div>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                    <Rel label="Father" people={person.father ? [person.father] : []} onPick={setId} />
+                    <Rel label="Mother" people={person.mother ? [person.mother] : []} onPick={setId} />
+                    <Rel label="Spouses" people={person.spouses} onPick={setId} />
+                    <Rel label="Children" people={person.children} onPick={setId} />
+                  </div>
+                  {ancestry.length > 1 && (
+                    <div className="mt-4 border-t border-line/60 pt-3">
+                      <div className="text-[11px] uppercase tracking-wider text-faint mb-1.5">
+                        Lineage — {ancestry.length} generations traced from Scripture
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-1 gap-y-1 text-sm leading-relaxed">
+                        {ancestry.map((a, i) => (
+                          <span key={`${a.id}-${i}`} className="flex items-center gap-1">
+                            <button
+                              onClick={() => setId(a.id)}
+                              className={
+                                a.id === person.id
+                                  ? 'text-accent font-semibold'
+                                  : 'text-accent hover:underline'
+                              }
+                            >
+                              {a.name}
+                            </button>
+                            {i < ancestry.length - 1 && <span className="text-faint">→</span>}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <FamilyTree person={person} />
+              )}
             </div>
 
             <div className="mt-6">
@@ -107,6 +161,37 @@ export default function GenealogiesView(): JSX.Element {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function Rel({
+  label,
+  people,
+  onPick
+}: {
+  label: string
+  people: PersonRef[]
+  onPick: (id: number) => void
+}): JSX.Element {
+  return (
+    <div>
+      <div className="text-[11px] uppercase tracking-wider text-faint mb-1">{label}</div>
+      {people.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {people.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => onPick(p.id)}
+              className="text-sm text-accent hover:underline"
+            >
+              {p.name}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <span className="text-sm text-faint">—</span>
+      )}
     </div>
   )
 }

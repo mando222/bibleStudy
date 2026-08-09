@@ -9,6 +9,7 @@ const api: BibleApi = {
   browseLexicon: (opts) => ipcRenderer.invoke('bible:browseLexicon', opts),
   getPeople: (query, limit) => ipcRenderer.invoke('bible:getPeople', query, limit),
   getPerson: (id) => ipcRenderer.invoke('bible:getPerson', id),
+  getAncestry: (id) => ipcRenderer.invoke('bible:getAncestry', id),
   getPlaces: () => ipcRenderer.invoke('bible:getPlaces'),
   getPlaceVerses: (id) => ipcRenderer.invoke('bible:getPlaceVerses', id),
   getEvents: () => ipcRenderer.invoke('bible:getEvents'),

@@ -58,6 +58,7 @@ export async function installDevMock(): Promise<void> {
     browseLexicon: async () => ({ total: 0, entries: [] }),
     getPeople: async () => [],
     getPerson: async () => null,
+    getAncestry: async () => [],
     getPlaces: async () => [],
     getPlaceVerses: async () => [],
     getEvents: async () => [],

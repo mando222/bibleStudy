@@ -23,6 +23,7 @@ export function registerIpc(): void {
   ipcMain.handle('bible:browseLexicon', (_e, opts) => bible.browseLexicon(opts))
   ipcMain.handle('bible:getPeople', (_e, q: string, limit: number) => graph.getPeople(q, limit))
   ipcMain.handle('bible:getPerson', (_e, id: number) => graph.getPerson(id))
+  ipcMain.handle('bible:getAncestry', (_e, id: number) => graph.getAncestry(id))
   ipcMain.handle('bible:getPlaces', () => graph.getPlaces())
   ipcMain.handle('bible:getPlaceVerses', (_e, id: number) => graph.getPlaceVerses(id))
   ipcMain.handle('bible:getEvents', () => graph.getEvents())
