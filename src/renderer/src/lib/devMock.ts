@@ -104,14 +104,34 @@ export async function installDevMock(): Promise<void> {
     },
     listEditions: async () => data.editions ?? [],
     getChapterApparatus: async (book, chapter) => data.apparatus?.[`${book}/${chapter}`] ?? [],
-    getInterlinear: async (book, chapter, edition) =>
-      data.interlinear?.[`${edition}/${book}/${chapter}`] ?? {
+    getInterlinear: async (book, chapter, edition, translations = []) => {
+      const base = data.interlinear?.[`${edition}/${book}/${chapter}`] ?? {
         book,
         chapter,
         edition,
-        direction: 'ltr',
+        direction: 'ltr' as const,
         verses: []
-      },
+      }
+      if (!translations.length) return base
+      // Deep-clone and align stacked translations by Strong's (mirrors the real backend).
+      const out = { ...base, verses: base.verses.map((v) => ({ ...v, tokens: v.tokens.map((t) => ({ ...t })) })) }
+      for (const tid of translations) {
+        const ch = data.chapters[`${tid}/${book}/${chapter}`]
+        if (!ch) continue
+        for (const v of out.verses) {
+          const src = ch.verses.find((x) => x.verse === v.verse)
+          const q = new Map<string, string[]>()
+          for (const tok of src?.tokens ?? [])
+            if (tok.strongs) (q.get(tok.strongs) ?? q.set(tok.strongs, []).get(tok.strongs)!).push(tok.surface)
+          for (const t of v.tokens) {
+            if (!t.strongs) continue
+            const w = q.get(t.strongs)?.shift()
+            if (w) t.aligned = { ...(t.aligned ?? {}), [tid]: w }
+          }
+        }
+      }
+      return out
+    },
     search: async (q) => {
       const term = q.text.trim().toLowerCase()
       if (!term) return { total: 0, hits: [] }
