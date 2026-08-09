@@ -1,5 +1,12 @@
 import { app } from 'electron'
-import { getChapter, getStrongs, listEditions, getInterlinear, getLexiconEntries } from './db/bible'
+import {
+  getChapter,
+  getStrongs,
+  listEditions,
+  getInterlinear,
+  getLexiconEntries,
+  getChapterApparatus
+} from './db/bible'
 import { aiDb } from './ai/vectors'
 import { openUserDb } from './db/user'
 
@@ -34,6 +41,28 @@ export async function runSmokeTest(): Promise<void> {
         const il = getInterlinear('John', 1, 'NA', [], true)
         if (!il.verses.some((v) => v.tokens.some((t) => t.parses && t.parses.length)))
           throw new Error('no parses')
+      }
+    ],
+    [
+      'OT Ketiv/Qere apparatus (1 Chronicles 1)',
+      () => {
+        const app = getChapterApparatus('1Chr', 1)
+        if (!app.some((v) => v.items.some((it) => it.side === 'ketiv')))
+          throw new Error('no Ketiv/Qere')
+      }
+    ],
+    [
+      'Septuagint readable + Esdras B split (LXX Ezra 1)',
+      () => {
+        if (!getChapter({ translation: 'LXX', book: 'Ezra', chapter: 1 }).verses.length)
+          throw new Error('no LXX Ezra')
+      }
+    ],
+    [
+      'Masoretic Hebrew readable (MT Genesis 1)',
+      () => {
+        if (!getChapter({ translation: 'MT', book: 'Gen', chapter: 1 }).verses.length)
+          throw new Error('no MT Genesis')
       }
     ],
     ['sqlite-vec native extension loads', () => aiDb()],

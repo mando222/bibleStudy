@@ -157,7 +157,9 @@ export interface VariantItem {
   strongs: string | null
   translit: string | null
   gloss: string | null
-  side: 'both' | 'critical' | 'tr'
+  // NT (Greek): 'both' = shared, 'critical' = NA-only, 'tr' = TR-only.
+  // OT (Hebrew): 'qere' = the read/main form, 'ketiv' = the written variant.
+  side: 'both' | 'critical' | 'tr' | 'qere' | 'ketiv'
 }
 export interface VerseVariant {
   verse: number

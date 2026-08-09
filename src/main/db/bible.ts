@@ -493,8 +493,37 @@ function diffVerse(a: Lite[], b: Lite[]): VariantItem[] {
   return out
 }
 
-/** Verses in a chapter where the Critical (NA) and Textus Receptus Greek differ. */
+/** OT apparatus: the Ketiv (written) beside the Qere (read) for each verse that has one. */
+function otApparatus(book: string, chapter: number): VerseVariant[] {
+  const rows = required()
+    .prepare(
+      'SELECT verse, qere, ketiv, strongs FROM ketiv_qere WHERE book_id = ? AND chapter = ? ORDER BY verse, position'
+    )
+    .all(book, chapter) as { verse: number; qere: string; ketiv: string; strongs: string | null }[]
+  const byVerse = new Map<number, VariantItem[]>()
+  for (const r of rows) {
+    if (!byVerse.has(r.verse)) byVerse.set(r.verse, [])
+    const items = byVerse.get(r.verse)!
+    items.push({ surface: r.qere, strongs: r.strongs, translit: null, gloss: null, side: 'qere' })
+    items.push({ surface: r.ketiv, strongs: r.strongs, translit: null, gloss: null, side: 'ketiv' })
+  }
+  return [...byVerse.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([verse, items]) => ({ verse, items }))
+}
+
+/**
+ * Textual apparatus for a chapter. OT → Ketiv/Qere (Masoretic scribal variants); NT → where the
+ * Critical (NA) and Textus Receptus Greek differ.
+ */
 export function getChapterApparatus(book: string, chapter: number): VerseVariant[] {
+  const testament = (
+    required().prepare('SELECT testament FROM books WHERE id = ?').get(book) as
+      | { testament?: string }
+      | undefined
+  )?.testament
+  if (testament === 'OT') return otApparatus(book, chapter)
+
   const na = chapterTokensByVerse('NA', book, chapter)
   const tr = chapterTokensByVerse('TR', book, chapter)
   if (na.size === 0 && tr.size === 0) return []

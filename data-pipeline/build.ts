@@ -95,9 +95,10 @@ const EDITIONS: { id: string; name: string; language: string; testament: string;
 
 // Septuagint — Swete's text (public domain), digitised by Open Greek and Latin / First1KGreek
 // (tlg0527) and repackaged by nathans/lxx-swete under CC BY-SA 4.0. One accented Greek word per
-// line, prefixed `1.chapter.verse`. Protocanon books only (mapped to our 66-book canon); LXX-only
-// deuterocanon, the combined Esdras B (Ezra+Neh), and Ecclesiastes (absent upstream) are omitted.
-// Daniel uses the Theodotion recension (the text printed in standard editions).
+// line, prefixed `1.chapter.verse`. Protocanon books only (mapped to our 66-book canon). Esdras B
+// (Ezra+Neh) is handled separately below (split into the two books). LXX-only deuterocanon is
+// omitted; Ecclesiastes (Qoheleth) is absent from this digitisation and stays a gap until a clean
+// (PD/CC-BY, non-CATSS) source is vetted. Daniel uses the Theodotion recension (standard editions).
 const LXX_BASE = 'https://raw.githubusercontent.com/nathans/lxx-swete/master/data'
 const LXX_SWETE_FILES: [string, string][] = [
   ['Gen', '01.Genesis.txt'],
@@ -466,13 +467,21 @@ async function buildGreekEditions(db: DatabaseSync): Promise<number> {
   return count
 }
 
-/** Build the Masoretic (MT) Hebrew edition from TAHOT. */
-async function buildHebrewEdition(db: DatabaseSync): Promise<number> {
+/** Build the Masoretic (MT) Hebrew edition from TAHOT, capturing Ketiv/Qere variants. */
+async function buildHebrewEdition(db: DatabaseSync): Promise<{ count: number; kq: number }> {
   const ins = db.prepare(
     `INSERT OR REPLACE INTO original_tokens (edition, book_id, chapter, verse, position, original, translit, strongs, morph, gloss)
      VALUES ('MT',?,?,?,?,?,?,?,?,?)`
   )
+  // The Ketiv ("written") variant beside the Qere ("read") main text. TAHOT marks such words with a
+  // `=Q(K)` type on the ref column (uppercase K = affects translation), and gives the Ketiv Hebrew
+  // after a `;K=` marker in a later column.
+  const kqIns = db.prepare(
+    `INSERT OR REPLACE INTO ketiv_qere (book_id, chapter, verse, position, qere, ketiv, strongs, significant)
+     VALUES (?,?,?,?,?,?,?,?)`
+  )
   let count = 0
+  let kq = 0
   for (const [name, url] of TAHOT_FILES) {
     const path = await downloadCached(name, url)
     const lines = readFileSync(path, 'utf8').split('\n')
@@ -482,7 +491,7 @@ async function buildHebrewEdition(db: DatabaseSync): Promise<number> {
     for (const line of lines) {
       if (!STEP_ROW.test(line)) continue
       const c = line.split('\t')
-      const m = /^([A-Za-z0-9]+)\.(\d+)\.(\d+)#\d+/.exec(c[0])
+      const m = /^([A-Za-z0-9]+)\.(\d+)\.(\d+)#\d+(?:=(\S+))?/.exec(c[0])
       if (!m) continue
       const book = stepBookId(m[1])
       if (!book) continue
@@ -499,12 +508,30 @@ async function buildHebrewEdition(db: DatabaseSync): Promise<number> {
       const gloss = (c[3] || '').replace(/\//g, ' ').replace(/\s+/g, ' ').trim() || null
       const strongs = normStrongs(c[8] || c[4] || '')
       const morph = (c[5] || '').trim() || null
-      ins.run(book, chapter, verse, pos++, original, translit, strongs, morph, gloss)
+      const position = pos
+      ins.run(book, chapter, verse, position, original, translit, strongs, morph, gloss)
       count++
+
+      // Ketiv/Qere? The type looks like Q(K), Q(k), or Q(K+B) — the letter case marks significance.
+      // The Ketiv Hebrew appears in one of two TAHOT forms: "K= translit (Hebrew) …" (parens), or
+      // ";K= Hebrew" (direct). Prefer the parens form; fall back to the direct one.
+      const kqType = /^Q\(([Kk])/.exec(m[4] || '')
+      if (kqType) {
+        const paren = /[;\s]K=\s*[^\t(]*\(([^)]+)\)/.exec(line)
+        const direct = /[;\s]K=\s*([^\t¦(]+)/.exec(line)
+        const rawK = paren ? paren[1] : direct ? direct[1] : ''
+        const ketiv = rawK.replace(/[/\\׃־]/g, '').replace(/\s+/g, '').trim()
+        if (ketiv && ketiv !== original) {
+          const qere = original.replace(/\\/g, '') // drop TAHOT's join separators for display
+          kqIns.run(book, chapter, verse, position, qere, ketiv, strongs, kqType[1] === 'K' ? 1 : 0)
+          kq++
+        }
+      }
+      pos++
     }
     db.exec('COMMIT')
   }
-  return count
+  return { count, kq }
 }
 
 // Greek → Latin (SBL-style) transliteration. Deterministic study aid, not accent-perfect.
@@ -544,7 +571,111 @@ async function buildSeptuagintEdition(db: DatabaseSync): Promise<number> {
     }
     db.exec('COMMIT')
   }
+
+  // Esdras B (2 Esdras) = Ezra (chapters 1–10) + Nehemiah (chapters 11–23). Split it into our two
+  // canonical books. Same CC-BY-SA source; just not a 1-file-per-book mapping.
+  {
+    const path = await downloadCached('lxx_18.Esdras_B.txt', `${LXX_BASE}/18.Esdras_B.txt`)
+    const lines = readFileSync(path, 'utf8').split('\n')
+    let curVerse = ''
+    let pos = 0
+    db.exec('BEGIN')
+    for (const raw of lines) {
+      const sp = raw.indexOf(' ')
+      if (sp < 0) continue
+      const m = /^\d+\.(\d+)\.(\d+)$/.exec(raw.slice(0, sp).trim())
+      if (!m) continue
+      const original = raw.slice(sp + 1).trim().replace(strip, '')
+      if (!original) continue
+      const ch = Number(m[1])
+      const verse = Number(m[2])
+      const book = ch <= 10 ? 'Ezra' : 'Neh'
+      const chapter = ch <= 10 ? ch : ch - 10
+      const vk = `${book}.${chapter}.${verse}`
+      if (vk !== curVerse) {
+        curVerse = vk
+        pos = 0
+      }
+      ins.run(book, chapter, verse, pos++, original, translitGreek(original), null, null, null)
+      count++
+    }
+    db.exec('COMMIT')
+  }
   return count
+}
+
+/**
+ * Make the original-language editions (Masoretic Hebrew, Septuagint Greek) readable + searchable:
+ * assemble verse text from their `original_tokens` words and load them into translations/verses/FTS
+ * so they appear in the translation picker, work as parallel columns, and are full-text searchable.
+ */
+function buildOriginalReadingEditions(db: DatabaseSync): { id: string; verses: number }[] {
+  const defs = [
+    {
+      id: 'MT',
+      abbrev: 'WLC',
+      name: 'Masoretic Hebrew (WLC)',
+      language: 'hbo',
+      direction: 'rtl',
+      license: 'CC BY 4.0',
+      attribution: 'STEPBible TAHOT (Tyndale House) — Westminster Leningrad Codex tradition.',
+      sort: 40
+    },
+    {
+      id: 'LXX',
+      abbrev: 'LXX',
+      name: 'Septuagint (Swete)',
+      language: 'grc',
+      direction: 'ltr',
+      license: 'CC BY-SA 4.0',
+      attribution: "Swete's Septuagint via Open Greek and Latin / First1KGreek (nathans/lxx-swete).",
+      sort: 41
+    }
+  ]
+  const insTrans = db.prepare(
+    `INSERT OR REPLACE INTO translations (id, abbrev, name, language, direction, is_original, has_strongs, license, attribution, sort_order)
+     VALUES (?,?,?,?,?,1,0,?,?,?)`
+  )
+  const insVerse = db.prepare(
+    'INSERT OR REPLACE INTO verses (translation_id, book_id, chapter, verse, text) VALUES (?,?,?,?,?)'
+  )
+  const insFts = db.prepare(
+    'INSERT INTO verses_fts (text, translation_id, book_id, chapter, verse) VALUES (?,?,?,?,?)'
+  )
+  const out: { id: string; verses: number }[] = []
+  for (const d of defs) {
+    insTrans.run(d.id, d.abbrev, d.name, d.language, d.direction, d.license, d.attribution, d.sort)
+    const rows = db
+      .prepare(
+        `SELECT book_id AS b, chapter AS c, verse AS v, original AS w FROM original_tokens
+         WHERE edition = ? ORDER BY book_id, chapter, verse, position`
+      )
+      .all(d.id) as { b: string; c: number; v: number; w: string }[]
+    let verses = 0
+    let cur: { b: string; c: number; v: number } | null = null
+    let words: string[] = []
+    const flush = (): void => {
+      if (cur && words.length) {
+        const text = words.join(' ')
+        insVerse.run(d.id, cur.b, cur.c, cur.v, text)
+        insFts.run(text, d.id, cur.b, cur.c, cur.v)
+        verses++
+      }
+    }
+    db.exec('BEGIN')
+    for (const r of rows) {
+      if (!cur || r.b !== cur.b || r.c !== cur.c || r.v !== cur.v) {
+        flush()
+        cur = { b: r.b, c: r.c, v: r.v }
+        words = []
+      }
+      words.push(r.w.replace(/\\/g, '')) // drop TAHOT's join separators from readable text
+    }
+    flush()
+    db.exec('COMMIT')
+    out.push({ id: d.id, verses })
+  }
+  return out
 }
 
 /** Sanitise a STEPBible lexicon body to a safe subset: only <b>/<i> tags + newlines. */
@@ -880,10 +1011,10 @@ async function main(): Promise<void> {
   )
   for (const e of EDITIONS) insEdition.run(e.id, e.name, e.language, e.testament, e.sort)
   process.stdout.write('• Interlinear editions: Hebrew (Masoretic)…')
-  const mtCount = await buildHebrewEdition(db)
-  process.stdout.write(` ${mtCount} · Greek (TR/Byz/Critical)…`)
+  const mt = await buildHebrewEdition(db)
+  process.stdout.write(` ${mt.count} (+${mt.kq} Ketiv/Qere) · Greek (TR/Byz/Critical)…`)
   const grcCount = await buildGreekEditions(db)
-  process.stdout.write(` ${grcCount} · Septuagint (Swete)…`)
+  process.stdout.write(` ${grcCount} · Septuagint (Swete + Esdras B)…`)
   const lxxCount = await buildSeptuagintEdition(db)
   process.stdout.write(` ${lxxCount}\n`)
 
@@ -892,6 +1023,10 @@ async function main(): Promise<void> {
   process.stdout.write(
     ` ${lxxTag.tagged}/${lxxTag.total} words (${Math.round((100 * lxxTag.tagged) / lxxTag.total)}%)\n`
   )
+
+  process.stdout.write('• Readable originals (Masoretic + Septuagint → verses + search)…')
+  const origRead = buildOriginalReadingEditions(db)
+  process.stdout.write(` ${origRead.map((o) => `${o.id} ${o.verses}`).join(' · ')}\n`)
 
   process.stdout.write('• Lexicons (BDB / Abbott-Smith / LSJ)…')
   const lexEntries = await buildLexicons(db)
@@ -1018,7 +1153,7 @@ async function main(): Promise<void> {
   const lxxBooks = (
     db.prepare("SELECT COUNT(DISTINCT book_id) n FROM original_tokens WHERE edition='LXX'").get() as { n: number }
   ).n
-  if (lxxBooks < 35) errors.push(`LXX should cover ≥35 OT books, got ${lxxBooks}`)
+  if (lxxBooks < 37) errors.push(`LXX should cover ≥37 OT books, got ${lxxBooks}`)
   // Phase-2 tagging: θεὸς in LXX Gen 1:1 should carry God's Strong's number (G2316).
   const lxxTheos = db
     .prepare(
@@ -1030,6 +1165,26 @@ async function main(): Promise<void> {
     db.prepare("SELECT COUNT(*) n FROM original_tokens WHERE edition='LXX' AND strongs IS NOT NULL").get() as { n: number }
   ).n
   if (lxxTagged < 100000) errors.push(`LXX tagging too sparse: ${lxxTagged} words`)
+
+  // Esdras B split → Ezra + Nehemiah now present in the LXX.
+  for (const b of ['Ezra', 'Neh']) {
+    const n = (
+      db.prepare("SELECT COUNT(*) n FROM original_tokens WHERE edition='LXX' AND book_id=?").get(b) as {
+        n: number
+      }
+    ).n
+    if (n < 100) errors.push(`LXX ${b} (from Esdras B) too sparse: ${n} words`)
+  }
+  // OT Ketiv/Qere apparatus captured from TAHOT.
+  const kqCount = (db.prepare('SELECT COUNT(*) n FROM ketiv_qere').get() as { n: number }).n
+  if (kqCount < 1000) errors.push(`ketiv_qere too sparse: ${kqCount} (expected >1000)`)
+  // Masoretic + Septuagint are readable (loaded into verses + FTS).
+  for (const id of ['MT', 'LXX']) {
+    const n = (db.prepare('SELECT COUNT(*) n FROM verses WHERE translation_id=?').get(id) as {
+      n: number
+    }).n
+    if (n < 20000) errors.push(`${id} readable verses too few: ${n}`)
+  }
 
   // Lexicons: agapē (G26) has an Abbott-Smith (TBESG) entry; Elohim (H430) a BDB (TBESH) entry.
   const g26lex = (

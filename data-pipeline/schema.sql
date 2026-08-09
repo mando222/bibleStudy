@@ -81,6 +81,23 @@ CREATE TABLE original_tokens (
 
 CREATE INDEX idx_ot_loc ON original_tokens (edition, book_id, chapter, verse);
 
+-- OT textual apparatus: the Ketiv (written) variant beside the Qere (read) main text. The Qere
+-- is what's stored in original_tokens ('MT'); this table keeps the Ketiv so the Variants tab can
+-- show both. From STEPBible TAHOT (CC-BY 4.0). `position` matches original_tokens.position (MT).
+CREATE TABLE ketiv_qere (
+  book_id     TEXT NOT NULL,
+  chapter     INTEGER NOT NULL,
+  verse       INTEGER NOT NULL,
+  position    INTEGER NOT NULL,
+  qere        TEXT NOT NULL,               -- the read form (main text)
+  ketiv       TEXT NOT NULL,               -- the written variant
+  strongs     TEXT,
+  significant INTEGER NOT NULL DEFAULT 0,  -- 1 = the difference affects translation (uppercase K)
+  PRIMARY KEY (book_id, chapter, verse, position)
+) WITHOUT ROWID;
+
+CREATE INDEX idx_kq_loc ON ketiv_qere (book_id, chapter, verse);
+
 CREATE TABLE strongs_lexicon (
   id            TEXT PRIMARY KEY,  -- 'G26' / 'H430'
   language      TEXT NOT NULL,     -- 'greek' | 'hebrew'
