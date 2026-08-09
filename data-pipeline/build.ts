@@ -961,6 +961,17 @@ async function buildTheographic(
   return { people: people.length, places: places.length, events: events.length }
 }
 
+/** Natural Earth land polygons (public domain) for the offline Maps basemap, stored in `meta`. */
+async function buildMapLand(db: DatabaseSync): Promise<number> {
+  const path = await downloadCached(
+    'ne_50m_land.geojson',
+    'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_land.geojson'
+  )
+  const text = readFileSync(path, 'utf8')
+  db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('land_geojson', ?)").run(text)
+  return text.length
+}
+
 // ---- build -----------------------------------------------------------------
 
 async function main(): Promise<void> {
@@ -1191,11 +1202,15 @@ async function main(): Promise<void> {
   const theo = await buildTheographic(db)
   process.stdout.write(` ${theo.people} people · ${theo.places} places · ${theo.events} events\n`)
 
+  process.stdout.write('• Map basemap (Natural Earth land, public domain)…')
+  const landBytes = await buildMapLand(db)
+  process.stdout.write(` ${Math.round(landBytes / 1024)} KB\n`)
+
   const insMeta = db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?,?)')
   insMeta.run('schema_version', '1')
   insMeta.run(
     'sources',
-    'helloao Free Use Bible API; openscriptures/strongs (CC-BY-SA); kaiserlik/kjv (KJV+Strong’s); bereanbible.com bsb_tables (BSB interlinear, public domain); STEPBible TAHOT/TAGNT + lexicons TBESH/TBESG/TFLSJ (CC-BY); Septuagint: Swete via Open Greek and Latin / First1KGreek, nathans/lxx-swete (CC-BY-SA 4.0); Theographic Bible Metadata (people/places/events, CC-BY-SA 4.0)'
+    'helloao Free Use Bible API; openscriptures/strongs (CC-BY-SA); kaiserlik/kjv (KJV+Strong’s); bereanbible.com bsb_tables (BSB interlinear, public domain); STEPBible TAHOT/TAGNT + lexicons TBESH/TBESG/TFLSJ (CC-BY); Septuagint: Swete via Open Greek and Latin / First1KGreek, nathans/lxx-swete (CC-BY-SA 4.0); Theographic Bible Metadata (people/places/events, CC-BY-SA 4.0); Natural Earth land (public domain)'
   )
 
   // ---- assertions --------------------------------------------------------
@@ -1366,6 +1381,10 @@ async function main(): Promise<void> {
   if (placesGeo < 500) errors.push(`geolocated places too few: ${placesGeo}`)
   const eventsN = (db.prepare('SELECT COUNT(*) n FROM events').get() as { n: number }).n
   if (eventsN < 100) errors.push(`events too few: ${eventsN}`)
+  const land = (db.prepare("SELECT length(value) n FROM meta WHERE key='land_geojson'").get() as
+    | { n: number }
+    | undefined)?.n
+  if (!land || land < 50000) errors.push(`map land geojson missing/small: ${land}`)
   // Moses (a well-known person) resolves to many verse references in our Book.ch.v form.
   const moses = db
     .prepare("SELECT verses FROM people WHERE name = 'Moses' ORDER BY verse_count DESC LIMIT 1")

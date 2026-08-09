@@ -164,6 +164,14 @@ export function getStrongs(id: string): StrongsEntry | null {
   }
 }
 
+/** Natural Earth land polygons (GeoJSON string) for the offline Maps basemap. */
+export function getMapLand(): string {
+  const r = required().prepare("SELECT value FROM meta WHERE key = 'land_geojson'").get() as
+    | { value: string }
+    | undefined
+  return r?.value ?? ''
+}
+
 /** Browse the Strong's lexicon by hand: filter by language, search by number/translit/lemma/gloss. */
 export function browseLexicon(opts: LexBrowseOptions): LexBrowseResult {
   const d = required()

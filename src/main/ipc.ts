@@ -26,6 +26,7 @@ export function registerIpc(): void {
   ipcMain.handle('bible:getPlaces', () => graph.getPlaces())
   ipcMain.handle('bible:getPlaceVerses', (_e, id: number) => graph.getPlaceVerses(id))
   ipcMain.handle('bible:getEvents', () => graph.getEvents())
+  ipcMain.handle('bible:getMapLand', () => bible.getMapLand())
   ipcMain.handle('bible:getLexiconEntries', (_e, strongs: string) =>
     bible.getLexiconEntries(strongs)
   )

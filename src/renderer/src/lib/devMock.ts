@@ -61,6 +61,7 @@ export async function installDevMock(): Promise<void> {
     getPlaces: async () => [],
     getPlaceVerses: async () => [],
     getEvents: async () => [],
+    getMapLand: async () => '',
     getLexiconByWord: async (word) => (/θε/.test(word) ? 'G2316' : null),
     getLexiconEntries: async (strongs) => {
       const greek = !strongs.toUpperCase().startsWith('H')

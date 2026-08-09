@@ -351,6 +351,7 @@ export interface BibleApi {
   getPlaces(): Promise<PlaceItem[]>
   getPlaceVerses(id: number): Promise<string[]>
   getEvents(): Promise<EventItem[]>
+  getMapLand(): Promise<string>
   getLexiconEntries(strongs: string): Promise<LexiconGroup[]>
   getLexiconByWord(word: string): Promise<string | null>
   getConcordance(strongs: string, opts?: ConcordanceOptions): Promise<ConcordanceResponse>

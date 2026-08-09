@@ -15,13 +15,58 @@ const H = ((LAT1 - LAT0) / (LON1 - LON0)) * W
 const x = (lon: number): number => ((lon - LON0) / (LON1 - LON0)) * W
 const y = (lat: number): number => (1 - (lat - LAT0) / (LAT1 - LAT0)) * H
 
+interface Geo {
+  features?: { geometry?: { type: string; coordinates: unknown } }[]
+}
+/** Project Natural Earth land rings that touch our view into SVG path strings. */
+function landPaths(geo: Geo): string[] {
+  const out: string[] = []
+  const ring = (r: number[][]): void => {
+    let a = Infinity
+    let b = -Infinity
+    let c = Infinity
+    let e = -Infinity
+    for (const [lo, la] of r) {
+      if (lo < a) a = lo
+      if (lo > b) b = lo
+      if (la < c) c = la
+      if (la > e) e = la
+    }
+    if (b < LON0 - 3 || a > LON1 + 3 || e < LAT0 - 3 || c > LAT1 + 3) return // off-view
+    let path = ''
+    for (let i = 0; i < r.length; i++) {
+      const [lo, la] = r[i]
+      path += (i ? 'L' : 'M') + x(lo).toFixed(1) + ',' + y(la).toFixed(1)
+    }
+    out.push(path + 'Z')
+  }
+  for (const f of geo.features ?? []) {
+    const g = f.geometry
+    if (!g) continue
+    if (g.type === 'Polygon') for (const r of g.coordinates as number[][][]) ring(r)
+    else if (g.type === 'MultiPolygon')
+      for (const poly of g.coordinates as number[][][][]) for (const r of poly) ring(r)
+  }
+  return out
+}
+
 /** Maps: the places of Scripture plotted by coordinates; click one for the verses that mention it. */
 export default function MapsView(): JSX.Element {
   const [places, setPlaces] = useState<PlaceItem[]>([])
   const [q, setQ] = useState('')
   const [sel, setSel] = useState<PlaceItem | null>(null)
   const [verses, setVerses] = useState<string[]>([])
+  const [land, setLand] = useState<string[]>([])
   const focusPlaceId = useAppStore((s) => s.focusPlaceId)
+
+  useEffect(() => {
+    window.api
+      .getMapLand()
+      .then((t) => {
+        if (t) setLand(landPaths(JSON.parse(t) as Geo))
+      })
+      .catch(() => setLand([]))
+  }, [])
   const clearFocus = useAppStore((s) => s.clearFocus)
 
   useEffect(() => {
@@ -97,12 +142,21 @@ export default function MapsView(): JSX.Element {
 
       <div className="flex-1 min-w-0 flex flex-col">
         <div className="flex-1 min-h-0 p-4">
-          <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full rounded-lg bg-elevated/40">
+          <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full rounded-lg">
+            <rect x={0} y={0} width={W} height={H} className="fill-sky-100 dark:fill-slate-800" />
+            {land.map((d, i) => (
+              <path
+                key={i}
+                d={d}
+                className="fill-stone-200 dark:fill-stone-700 stroke-stone-300 dark:stroke-stone-600"
+                strokeWidth={0.5}
+              />
+            ))}
             {gridLon.map((l) => (
-              <line key={`x${l}`} x1={x(l)} y1={0} x2={x(l)} y2={H} className="stroke-line/50" strokeWidth={0.5} />
+              <line key={`x${l}`} x1={x(l)} y1={0} x2={x(l)} y2={H} className="stroke-line/30" strokeWidth={0.5} />
             ))}
             {gridLat.map((l) => (
-              <line key={`y${l}`} x1={0} y1={y(l)} x2={W} y2={y(l)} className="stroke-line/50" strokeWidth={0.5} />
+              <line key={`y${l}`} x1={0} y1={y(l)} x2={W} y2={y(l)} className="stroke-line/30" strokeWidth={0.5} />
             ))}
             {plotted.map((p) => (
               <circle

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import type { PersonListItem, PersonDetail, PersonRef } from '@shared/types'
+import type { PersonListItem, PersonDetail } from '@shared/types'
 import { useAppStore } from '@/store/useAppStore'
 import { SearchIcon } from './icons'
 import VerseRefs from './VerseRefs'
+import FamilyTree from './FamilyTree'
 
 const years = (b: number | null, d: number | null): string => {
   const f = (y: number): string => (y < 0 ? `${-y} BC` : `${y} AD`)
@@ -84,11 +85,11 @@ export default function GenealogiesView(): JSX.Element {
               <p className="mt-3 text-sm text-muted leading-relaxed">{person.summary}</p>
             )}
 
-            <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-              <Rel label="Father" people={person.father ? [person.father] : []} onPick={setId} />
-              <Rel label="Mother" people={person.mother ? [person.mother] : []} onPick={setId} />
-              <Rel label="Spouses" people={person.spouses} onPick={setId} />
-              <Rel label="Children" people={person.children} onPick={setId} />
+            <div className="mt-5">
+              <div className="text-[11px] uppercase tracking-wider text-faint mb-2">
+                Family tree
+              </div>
+              <FamilyTree person={person} />
             </div>
 
             <div className="mt-6">
@@ -110,33 +111,3 @@ export default function GenealogiesView(): JSX.Element {
   )
 }
 
-function Rel({
-  label,
-  people,
-  onPick
-}: {
-  label: string
-  people: PersonRef[]
-  onPick: (id: number) => void
-}): JSX.Element {
-  return (
-    <div>
-      <div className="text-[11px] uppercase tracking-wider text-faint mb-1">{label}</div>
-      {people.length ? (
-        <div className="flex flex-wrap gap-1.5">
-          {people.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => onPick(p.id)}
-              className="text-sm text-accent hover:underline"
-            >
-              {p.name}
-            </button>
-          ))}
-        </div>
-      ) : (
-        <span className="text-sm text-faint">—</span>
-      )}
-    </div>
-  )
-}

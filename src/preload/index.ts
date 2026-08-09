@@ -12,6 +12,7 @@ const api: BibleApi = {
   getPlaces: () => ipcRenderer.invoke('bible:getPlaces'),
   getPlaceVerses: (id) => ipcRenderer.invoke('bible:getPlaceVerses', id),
   getEvents: () => ipcRenderer.invoke('bible:getEvents'),
+  getMapLand: () => ipcRenderer.invoke('bible:getMapLand'),
   getLexiconEntries: (strongs) => ipcRenderer.invoke('bible:getLexiconEntries', strongs),
   getLexiconByWord: (word) => ipcRenderer.invoke('bible:getLexiconByWord', word),
   getConcordance: (strongs, opts) => ipcRenderer.invoke('bible:getConcordance', strongs, opts),
