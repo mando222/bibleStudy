@@ -644,6 +644,67 @@ async function buildLexicons(db: DatabaseSync): Promise<number> {
   return count
 }
 
+/** Normalise a Greek word for matching: NFD, drop diacritics/punctuation, lower-case, final-σ. */
+function normGreek(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^α-ω]/g, '')
+    .replace(/ς/g, 'σ')
+}
+
+/**
+ * LXX Phase 2 — tag the Septuagint from our OWN data, no CATSS. Build a surface→Strong's map from
+ * the already-loaded tagged NT Greek (NA/TR/BYZ) and match LXX word forms against it; shared
+ * vocabulary gets Strong's + lemma + morph + gloss, LXX-only words stay untagged.
+ */
+function tagSeptuagint(db: DatabaseSync): { tagged: number; total: number } {
+  const ntRows = db
+    .prepare(
+      "SELECT original, strongs, morph, gloss FROM original_tokens WHERE edition IN ('NA','TR','BYZ') AND strongs LIKE 'G%'"
+    )
+    .all() as { original: string; strongs: string; morph: string | null; gloss: string | null }[]
+  // surface → (strongs → {count, morph, gloss}); we keep the most frequent Strong's per form.
+  const forms = new Map<string, Map<string, { count: number; morph: string | null; gloss: string | null }>>()
+  for (const r of ntRows) {
+    const k = normGreek(r.original)
+    if (!k) continue
+    let m = forms.get(k)
+    if (!m) {
+      m = new Map()
+      forms.set(k, m)
+    }
+    const e = m.get(r.strongs) ?? { count: 0, morph: r.morph, gloss: r.gloss }
+    e.count++
+    m.set(r.strongs, e)
+  }
+  const best = new Map<string, { strongs: string; morph: string | null; gloss: string | null }>()
+  for (const [k, m] of forms) {
+    let pick = { strongs: '', count: -1, morph: null as string | null, gloss: null as string | null }
+    for (const [s, e] of m) if (e.count > pick.count) pick = { strongs: s, count: e.count, morph: e.morph, gloss: e.gloss }
+    best.set(k, { strongs: pick.strongs, morph: pick.morph, gloss: pick.gloss })
+  }
+  // original_tokens has no lemma column — the dictionary lemma comes from the Strong's lexicon on
+  // click. We fill strongs (→ lexicon), plus morph and gloss carried over from the matched NT form.
+  const lxx = db
+    .prepare("SELECT book_id, chapter, verse, position, original FROM original_tokens WHERE edition='LXX'")
+    .all() as { book_id: string; chapter: number; verse: number; position: number; original: string }[]
+  const upd = db.prepare(
+    "UPDATE original_tokens SET strongs=?, morph=?, gloss=? WHERE edition='LXX' AND book_id=? AND chapter=? AND verse=? AND position=?"
+  )
+  let tagged = 0
+  db.exec('BEGIN')
+  for (const t of lxx) {
+    const b = best.get(normGreek(t.original))
+    if (!b) continue
+    upd.run(b.strongs, b.morph, b.gloss, t.book_id, t.chapter, t.verse, t.position)
+    tagged++
+  }
+  db.exec('COMMIT')
+  return { tagged, total: lxx.length }
+}
+
 // ---- build -----------------------------------------------------------------
 
 async function main(): Promise<void> {
@@ -852,6 +913,12 @@ async function main(): Promise<void> {
   const lxxCount = await buildSeptuagintEdition(db)
   process.stdout.write(` ${lxxCount}\n`)
 
+  process.stdout.write('• LXX tagging (surface-match vs NT Greek, no CATSS)…')
+  const lxxTag = tagSeptuagint(db)
+  process.stdout.write(
+    ` ${lxxTag.tagged}/${lxxTag.total} words (${Math.round((100 * lxxTag.tagged) / lxxTag.total)}%)\n`
+  )
+
   process.stdout.write('• Lexicons (BDB / Abbott-Smith / LSJ)…')
   const lexEntries = await buildLexicons(db)
   process.stdout.write(` ${lexEntries} entries\n`)
@@ -974,6 +1041,17 @@ async function main(): Promise<void> {
     db.prepare("SELECT COUNT(DISTINCT book_id) n FROM original_tokens WHERE edition='LXX'").get() as { n: number }
   ).n
   if (lxxBooks < 35) errors.push(`LXX should cover ≥35 OT books, got ${lxxBooks}`)
+  // Phase-2 tagging: θεὸς in LXX Gen 1:1 should carry God's Strong's number (G2316).
+  const lxxTheos = db
+    .prepare(
+      "SELECT strongs FROM original_tokens WHERE edition='LXX' AND book_id='Gen' AND chapter=1 AND verse=1 AND original LIKE 'θε%' LIMIT 1"
+    )
+    .get() as { strongs: string | null } | undefined
+  if (lxxTheos?.strongs !== 'G2316') errors.push(`LXX Gen 1:1 θεός should tag G2316, got ${JSON.stringify(lxxTheos)}`)
+  const lxxTagged = (
+    db.prepare("SELECT COUNT(*) n FROM original_tokens WHERE edition='LXX' AND strongs IS NOT NULL").get() as { n: number }
+  ).n
+  if (lxxTagged < 100000) errors.push(`LXX tagging too sparse: ${lxxTagged} words`)
 
   // Lexicons: agapē (G26) has an Abbott-Smith (TBESG) entry; Elohim (H430) a BDB (TBESH) entry.
   const g26lex = (
