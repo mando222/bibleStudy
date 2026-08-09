@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware'
 import type { Translation } from '@shared/types'
 
 export type Theme = 'light' | 'dark'
-export type StudyTab = 'lexicon' | 'notes' | 'search'
+export type StudyTab = 'lexicon' | 'notes' | 'search' | 'apparatus'
 
 interface AppState {
   theme: Theme

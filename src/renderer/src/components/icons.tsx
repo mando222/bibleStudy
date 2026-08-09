@@ -73,3 +73,10 @@ export const InfoIcon = (p: P) => (
     <path d="M12 11v5M12 8h.01" />
   </svg>
 )
+export const CompareIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M12 3v18" />
+    <path d="M6 7 3 10l3 3M18 7l3 3-3 3" />
+    <path d="M3 10h6M15 10h6" />
+  </svg>
+)

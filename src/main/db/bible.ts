@@ -16,7 +16,9 @@ import type {
   ConcordanceResponse,
   ConcordanceHit,
   Edition,
-  InterlinearContent
+  InterlinearContent,
+  VariantItem,
+  VerseVariant
 } from '../../shared/types'
 
 let db: DatabaseSync | null = null
@@ -262,6 +264,86 @@ export function getInterlinear(book: string, chapter: number, edition: string): 
     .map(([verse, tokens]) => ({ verse, tokens }))
 
   return { book, chapter, edition, direction, verses }
+}
+
+interface Lite {
+  surface: string
+  strongs: string | null
+  translit: string | null
+  gloss: string | null
+}
+
+function chapterTokensByVerse(edition: string, book: string, chapter: number): Map<number, Lite[]> {
+  const rows = required()
+    .prepare(
+      'SELECT verse, original, translit, strongs, gloss FROM original_tokens WHERE edition = ? AND book_id = ? AND chapter = ? ORDER BY verse, position'
+    )
+    .all(edition, book, chapter) as Record<string, unknown>[]
+  const map = new Map<number, Lite[]>()
+  for (const r of rows) {
+    const v = r.verse as number
+    if (!map.has(v)) map.set(v, [])
+    map.get(v)!.push({
+      surface: r.original as string,
+      strongs: (r.strongs as string) ?? null,
+      translit: (r.translit as string) ?? null,
+      gloss: (r.gloss as string) ?? null
+    })
+  }
+  return map
+}
+
+/** LCS diff of two verse word-lists, keyed by Strong's (fallback surface). */
+function diffVerse(a: Lite[], b: Lite[]): VariantItem[] {
+  const ka = a.map((t) => t.strongs || t.surface)
+  const kb = b.map((t) => t.strongs || t.surface)
+  const m = a.length
+  const n = b.length
+  const dp = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0))
+  for (let i = m - 1; i >= 0; i--)
+    for (let j = n - 1; j >= 0; j--)
+      dp[i][j] = ka[i] === kb[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1])
+
+  const item = (t: Lite, side: VariantItem['side']): VariantItem => ({
+    surface: t.surface,
+    strongs: t.strongs,
+    translit: t.translit,
+    gloss: t.gloss,
+    side
+  })
+  const out: VariantItem[] = []
+  let i = 0
+  let j = 0
+  while (i < m && j < n) {
+    if (ka[i] === kb[j]) {
+      out.push(item(a[i], 'both'))
+      i++
+      j++
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      out.push(item(a[i], 'critical'))
+      i++
+    } else {
+      out.push(item(b[j], 'tr'))
+      j++
+    }
+  }
+  while (i < m) out.push(item(a[i++], 'critical'))
+  while (j < n) out.push(item(b[j++], 'tr'))
+  return out
+}
+
+/** Verses in a chapter where the Critical (NA) and Textus Receptus Greek differ. */
+export function getChapterApparatus(book: string, chapter: number): VerseVariant[] {
+  const na = chapterTokensByVerse('NA', book, chapter)
+  const tr = chapterTokensByVerse('TR', book, chapter)
+  if (na.size === 0 && tr.size === 0) return []
+  const verses = [...new Set([...na.keys(), ...tr.keys()])].sort((x, y) => x - y)
+  const out: VerseVariant[] = []
+  for (const v of verses) {
+    const items = diffVerse(na.get(v) ?? [], tr.get(v) ?? [])
+    if (items.some((it) => it.side !== 'both')) out.push({ verse: v, items })
+  }
+  return out
 }
 
 export function search(q: SearchQuery): SearchResponse {

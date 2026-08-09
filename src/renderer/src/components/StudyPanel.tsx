@@ -1,13 +1,15 @@
 import { useAppStore, type StudyTab } from '@/store/useAppStore'
-import { HashIcon, PenIcon, SearchIcon } from './icons'
+import { HashIcon, PenIcon, SearchIcon, CompareIcon } from './icons'
 import LexiconCard from './LexiconCard'
 import NotesPanel from './NotesPanel'
 import SearchPanel from './SearchPanel'
+import ApparatusPanel from './ApparatusPanel'
 
 const TABS: { id: StudyTab; label: string; Icon: typeof HashIcon }[] = [
   { id: 'lexicon', label: 'Lexicon', Icon: HashIcon },
   { id: 'notes', label: 'Notes', Icon: PenIcon },
-  { id: 'search', label: 'Search', Icon: SearchIcon }
+  { id: 'search', label: 'Search', Icon: SearchIcon },
+  { id: 'apparatus', label: 'Variants', Icon: CompareIcon }
 ]
 
 export default function StudyPanel(): JSX.Element {
@@ -41,6 +43,7 @@ export default function StudyPanel(): JSX.Element {
           <div className="h-full overflow-y-auto p-4 text-sm text-muted leading-relaxed">
             {studyTab === 'lexicon' && <LexiconCard id={selectedStrongs} />}
             {studyTab === 'notes' && <NotesPanel />}
+            {studyTab === 'apparatus' && <ApparatusPanel />}
           </div>
         )}
       </div>

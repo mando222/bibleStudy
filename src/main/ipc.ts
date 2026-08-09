@@ -25,6 +25,9 @@ export function registerIpc(): void {
   ipcMain.handle('bible:getInterlinear', (_e, book: string, chapter: number, edition: string) =>
     bible.getInterlinear(book, chapter, edition)
   )
+  ipcMain.handle('bible:getChapterApparatus', (_e, book: string, chapter: number) =>
+    bible.getChapterApparatus(book, chapter)
+  )
   ipcMain.handle('bible:search', (_e, q: SearchQuery) => bible.search(q))
 
   ipcMain.handle('user:listHighlights', (_e, ref: ChapterRef) => user.listHighlights(ref))

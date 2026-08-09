@@ -122,6 +122,19 @@ export interface ImportedTranslation {
   verseCount: number
 }
 
+/** One word in a TR-vs-Critical comparison: present in both, or only one edition. */
+export interface VariantItem {
+  surface: string
+  strongs: string | null
+  translit: string | null
+  gloss: string | null
+  side: 'both' | 'critical' | 'tr'
+}
+export interface VerseVariant {
+  verse: number
+  items: VariantItem[]
+}
+
 // ---- User data (notes + highlighting), stored in a separate user.sqlite ----
 
 export type HighlightColor = 'yellow' | 'green' | 'blue' | 'pink' | 'orange'
@@ -158,6 +171,7 @@ export interface BibleApi {
   getConcordance(strongs: string, opts?: ConcordanceOptions): Promise<ConcordanceResponse>
   listEditions(): Promise<Edition[]>
   getInterlinear(book: string, chapter: number, edition: string): Promise<InterlinearContent>
+  getChapterApparatus(book: string, chapter: number): Promise<VerseVariant[]>
   search(query: SearchQuery): Promise<SearchResponse>
 
   listHighlights(ref: ChapterRef): Promise<Highlight[]>

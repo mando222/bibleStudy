@@ -11,7 +11,8 @@ import type {
   Highlight,
   InterlinearContent,
   Note,
-  SearchResponse
+  SearchResponse,
+  VerseVariant
 } from '@shared/types'
 
 interface MockData {
@@ -21,6 +22,7 @@ interface MockData {
   search: SearchResponse
   editions: Edition[]
   interlinear: Record<string, InterlinearContent>
+  apparatus: Record<string, VerseVariant[]>
 }
 
 export async function installDevMock(): Promise<void> {
@@ -66,6 +68,7 @@ export async function installDevMock(): Promise<void> {
       return { total: hits.length, hits }
     },
     listEditions: async () => data.editions ?? [],
+    getChapterApparatus: async (book, chapter) => data.apparatus?.[`${book}/${chapter}`] ?? [],
     getInterlinear: async (book, chapter, edition) =>
       data.interlinear?.[`${edition}/${book}/${chapter}`] ?? {
         book,
