@@ -1,5 +1,8 @@
+import { useState } from 'react'
+import type { StrongsEntry } from '@shared/types'
 import { useStrongs } from '@/hooks/useStrongs'
 import { useConcordance } from '@/hooks/useConcordance'
+import { useLexicons } from '@/hooks/useLexicons'
 import { useAppStore } from '@/store/useAppStore'
 import { HashIcon } from './icons'
 import StrongsText from './StrongsText'
@@ -61,18 +64,7 @@ export default function LexiconCard({ id }: { id: string | null }): JSX.Element 
 
       <ReplaceControls id={entry.id} lemma={entry.lemma} translit={entry.translit} />
 
-      <div className="mt-4 border-t border-line pt-3 space-y-3">
-        {entry.definition && (
-          <Field label="Definition">
-            <StrongsText text={entry.definition} />
-          </Field>
-        )}
-        {entry.kjvDef && (
-          <Field label="KJV usage">
-            <StrongsText text={entry.kjvDef} />
-          </Field>
-        )}
-      </div>
+      <Lexicons entry={entry} />
 
       <Concordance id={entry.id} occurrences={entry.occurrences} />
     </div>
@@ -121,6 +113,91 @@ function ReplaceControls({
         </button>
       )}
     </div>
+  )
+}
+
+/** Tabbed lexicon panel: Strong's plus the scholarly lexicons that apply to this word. */
+function Lexicons({ entry }: { entry: StrongsEntry }): JSX.Element {
+  const { groups, loading } = useLexicons(entry.id)
+  const [tab, setTab] = useState<string>('strongs')
+  const isHeb = entry.language === 'hebrew'
+
+  // Fall back to Strong's whenever the selected lexicon isn't available for this word.
+  const active = tab !== 'strongs' && groups.some((g) => g.lexicon === tab) ? tab : 'strongs'
+  const tabBtn = (on: boolean): string =>
+    `px-2 py-1 text-xs rounded-md border transition-colors ${
+      on ? 'bg-accent-soft text-accent border-accent/40' : 'border-line text-muted hover:bg-elevated'
+    }`
+
+  return (
+    <div className="mt-4 border-t border-line pt-3">
+      <div className="flex items-center gap-1.5 flex-wrap mb-2">
+        <span className="text-[11px] uppercase tracking-wider text-faint mr-1">Lexicons</span>
+        <button onClick={() => setTab('strongs')} className={tabBtn(active === 'strongs')}>
+          Strong&rsquo;s
+        </button>
+        {groups.map((g) => (
+          <button
+            key={g.lexicon}
+            onClick={() => setTab(g.lexicon)}
+            className={tabBtn(active === g.lexicon)}
+            title={g.basedOn}
+          >
+            {g.name}
+          </button>
+        ))}
+        {loading && <span className="text-[11px] text-faint">…</span>}
+      </div>
+
+      {active === 'strongs' ? (
+        <div className="space-y-3">
+          {entry.definition && (
+            <Field label="Definition">
+              <StrongsText text={entry.definition} />
+            </Field>
+          )}
+          {entry.kjvDef && (
+            <Field label="KJV usage">
+              <StrongsText text={entry.kjvDef} />
+            </Field>
+          )}
+        </div>
+      ) : (
+        groups
+          .filter((g) => g.lexicon === active)
+          .map((g) => (
+            <div key={g.lexicon}>
+              <div className="text-[11px] text-faint mb-1.5">{g.basedOn}</div>
+              <div className="space-y-3">
+                {g.entries.map((e, i) => (
+                  <div key={e.extKey ?? i}>
+                    {(e.headword || e.gloss) && (
+                      <div className="mb-0.5">
+                        <span className={`text-ink ${isHeb ? 'font-hebrew' : 'font-greek'}`} dir={isHeb ? 'rtl' : 'ltr'}>
+                          {e.headword}
+                        </span>
+                        {e.gloss && <span className="text-muted text-sm"> — {e.gloss}</span>}
+                      </div>
+                    )}
+                    <LexBody body={e.body} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))
+      )}
+    </div>
+  )
+}
+
+/** Render a build-time-sanitised lexicon body (only <b>/<i> tags + newlines survive). */
+function LexBody({ body }: { body: string }): JSX.Element {
+  const html = body.replace(/\n/g, '<br/>')
+  return (
+    <div
+      className="text-sm text-ink leading-relaxed [&_b]:font-semibold [&_i]:italic"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   )
 }
 

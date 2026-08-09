@@ -54,6 +54,36 @@ export async function installDevMock(): Promise<void> {
         ]
       } as ChapterContent),
     getStrongs: async (id) => (data.strongs[id.toUpperCase()] as never) ?? null,
+    getLexiconEntries: async (strongs) => {
+      const greek = !strongs.toUpperCase().startsWith('H')
+      return greek
+        ? [
+            {
+              lexicon: 'TBESG',
+              name: 'Abbott-Smith',
+              basedOn: 'Abbott-Smith · Greek NT (STEPBible, CC BY)',
+              entries: [
+                {
+                  extKey: strongs.toUpperCase(),
+                  headword: 'ἀγάπη',
+                  translit: 'agapē',
+                  gloss: 'love',
+                  body: '<b>ἀγάπη</b>, -ης, ἡ\n<b>love, goodwill, esteem</b> — (preview mock lexicon body).'
+                }
+              ]
+            }
+          ]
+        : [
+            {
+              lexicon: 'TBESH',
+              name: 'BDB',
+              basedOn: 'Brown-Driver-Briggs · Hebrew OT (STEPBible, CC BY)',
+              entries: [
+                { extKey: strongs.toUpperCase(), headword: 'אֱלֹהִים', translit: 'elohim', gloss: 'God', body: '(preview mock lexicon body).' }
+              ]
+            }
+          ]
+    },
     getConcordance: async (strongs) => {
       const sid = strongs.toUpperCase()
       const ch = data.chapters['KJV/John/1']

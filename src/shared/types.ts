@@ -55,6 +55,21 @@ export interface StrongsEntry {
   occurrences: number
 }
 
+/** One sub-entry from a scholarly lexicon (BDB / Abbott-Smith / LSJ), keyed to a Strong's number. */
+export interface LexiconEntry {
+  extKey: string | null // extended Strong's, e.g. 'G0001G'
+  headword: string | null
+  translit: string | null
+  gloss: string | null
+  body: string // sanitised: only <b>/<i> tags + newlines
+}
+export interface LexiconGroup {
+  lexicon: string // 'TBESG' | 'TBESH' | 'TFLSJ'
+  name: string // short display name, e.g. 'Abbott-Smith'
+  basedOn: string // fuller attribution, e.g. 'Abbott-Smith (Greek NT)'
+  entries: LexiconEntry[]
+}
+
 export interface SearchQuery {
   text: string
   translation: string
@@ -246,6 +261,7 @@ export interface BibleApi {
   listTranslations(): Promise<Translation[]>
   getChapter(ref: ChapterRef): Promise<ChapterContent>
   getStrongs(id: string): Promise<StrongsEntry | null>
+  getLexiconEntries(strongs: string): Promise<LexiconGroup[]>
   getConcordance(strongs: string, opts?: ConcordanceOptions): Promise<ConcordanceResponse>
   listEditions(): Promise<Edition[]>
   getInterlinear(book: string, chapter: number, edition: string): Promise<InterlinearContent>

@@ -5,6 +5,7 @@ const api: BibleApi = {
   listTranslations: () => ipcRenderer.invoke('bible:listTranslations'),
   getChapter: (ref) => ipcRenderer.invoke('bible:getChapter', ref),
   getStrongs: (id) => ipcRenderer.invoke('bible:getStrongs', id),
+  getLexiconEntries: (strongs) => ipcRenderer.invoke('bible:getLexiconEntries', strongs),
   getConcordance: (strongs, opts) => ipcRenderer.invoke('bible:getConcordance', strongs, opts),
   listEditions: () => ipcRenderer.invoke('bible:listEditions'),
   getInterlinear: (book, chapter, edition) =>

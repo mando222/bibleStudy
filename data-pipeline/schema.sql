@@ -92,6 +92,24 @@ CREATE TABLE strongs_lexicon (
   derivation    TEXT
 );
 
+-- Additional scholarly lexicons (BDB, Abbott-Smith, LSJ, …), keyed to Strong's numbers so the
+-- lexicon card can offer several entries for a clicked word. Bodies are sanitised at build time
+-- to a safe <b>/<i>/newline subset. One row per lexicon sub-entry (a Strong's number may have a
+-- few, e.g. G0001G / G0001H).
+CREATE TABLE lexicon_entries (
+  id        INTEGER PRIMARY KEY,
+  lexicon   TEXT NOT NULL,     -- 'TBESG' | 'TBESH' | 'TFLSJ'
+  strongs   TEXT NOT NULL,     -- normalised base id: 'G26' / 'H430'
+  ext_key   TEXT,              -- extended Strong's, e.g. 'G0001G'
+  headword  TEXT,              -- lemma
+  translit  TEXT,
+  gloss     TEXT,
+  body      TEXT NOT NULL,     -- sanitised definition (only <b>/<i> + newlines)
+  sort      INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX idx_lex_strongs ON lexicon_entries (strongs, lexicon, sort);
+
 -- Full-text search over verse text (standalone contentless-style table).
 CREATE VIRTUAL TABLE verses_fts USING fts5 (
   text,

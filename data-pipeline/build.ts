@@ -137,6 +137,16 @@ const LXX_SWETE_FILES: [string, string][] = [
   ['Dan', '57.Daniel_Theodotionis_versio.txt']
 ]
 
+// Scholarly lexicons (STEPBible, CC BY 4.0), keyed to extended Strong's numbers. TBESH is the
+// Brown-Driver-Briggs Hebrew lexicon; TBESG the Abbott-Smith Greek NT lexicon; TFLSJ the full
+// Liddell-Scott-Jones (broad Greek incl. LXX/classical). Same 8-column TSV as the tagged texts.
+const STEP_REPO = 'https://raw.githubusercontent.com/STEPBible/STEPBible-Data/master'
+const LEXICON_FILES: { id: string; file: string }[] = [
+  { id: 'TBESH', file: 'Lexicons/TBESH - Translators Brief lexicon of Extended Strongs for Hebrew - STEPBible.org CC BY.txt' },
+  { id: 'TBESG', file: 'Lexicons/TBESG - Translators Brief lexicon of Extended Strongs for Greek - STEPBible.org CC BY.txt' },
+  { id: 'TFLSJ', file: 'Lexicons/TFLSJ  0-5624 - Translators Formatted full LSJ Bible lexicon - STEPBible.org CC BY.txt' }
+]
+
 // STEPBible book abbreviation (dotted ref) → our book id. Uppercased abbrev matches our USFM
 // codes except a few; override those here.
 const STEP_BOOK_OVERRIDE: Record<string, string> = { NAH: 'Nah' } // Nahum: STEP 'Nah' vs USFM 'NAM'
@@ -585,6 +595,55 @@ async function buildSeptuagintEdition(db: DatabaseSync): Promise<number> {
   return count
 }
 
+/** Sanitise a STEPBible lexicon body to a safe subset: only <b>/<i> tags + newlines. */
+function cleanLexBody(html: string): string {
+  let s = html
+  s = s.replace(/<br\s*\/?>/gi, '\n')
+  s = s.replace(/<ref\b[^>]*>(.*?)<\/ref>/gi, '$1') // keep the visible verse text
+  s = s.replace(/<a\b[^>]*>(.*?)<\/a>/gi, '$1') // drop javascript hrefs, keep inner text
+  s = s.replace(/<b\b[^>]*>/gi, '<b>').replace(/<i\b[^>]*>/gi, '<i>') // strip attributes
+  s = s.replace(/<(?!\/?[bi]>)[^>]*>/g, '') // remove every remaining tag except <b>/<i>
+  s = s.replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+  return s
+}
+
+/** Load scholarly lexicons (BDB / Abbott-Smith / LSJ) keyed to Strong's numbers. */
+async function buildLexicons(db: DatabaseSync): Promise<number> {
+  const ins = db.prepare(
+    `INSERT INTO lexicon_entries (lexicon, strongs, ext_key, headword, translit, gloss, body, sort)
+     VALUES (?,?,?,?,?,?,?,?)`
+  )
+  let count = 0
+  for (const { id, file } of LEXICON_FILES) {
+    const path = await downloadCached(`lex_${id}.txt`, `${STEP_REPO}/${encodeURI(file)}`)
+    const lines = readFileSync(path, 'utf8').split('\n')
+    let sort = 0
+    db.exec('BEGIN')
+    for (const line of lines) {
+      if (!/^[GH]\d/.test(line)) continue
+      const c = line.split('\t')
+      if (c.length < 8) continue
+      const strongs = normStrongs(c[0])
+      if (!strongs) continue
+      const body = cleanLexBody(c[7] || '')
+      if (!body) continue
+      ins.run(
+        id,
+        strongs,
+        (c[2] || c[0]).trim() || null,
+        (c[3] || '').trim() || null,
+        (c[4] || '').trim() || null,
+        (c[6] || '').trim() || null,
+        body,
+        sort++
+      )
+      count++
+    }
+    db.exec('COMMIT')
+  }
+  return count
+}
+
 // ---- build -----------------------------------------------------------------
 
 async function main(): Promise<void> {
@@ -775,11 +834,15 @@ async function main(): Promise<void> {
   const lxxCount = await buildSeptuagintEdition(db)
   process.stdout.write(` ${lxxCount}\n`)
 
+  process.stdout.write('• Lexicons (BDB / Abbott-Smith / LSJ)…')
+  const lexEntries = await buildLexicons(db)
+  process.stdout.write(` ${lexEntries} entries\n`)
+
   const insMeta = db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?,?)')
   insMeta.run('schema_version', '1')
   insMeta.run(
     'sources',
-    'helloao Free Use Bible API; openscriptures/strongs (CC-BY-SA); kaiserlik/kjv (KJV+Strong’s); bereanbible.com bsb_tables (BSB interlinear, public domain); STEPBible TAHOT/TAGNT (CC-BY); Septuagint: Swete via Open Greek and Latin / First1KGreek, nathans/lxx-swete (CC-BY-SA 4.0)'
+    'helloao Free Use Bible API; openscriptures/strongs (CC-BY-SA); kaiserlik/kjv (KJV+Strong’s); bereanbible.com bsb_tables (BSB interlinear, public domain); STEPBible TAHOT/TAGNT + lexicons TBESH/TBESG/TFLSJ (CC-BY); Septuagint: Swete via Open Greek and Latin / First1KGreek, nathans/lxx-swete (CC-BY-SA 4.0)'
   )
 
   // ---- assertions --------------------------------------------------------
@@ -893,6 +956,16 @@ async function main(): Promise<void> {
     db.prepare("SELECT COUNT(DISTINCT book_id) n FROM original_tokens WHERE edition='LXX'").get() as { n: number }
   ).n
   if (lxxBooks < 35) errors.push(`LXX should cover ≥35 OT books, got ${lxxBooks}`)
+
+  // Lexicons: agapē (G26) has an Abbott-Smith (TBESG) entry; Elohim (H430) a BDB (TBESH) entry.
+  const g26lex = (
+    db.prepare("SELECT COUNT(*) n FROM lexicon_entries WHERE strongs='G26' AND lexicon='TBESG'").get() as { n: number }
+  ).n
+  if (g26lex < 1) errors.push('TBESG (Abbott-Smith) should have an entry for G26 (ἀγάπη)')
+  const h430lex = (
+    db.prepare("SELECT COUNT(*) n FROM lexicon_entries WHERE strongs='H430' AND lexicon='TBESH'").get() as { n: number }
+  ).n
+  if (h430lex < 1) errors.push('TBESH (BDB) should have an entry for H430 (אֱלֹהִים)')
 
   db.close()
 

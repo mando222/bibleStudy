@@ -18,7 +18,9 @@ import type {
   Edition,
   InterlinearContent,
   VariantItem,
-  VerseVariant
+  VerseVariant,
+  LexiconGroup,
+  LexiconEntry
 } from '../../shared/types'
 
 let db: DatabaseSync | null = null
@@ -152,6 +154,45 @@ export function getStrongs(id: string): StrongsEntry | null {
     kjvDef: (row.kjv_def as string) ?? null,
     occurrences: occ.n
   }
+}
+
+// Extra lexicons keyed to Strong's, filtered to the ones matching the word's language.
+const LEX_META: Record<string, { name: string; basedOn: string; lang: 'greek' | 'hebrew'; order: number }> = {
+  TBESG: { name: 'Abbott-Smith', basedOn: 'Abbott-Smith · Greek NT (STEPBible, CC BY)', lang: 'greek', order: 1 },
+  TBESH: { name: 'BDB', basedOn: 'Brown-Driver-Briggs · Hebrew OT (STEPBible, CC BY)', lang: 'hebrew', order: 1 },
+  TFLSJ: { name: 'LSJ', basedOn: 'Liddell-Scott-Jones · Greek (STEPBible, CC BY)', lang: 'greek', order: 2 }
+}
+
+/** Scholarly-lexicon entries (BDB / Abbott-Smith / LSJ) for a Strong's number, grouped by lexicon. */
+export function getLexiconEntries(strongs: string): LexiconGroup[] {
+  const id = strongs.toUpperCase()
+  const lang: 'greek' | 'hebrew' = id.startsWith('H') ? 'hebrew' : 'greek'
+  const rows = required()
+    .prepare(
+      `SELECT lexicon, ext_key, headword, translit, gloss, body
+       FROM lexicon_entries WHERE strongs = ? ORDER BY lexicon, sort`
+    )
+    .all(id) as Record<string, unknown>[]
+  const groups = new Map<string, LexiconGroup>()
+  for (const r of rows) {
+    const lex = r.lexicon as string
+    const meta = LEX_META[lex]
+    if (!meta || meta.lang !== lang) continue
+    let g = groups.get(lex)
+    if (!g) {
+      g = { lexicon: lex, name: meta.name, basedOn: meta.basedOn, entries: [] }
+      groups.set(lex, g)
+    }
+    const entry: LexiconEntry = {
+      extKey: (r.ext_key as string) ?? null,
+      headword: (r.headword as string) ?? null,
+      translit: (r.translit as string) ?? null,
+      gloss: (r.gloss as string) ?? null,
+      body: (r.body as string) ?? ''
+    }
+    g.entries.push(entry)
+  }
+  return [...groups.values()].sort((a, b) => LEX_META[a.lexicon].order - LEX_META[b.lexicon].order)
 }
 
 /** Every verse where a Strong's number occurs, in canonical order (word-study concordance). */
