@@ -143,6 +143,53 @@ CREATE TABLE form_parses (
 
 CREATE INDEX idx_form_parses ON form_parses (form, lang, count);
 
+-- People / places / events for the Genealogies, Maps, and Timelines views. From the Theographic
+-- Bible Metadata knowledge graph (CC-BY-SA 4.0); every row carries the verses that reference it,
+-- normalised to our "Book.ch.v" keys (JSON arrays) so each links straight into the reader.
+CREATE TABLE people (
+  id          INTEGER PRIMARY KEY, -- Theographic personID
+  name        TEXT NOT NULL,
+  gender      TEXT,
+  birth_year  INTEGER,
+  death_year  INTEGER,
+  father_id   INTEGER,
+  mother_id   INTEGER,
+  slug        TEXT,
+  summary     TEXT,                -- short public-domain (Easton's) blurb
+  verse_count INTEGER NOT NULL DEFAULT 0,
+  verses      TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX idx_people_name ON people (name);
+
+CREATE TABLE person_links (
+  person_id  INTEGER NOT NULL,
+  related_id INTEGER NOT NULL,
+  kind       TEXT NOT NULL         -- 'spouse' | 'child'
+);
+CREATE INDEX idx_person_links ON person_links (person_id);
+
+CREATE TABLE places (
+  id           INTEGER PRIMARY KEY, -- Theographic placeID
+  name         TEXT NOT NULL,
+  lat          REAL,
+  lon          REAL,
+  feature_type TEXT,
+  comment      TEXT,
+  verse_count  INTEGER NOT NULL DEFAULT 0,
+  verses       TEXT NOT NULL DEFAULT '[]'
+);
+
+CREATE TABLE events (
+  id           INTEGER PRIMARY KEY, -- Theographic eventID
+  title        TEXT NOT NULL,
+  start_year   INTEGER,
+  sort_key     REAL,
+  participants TEXT NOT NULL DEFAULT '[]', -- JSON array of personID
+  place_ids    TEXT NOT NULL DEFAULT '[]', -- JSON array of placeID
+  verses       TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX idx_events_sort ON events (sort_key);
+
 -- Full-text search over verse text (standalone contentless-style table).
 CREATE VIRTUAL TABLE verses_fts USING fts5 (
   text,

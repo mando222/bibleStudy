@@ -823,6 +823,144 @@ function tagSeptuagint(db: DatabaseSync): { tagged: number; total: number } {
   return { tagged, total: lxx.length }
 }
 
+/**
+ * People / places / events for the Genealogies, Maps, and Timelines views, from the Theographic
+ * Bible Metadata knowledge graph (CC-BY-SA 4.0). Each entity's verse references are resolved to our
+ * "Book.ch.v" keys via each verse record's OSIS ref, so everything links straight into the reader.
+ */
+async function buildTheographic(
+  db: DatabaseSync
+): Promise<{ people: number; places: number; events: number }> {
+  const BASE =
+    'https://raw.githubusercontent.com/robertrouse/theographic-bible-metadata/master/json'
+  type Rec = { id: string; fields: Record<string, unknown> }
+  const load = async (name: string): Promise<Rec[]> =>
+    JSON.parse(readFileSync(await downloadCached(`theo_${name}.json`, `${BASE}/${name}.json`), 'utf8'))
+
+  const [people, places, events, verses] = await Promise.all([
+    load('people'),
+    load('places'),
+    load('events'),
+    load('verses')
+  ])
+
+  const num = (x: unknown): number | null => {
+    const n = Number(x)
+    return Number.isFinite(n) ? Math.trunc(n) : null
+  }
+  const flt = (x: unknown): number | null => {
+    const n = Number(x)
+    return Number.isFinite(n) ? n : null
+  }
+  const validBooks = new Set(BOOKS.map((b) => b.id)) // our ids are OSIS-style — match directly
+
+  // verse record id → "Book.ch.v"
+  const vref = new Map<string, string>()
+  for (const v of verses) {
+    const osis = v.fields.osisRef as string | undefined
+    const m = osis && /^([^.]+)\.(\d+)\.(\d+)$/.exec(osis)
+    if (!m || !validBooks.has(m[1])) continue
+    vref.set(v.id, `${m[1]}.${Number(m[2])}.${Number(m[3])}`)
+  }
+  const resolveVerses = (recs: unknown): string[] => [
+    ...new Set(((recs as string[]) || []).map((r) => vref.get(r)).filter(Boolean) as string[])
+  ]
+  const personIdByRec = new Map(people.map((p) => [p.id, p.fields.personID as number]))
+  const placeIdByRec = new Map(places.map((p) => [p.id, p.fields.placeID as number]))
+  const first = (a: unknown): string | undefined => (a as string[] | undefined)?.[0]
+
+  // People + relationships
+  const insP = db.prepare(
+    `INSERT OR REPLACE INTO people (id,name,gender,birth_year,death_year,father_id,mother_id,slug,summary,verse_count,verses)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+  )
+  const insL = db.prepare('INSERT INTO person_links (person_id, related_id, kind) VALUES (?,?,?)')
+  db.exec('BEGIN')
+  for (const p of people) {
+    const f = p.fields
+    const id = f.personID as number | undefined
+    if (id == null) continue
+    const vs = resolveVerses(f.verses)
+    const summary = ((f.dictionaryText as string) || '').replace(/\s+/g, ' ').trim().slice(0, 500)
+    insP.run(
+      id,
+      (f.name as string) || (f.displayTitle as string) || `Person ${id}`,
+      (f.gender as string) || null,
+      num(f.birthYear),
+      num(f.deathYear),
+      personIdByRec.get(first(f.father) ?? '') ?? null,
+      personIdByRec.get(first(f.mother) ?? '') ?? null,
+      (f.slug as string) || null,
+      summary || null,
+      vs.length,
+      JSON.stringify(vs)
+    )
+    for (const c of (f.children as string[]) || []) {
+      const rid = personIdByRec.get(c)
+      if (rid != null) insL.run(id, rid, 'child')
+    }
+    for (const s of (f.partners as string[]) || []) {
+      const rid = personIdByRec.get(s)
+      if (rid != null) insL.run(id, rid, 'spouse')
+    }
+  }
+  db.exec('COMMIT')
+
+  // Places
+  const insPl = db.prepare(
+    `INSERT OR REPLACE INTO places (id,name,lat,lon,feature_type,comment,verse_count,verses)
+     VALUES (?,?,?,?,?,?,?,?)`
+  )
+  db.exec('BEGIN')
+  for (const pl of places) {
+    const f = pl.fields
+    const id = f.placeID as number | undefined
+    if (id == null) continue
+    const vs = resolveVerses(f.verses)
+    insPl.run(
+      id,
+      (f.kjvName as string) || (f.esvName as string) || (f.placeLookup as string) || `Place ${id}`,
+      flt(f.openBibleLat ?? f.latitude),
+      flt(f.openBibleLong ?? f.longitude),
+      (f.featureType as string) || null,
+      ((f.comment as string) || '').slice(0, 200) || null,
+      vs.length,
+      JSON.stringify(vs)
+    )
+  }
+  db.exec('COMMIT')
+
+  // Events
+  const insE = db.prepare(
+    `INSERT OR REPLACE INTO events (id,title,start_year,sort_key,participants,place_ids,verses)
+     VALUES (?,?,?,?,?,?,?)`
+  )
+  db.exec('BEGIN')
+  for (const ev of events) {
+    const f = ev.fields
+    const id = f.eventID as number | undefined
+    if (id == null) continue
+    const parts = [
+      ...new Set(((f.participants as string[]) || []).map((r) => personIdByRec.get(r)).filter((x) => x != null))
+    ]
+    const plcs = [
+      ...new Set(((f.locations as string[]) || []).map((r) => placeIdByRec.get(r)).filter((x) => x != null))
+    ]
+    insE.run(
+      id,
+      (f.title as string) || `Event ${id}`,
+      num(f.startDate),
+      flt(f.sortKey) ?? num(f.startDate) ?? 0,
+      JSON.stringify(parts),
+      JSON.stringify(plcs),
+      JSON.stringify(resolveVerses(f.verses))
+    )
+  }
+  db.exec('COMMIT')
+
+  return { people: people.length, places: places.length, events: events.length }
+}
+
 // ---- build -----------------------------------------------------------------
 
 async function main(): Promise<void> {
@@ -1049,11 +1187,15 @@ async function main(): Promise<void> {
   const parseCount = buildFormParses(db)
   process.stdout.write(` ${parseCount} form-analyses\n`)
 
+  process.stdout.write('• Theographic (people / places / events → Genealogies, Maps, Timelines)…')
+  const theo = await buildTheographic(db)
+  process.stdout.write(` ${theo.people} people · ${theo.places} places · ${theo.events} events\n`)
+
   const insMeta = db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?,?)')
   insMeta.run('schema_version', '1')
   insMeta.run(
     'sources',
-    'helloao Free Use Bible API; openscriptures/strongs (CC-BY-SA); kaiserlik/kjv (KJV+Strong’s); bereanbible.com bsb_tables (BSB interlinear, public domain); STEPBible TAHOT/TAGNT + lexicons TBESH/TBESG/TFLSJ (CC-BY); Septuagint: Swete via Open Greek and Latin / First1KGreek, nathans/lxx-swete (CC-BY-SA 4.0)'
+    'helloao Free Use Bible API; openscriptures/strongs (CC-BY-SA); kaiserlik/kjv (KJV+Strong’s); bereanbible.com bsb_tables (BSB interlinear, public domain); STEPBible TAHOT/TAGNT + lexicons TBESH/TBESG/TFLSJ (CC-BY); Septuagint: Swete via Open Greek and Latin / First1KGreek, nathans/lxx-swete (CC-BY-SA 4.0); Theographic Bible Metadata (people/places/events, CC-BY-SA 4.0)'
   )
 
   // ---- assertions --------------------------------------------------------
@@ -1216,6 +1358,21 @@ async function main(): Promise<void> {
     db.prepare("SELECT COUNT(DISTINCT strongs) n FROM form_parses WHERE form='χαριν' AND lang='greek'").get() as { n: number }
   ).n
   if (charinParses < 2) errors.push(`χάριν should have ≥2 attested parses, got ${charinParses}`)
+
+  // Theographic: people/places/events loaded, with verse references resolved to our canon.
+  const peopleN = (db.prepare('SELECT COUNT(*) n FROM people').get() as { n: number }).n
+  if (peopleN < 2000) errors.push(`people too few: ${peopleN} (expected ~3000)`)
+  const placesGeo = (db.prepare('SELECT COUNT(*) n FROM places WHERE lat IS NOT NULL').get() as { n: number }).n
+  if (placesGeo < 500) errors.push(`geolocated places too few: ${placesGeo}`)
+  const eventsN = (db.prepare('SELECT COUNT(*) n FROM events').get() as { n: number }).n
+  if (eventsN < 100) errors.push(`events too few: ${eventsN}`)
+  // Moses (a well-known person) resolves to many verse references in our Book.ch.v form.
+  const moses = db
+    .prepare("SELECT verses FROM people WHERE name = 'Moses' ORDER BY verse_count DESC LIMIT 1")
+    .get() as { verses: string } | undefined
+  const mosesVerses = moses ? (JSON.parse(moses.verses) as string[]) : []
+  if (mosesVerses.length < 100 || !/^[A-Za-z0-9]+\.\d+\.\d+$/.test(mosesVerses[0] ?? ''))
+    errors.push(`Moses verse refs unexpected: ${mosesVerses.length}, first=${mosesVerses[0]}`)
 
   db.close()
 
