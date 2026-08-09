@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AiDoc, AiStatus, ChatCitation } from '@shared/types'
+import type { AiDoc, AiIndexStatus, AiStatus, ChatCitation } from '@shared/types'
 import { useAppStore } from '@/store/useAppStore'
 import { SparkleIcon, SendIcon, FileIcon } from './icons'
 
@@ -53,6 +53,18 @@ export default function ChatDrawer(): JSX.Element {
     loadDocs()
   }
   const activeDocs = docs.filter((d) => d.active).length
+
+  const [idx, setIdx] = useState<AiIndexStatus | null>(null)
+  useEffect(() => {
+    window.ai
+      ?.indexStatus(primary)
+      .then(setIdx)
+      .catch(() => undefined)
+    const unsub = window.ai?.onIndexProgress(setIdx)
+    return unsub
+  }, [primary])
+  const indexDone = !!idx && idx.bibleTotal > 0 && idx.bibleIndexed >= idx.bibleTotal
+  const indexPct = idx && idx.bibleTotal ? Math.round((100 * idx.bibleIndexed) / idx.bibleTotal) : 0
 
   const refreshStatus = (): void => {
     window.ai
@@ -202,6 +214,34 @@ export default function ChatDrawer(): JSX.Element {
               ))}
             </ul>
           )}
+
+          <div className="mt-3 pt-2 border-t border-line">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] uppercase tracking-wider text-faint">
+                Semantic search · {primary}
+              </span>
+              {indexDone ? (
+                <span className="text-xs text-accent">On ✓</span>
+              ) : idx?.building ? (
+                <span className="text-xs text-muted tabular-nums">Building… {indexPct}%</span>
+              ) : (
+                <button
+                  onClick={() => void window.ai?.buildBibleIndex(primary)}
+                  className="text-xs text-accent hover:underline"
+                >
+                  Build index
+                </button>
+              )}
+            </div>
+            {idx?.building && (
+              <div className="mt-1.5 h-1 rounded bg-line overflow-hidden">
+                <div className="h-full bg-accent transition-all" style={{ width: `${indexPct}%` }} />
+              </div>
+            )}
+            <p className="text-[11px] text-muted mt-1 leading-relaxed">
+              Find verses by meaning, not just keywords. One-time; runs locally.
+            </p>
+          </div>
         </div>
       )}
 

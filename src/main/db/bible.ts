@@ -394,6 +394,15 @@ export function search(q: SearchQuery): SearchResponse {
   return { total, hits }
 }
 
+/** All verses of a translation (for building the semantic index). */
+export function allVerses(
+  translation: string
+): { book: string; chapter: number; verse: number; text: string }[] {
+  return required()
+    .prepare('SELECT book_id AS book, chapter, verse, text FROM verses WHERE translation_id = ?')
+    .all(translation) as { book: string; chapter: number; verse: number; text: string }[]
+}
+
 /** OR-retrieval over verses for the AI assistant: any of the keywords, ranked. */
 export function retrieveByKeywords(
   translation: string,

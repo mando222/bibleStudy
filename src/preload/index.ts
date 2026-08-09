@@ -38,7 +38,7 @@ const ai: AiApi = {
   importDocument: () => ipcRenderer.invoke('ai:importDocument'),
   setDocumentActive: (id, active) => ipcRenderer.invoke('ai:setDocumentActive', id, active),
   deleteDocument: (id) => ipcRenderer.invoke('ai:deleteDocument', id),
-  indexStatus: () => ipcRenderer.invoke('ai:indexStatus'),
+  indexStatus: (translation) => ipcRenderer.invoke('ai:indexStatus', translation),
   buildBibleIndex: (translation) => ipcRenderer.invoke('ai:buildBibleIndex', translation),
   onIndexProgress: (cb) => {
     const listener = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)

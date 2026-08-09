@@ -79,6 +79,90 @@ export function searchChunks(queryEmbedding: number[], k = 5): { text: string; s
   return out
 }
 
+// ---- Bible semantic index (embed verses of a translation for hybrid retrieval) ----
+
+function ensureBibleVec(dim: number): void {
+  ensureVecTable(dim)
+  const d = aiDb()
+  d.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS bible_vec USING vec0(embedding float[${dim}])`)
+  d.exec(
+    `CREATE TABLE IF NOT EXISTS bible_meta (rowid INTEGER PRIMARY KEY AUTOINCREMENT, translation TEXT, book TEXT, chapter INTEGER, verse INTEGER, text TEXT)`
+  )
+  d.exec('CREATE INDEX IF NOT EXISTS idx_bible_meta ON bible_meta (translation, book, chapter, verse)')
+}
+
+export function hasBibleIndex(translation: string): boolean {
+  const d = aiDb()
+  if (!d.prepare("SELECT name FROM sqlite_master WHERE name='bible_meta'").get()) return false
+  return (
+    (d.prepare('SELECT COUNT(*) n FROM bible_meta WHERE translation = ?').get(translation) as {
+      n: number
+    }).n > 0
+  )
+}
+
+export function indexedCount(translation: string): number {
+  const d = aiDb()
+  if (!d.prepare("SELECT name FROM sqlite_master WHERE name='bible_meta'").get()) return 0
+  return (d.prepare('SELECT COUNT(*) n FROM bible_meta WHERE translation = ?').get(translation) as {
+    n: number
+  }).n
+}
+
+export function indexedVerseKeys(translation: string): Set<string> {
+  const d = aiDb()
+  if (!d.prepare("SELECT name FROM sqlite_master WHERE name='bible_meta'").get()) return new Set()
+  const rows = d
+    .prepare('SELECT book, chapter, verse FROM bible_meta WHERE translation = ?')
+    .all(translation) as { book: string; chapter: number; verse: number }[]
+  return new Set(rows.map((r) => `${r.book}:${r.chapter}:${r.verse}`))
+}
+
+export function addBibleVerses(
+  translation: string,
+  items: { book: string; chapter: number; verse: number; text: string; embedding: number[] }[]
+): void {
+  if (!items.length) return
+  ensureBibleVec(items[0].embedding.length)
+  const d = aiDb()
+  const insMeta = d.prepare(
+    'INSERT INTO bible_meta (translation, book, chapter, verse, text) VALUES (?,?,?,?,?)'
+  )
+  const insVec = d.prepare('INSERT INTO bible_vec (rowid, embedding) VALUES (?, ?)')
+  d.exec('BEGIN')
+  for (const it of items) {
+    const info = insMeta.run(translation, it.book, it.chapter, it.verse, it.text)
+    insVec.run(BigInt(info.lastInsertRowid), JSON.stringify(it.embedding))
+  }
+  d.exec('COMMIT')
+}
+
+export function searchBible(
+  translation: string,
+  queryEmbedding: number[],
+  k = 8
+): { book: string; chapter: number; verse: number; text: string }[] {
+  const d = aiDb()
+  if (!d.prepare("SELECT name FROM sqlite_master WHERE name='bible_vec'").get()) return []
+  const near = d
+    .prepare('SELECT rowid, distance FROM bible_vec WHERE embedding MATCH ? ORDER BY distance LIMIT ?')
+    .all(JSON.stringify(queryEmbedding), k * 4) as { rowid: number; distance: number }[]
+  const get = d.prepare(
+    'SELECT translation, book, chapter, verse, text FROM bible_meta WHERE rowid = ?'
+  )
+  const out: { book: string; chapter: number; verse: number; text: string }[] = []
+  for (const n of near) {
+    const m = get.get(n.rowid) as
+      | { translation: string; book: string; chapter: number; verse: number; text: string }
+      | undefined
+    if (m && m.translation === translation) {
+      out.push({ book: m.book, chapter: m.chapter, verse: m.verse, text: m.text })
+      if (out.length >= k) break
+    }
+  }
+  return out
+}
+
 export function listDocuments(): AiDoc[] {
   const rows = aiDb()
     .prepare('SELECT id, name, chunks, active, added_at FROM documents ORDER BY added_at DESC')

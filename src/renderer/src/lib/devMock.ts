@@ -160,6 +160,8 @@ export async function installDevMock(): Promise<void> {
   const mockDocs: AiDoc[] = [
     { id: 'doc_sample', name: 'Position paper — ecclesiology.pdf', chunks: 12, active: true, addedAt: Date.now() }
   ]
+  let mockIndexed = 0
+  const idxListeners = new Set<(s: { bibleIndexed: number; bibleTotal: number; building: boolean }) => void>()
   const ai: AiApi = {
     status: async () => ({ available: true, models: ['llama3.1:latest', 'qwen3:1.7b'], config: cfg }),
     setConfig: async (patch) => Object.assign(cfg, patch),
@@ -199,9 +201,22 @@ export async function installDevMock(): Promise<void> {
       const i = mockDocs.findIndex((x) => x.id === id)
       if (i >= 0) mockDocs.splice(i, 1)
     },
-    indexStatus: async () => ({ bibleIndexed: 0, bibleTotal: 0, building: false }),
-    buildBibleIndex: async () => undefined,
-    onIndexProgress: () => () => undefined
+    indexStatus: async () => ({ bibleIndexed: mockIndexed, bibleTotal: 31102, building: false }),
+    buildBibleIndex: async () => {
+      let n = mockIndexed
+      const total = 31102
+      const step = (): void => {
+        n = Math.min(total, n + 5000)
+        idxListeners.forEach((cb) => cb({ bibleIndexed: n, bibleTotal: total, building: n < total }))
+        if (n < total) setTimeout(step, 180)
+        else mockIndexed = total
+      }
+      step()
+    },
+    onIndexProgress: (cb) => {
+      idxListeners.add(cb)
+      return () => idxListeners.delete(cb)
+    }
   }
   ;(window as unknown as { ai: AiApi }).ai = ai
 }

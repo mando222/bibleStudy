@@ -1,7 +1,9 @@
 import { retrieveByKeywords } from '../db/bible'
-import { chatStream } from './ollama'
-import { ensureChatModel } from './config'
+import { BOOK_BY_ID } from '../../shared/books'
+import { chatStream, embed } from './ollama'
+import { ensureChatModel, getConfig } from './config'
 import { retrieveDocs } from './documents'
+import { hasBibleIndex, searchBible } from './vectors'
 import type { ChatMessage, ChatCitation } from '../../shared/types'
 
 const SYSTEM =
@@ -31,14 +33,43 @@ function keywords(q: string): string[] {
   return out.slice(0, 6)
 }
 
-export function retrieveBible(question: string, translation: string): ChatCitation[] {
-  return retrieveByKeywords(translation, keywords(question), 10).map((h) => ({
+/** Hybrid Bible retrieval: keyword (FTS) always; semantic (embeddings) when the index exists. */
+export async function retrieveBible(question: string, translation: string): Promise<ChatCitation[]> {
+  const fts: ChatCitation[] = retrieveByKeywords(translation, keywords(question), 8).map((h) => ({
     book: h.book,
     bookName: h.bookName,
     chapter: h.chapter,
     verse: h.verse,
     text: h.snippet
   }))
+  let sem: ChatCitation[] = []
+  try {
+    if (hasBibleIndex(translation)) {
+      const cfg = getConfig()
+      const [qv] = await embed(cfg.baseUrl, cfg.embedModel, [question])
+      if (qv) {
+        sem = searchBible(translation, qv, 8).map((m) => ({
+          book: m.book,
+          bookName: BOOK_BY_ID[m.book]?.name ?? m.book,
+          chapter: m.chapter,
+          verse: m.verse,
+          text: m.text
+        }))
+      }
+    }
+  } catch {
+    /* semantic retrieval unavailable */
+  }
+  const seen = new Set<string>()
+  const out: ChatCitation[] = []
+  for (const c of [...sem, ...fts]) {
+    const k = `${c.book}:${c.chapter}:${c.verse}`
+    if (!seen.has(k)) {
+      seen.add(k)
+      out.push(c)
+    }
+  }
+  return out.slice(0, 10)
 }
 
 /** Stream a grounded answer: yields citations first, then content tokens. */
@@ -61,7 +92,7 @@ export async function* answer(
     text: h.text,
     source: h.source
   }))
-  const bibleCites = grounding && lastUser ? retrieveBible(lastUser, grounding.translation) : []
+  const bibleCites = grounding && lastUser ? await retrieveBible(lastUser, grounding.translation) : []
   const citations = [...extraContext, ...docCites, ...bibleCites]
   yield { citations }
 

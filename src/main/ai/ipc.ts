@@ -4,6 +4,7 @@ import { getConfig, setConfig, ensureChatModel } from './config'
 import { answer } from './assistant'
 import { importDocument } from './documents'
 import { listDocuments, setDocumentActive, deleteDocument } from './vectors'
+import { indexStatus, buildBibleIndex } from './bibleIndex'
 import type { AiConfig, ChatCitation, ChatMessage } from '../../shared/types'
 
 export function registerAiIpc(): void {
@@ -64,7 +65,11 @@ export function registerAiIpc(): void {
   )
   ipcMain.handle('ai:deleteDocument', (_e, id: string) => deleteDocument(id))
 
-  // Bible semantic index (deferred — retrieval currently uses FTS)
-  ipcMain.handle('ai:indexStatus', () => ({ bibleIndexed: 0, bibleTotal: 0, building: false }))
-  ipcMain.handle('ai:buildBibleIndex', () => undefined)
+  // Bible semantic index (hybrid retrieval)
+  ipcMain.handle('ai:indexStatus', (_e, translation: string) => indexStatus(translation))
+  ipcMain.handle('ai:buildBibleIndex', async (e, translation: string) => {
+    await buildBibleIndex(translation, (s) => {
+      if (!e.sender.isDestroyed()) e.sender.send('ai:indexProgress', s)
+    })
+  })
 }

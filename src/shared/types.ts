@@ -193,7 +193,7 @@ export interface AiApi {
   setDocumentActive(id: string, active: boolean): Promise<void>
   deleteDocument(id: string): Promise<void>
 
-  indexStatus(): Promise<AiIndexStatus>
+  indexStatus(translation: string): Promise<AiIndexStatus>
   buildBibleIndex(translation: string): Promise<void>
   onIndexProgress(cb: (s: AiIndexStatus) => void): () => void
 }
