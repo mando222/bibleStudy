@@ -21,6 +21,7 @@ export function registerIpc(): void {
   ipcMain.handle('bible:getLexiconEntries', (_e, strongs: string) =>
     bible.getLexiconEntries(strongs)
   )
+  ipcMain.handle('bible:getLexiconByWord', (_e, word: string) => bible.getLexiconByWord(word))
   ipcMain.handle('bible:getConcordance', (_e, strongs: string, opts) =>
     bible.getConcordance(strongs, opts)
   )

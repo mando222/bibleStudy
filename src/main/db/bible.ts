@@ -163,6 +163,45 @@ const LEX_META: Record<string, { name: string; basedOn: string; lang: 'greek' | 
   TFLSJ: { name: 'LSJ', basedOn: 'Liddell-Scott-Jones · Greek (STEPBible, CC BY)', lang: 'greek', order: 2 }
 }
 
+function normGreekWord(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '') // combining diacritics/breathing/accents
+    .toLowerCase()
+    .replace(/[^α-ω]/g, '') // keep lowercase Greek letters only
+    .replace(/ς/g, 'σ') // final sigma → sigma
+}
+function normHebrewWord(s: string): string {
+  return s
+    .normalize('NFC')
+    .replace(/[֑-ׇ]/g, '') // cantillation + vowel points
+    .replace(/[^א-ת]/g, '') // keep consonants only
+}
+
+/**
+ * Resolve an original-language WORD (Greek/Hebrew surface) to a Strong's number by matching its
+ * form against lexicon lemmas/headwords, so a word with no Strong's tag can still open the lexicon.
+ * Exact (accent-insensitive) match — best for dictionary-form words; inflected forms may not resolve
+ * without a full morphological analyser. Returns null when nothing matches.
+ */
+export function getLexiconByWord(word: string): string | null {
+  const d = required()
+  const isHeb = /[֐-׿]/.test(word)
+  const norm = isHeb ? normHebrewWord : normGreekWord
+  const key = norm(word)
+  if (!key) return null
+  const lang = isHeb ? 'hebrew' : 'greek'
+  const rows = d
+    .prepare('SELECT id, lemma FROM strongs_lexicon WHERE language = ?')
+    .all(lang) as { id: string; lemma: string | null }[]
+  for (const r of rows) if (r.lemma && norm(r.lemma) === key) return r.id
+  const lrows = d
+    .prepare('SELECT strongs, headword FROM lexicon_entries WHERE strongs LIKE ?')
+    .all(isHeb ? 'H%' : 'G%') as { strongs: string; headword: string | null }[]
+  for (const r of lrows) if (r.headword && norm(r.headword) === key) return r.strongs
+  return null
+}
+
 /** Scholarly-lexicon entries (BDB / Abbott-Smith / LSJ) for a Strong's number, grouped by lexicon. */
 export function getLexiconEntries(strongs: string): LexiconGroup[] {
   const id = strongs.toUpperCase()

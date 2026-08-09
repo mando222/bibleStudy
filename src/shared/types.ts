@@ -271,6 +271,7 @@ export interface BibleApi {
   getChapter(ref: ChapterRef): Promise<ChapterContent>
   getStrongs(id: string): Promise<StrongsEntry | null>
   getLexiconEntries(strongs: string): Promise<LexiconGroup[]>
+  getLexiconByWord(word: string): Promise<string | null>
   getConcordance(strongs: string, opts?: ConcordanceOptions): Promise<ConcordanceResponse>
   listEditions(): Promise<Edition[]>
   getInterlinear(

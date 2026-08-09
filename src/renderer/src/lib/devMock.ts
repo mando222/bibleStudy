@@ -54,6 +54,7 @@ export async function installDevMock(): Promise<void> {
         ]
       } as ChapterContent),
     getStrongs: async (id) => (data.strongs[id.toUpperCase()] as never) ?? null,
+    getLexiconByWord: async (word) => (/θε/.test(word) ? 'G2316' : null),
     getLexiconEntries: async (strongs) => {
       const greek = !strongs.toUpperCase().startsWith('H')
       return greek

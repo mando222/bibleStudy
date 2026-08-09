@@ -18,7 +18,17 @@ export default function InterlinearVerse({
 }): JSX.Element {
   const selectStrongs = useAppStore((s) => s.selectStrongs)
   const selected = useAppStore((s) => s.selectedStrongs)
-  const searchFor = useAppStore((s) => s.searchFor)
+
+  // Open the lexicon for a word: by its Strong's number, or — for untagged words — by matching
+  // its form against lexicon lemmas/headwords (same card, keyed by the word instead of a number).
+  const openWord = (tok: { strongs: string | null; lemma: string | null; surface: string }): void => {
+    if (tok.strongs) {
+      selectStrongs(tok.strongs)
+      return
+    }
+    const w = (tok.lemma || tok.surface || '').trim()
+    if (w) window.api.getLexiconByWord(w).then((id) => id && selectStrongs(id))
+  }
 
   return (
     <div className="mb-4">
@@ -32,14 +42,8 @@ export default function InterlinearVerse({
         return (
           <button
             key={tok.position}
-            onClick={() => {
-              if (tok.strongs) selectStrongs(tok.strongs)
-              else {
-                const w = (tok.surface || tok.lemma || '').trim()
-                if (w) searchFor(w)
-              }
-            }}
-            title={tok.strongs ? undefined : 'Search for this word'}
+            onClick={() => openWord(tok)}
+            title={tok.strongs ? undefined : 'Look up this word in the lexicon'}
             className={`flex flex-col items-center text-center rounded-md px-1.5 py-1 min-w-[2.5rem] hover:bg-elevated cursor-pointer ${
               isSel ? 'bg-accent-soft' : ''
             }`}
