@@ -8,7 +8,8 @@ import {
   ColumnsIcon,
   InterlinearIcon,
   InfoIcon,
-  SparkleIcon
+  SparkleIcon,
+  PenIcon
 } from './icons'
 
 export default function TopBar(): JSX.Element {
@@ -18,6 +19,7 @@ export default function TopBar(): JSX.Element {
   const toggleStrongs = useAppStore((s) => s.toggleStrongs)
   const divineNames = useAppStore((s) => s.divineNames)
   const toggleDivineNames = useAppStore((s) => s.toggleDivineNames)
+  const setDivineNamesModalOpen = useAppStore((s) => s.setDivineNamesModalOpen)
   const interlinear = useAppStore((s) => s.interlinear)
   const toggleInterlinear = useAppStore((s) => s.toggleInterlinear)
   const setAboutOpen = useAppStore((s) => s.setAboutOpen)
@@ -113,18 +115,31 @@ export default function TopBar(): JSX.Element {
         Strong&rsquo;s
       </button>
 
-      <button
-        onClick={toggleDivineNames}
-        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-sm border transition-colors whitespace-nowrap ${
-          divineNames
-            ? 'bg-accent-soft border-accent text-accent'
-            : 'border-line hover:bg-elevated text-muted'
+      <div
+        className={`flex items-stretch rounded-md border transition-colors whitespace-nowrap ${
+          divineNames ? 'bg-accent-soft border-accent text-accent' : 'border-line text-muted'
         }`}
-        title="Restore the divine names (LORD → Yahweh, God → Elohim). Needs a Strong's-tagged translation (KJV/BSB)."
       >
-        <span className="font-hebrew text-[13px] leading-none">יהוה</span>
-        Divine Names
-      </button>
+        <button
+          onClick={toggleDivineNames}
+          className={`flex items-center gap-1.5 px-2.5 py-1 text-sm rounded-l-md ${
+            divineNames ? '' : 'hover:bg-elevated'
+          }`}
+          title="Restore the divine names (LORD → Yahweh, God → Elohim). Needs a Strong's-tagged translation (KJV/BSB)."
+        >
+          <span className="font-hebrew text-[13px] leading-none">יהוה</span>
+          Divine Names
+        </button>
+        <button
+          onClick={() => setDivineNamesModalOpen(true)}
+          className={`px-1.5 flex items-center border-l rounded-r-md ${
+            divineNames ? 'border-accent/40 hover:bg-accent/10' : 'border-line hover:bg-elevated'
+          }`}
+          title="Customize divine names"
+        >
+          <PenIcon className="w-3.5 h-3.5" />
+        </button>
+      </div>
 
       <button
         onClick={toggleInterlinear}

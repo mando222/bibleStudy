@@ -6,6 +6,7 @@ import NavPanel from '@/components/NavPanel'
 import ReadingPanel from '@/components/ReadingPanel'
 import StudyPanel from '@/components/StudyPanel'
 import AboutModal from '@/components/AboutModal'
+import DivineNamesModal from '@/components/DivineNamesModal'
 import ChatDrawer from '@/components/ChatDrawer'
 
 export default function App(): JSX.Element {
@@ -47,6 +48,7 @@ export default function App(): JSX.Element {
         </Panel>
       </PanelGroup>
       <AboutModal />
+      <DivineNamesModal />
       <ChatDrawer />
     </div>
   )

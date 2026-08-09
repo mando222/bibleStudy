@@ -5,19 +5,40 @@ import type { Translation } from '@shared/types'
 export type Theme = 'light' | 'dark'
 export type StudyTab = 'lexicon' | 'notes' | 'search' | 'apparatus'
 
-// One-click "restore the divine names": Strong's number → the name to render in place of the
-// traditional English rendering (LORD → Yahweh, God → Elohim, …). Applied via the word-replace
-// map, so it only affects translations that carry Strong's tags (KJV, BSB).
-export const DIVINE_NAMES: Record<string, string> = {
-  H3068: 'Yahweh', // יהוה — usually "LORD"
-  H3069: 'Yahweh', // יהוה — "GOD" beside Adonai
-  H3050: 'Yah', // יָהּ — "JAH"/"LORD"
-  H136: 'Adonai', // אֲדֹנָי — "Lord"
-  H410: 'El', // אֵל — "God"
-  H430: 'Elohim', // אֱלֹהִים — "God"
-  H433: 'Eloah', // אֱלוֹהַּ — "God"
-  H7706: 'Shaddai', // שַׁדַּי — "Almighty"
-  H5945: 'Elyon' // עֶלְיוֹן — "most High"
+// "Restore the divine names": render the Hebrew names in place of their traditional English
+// forms (LORD → Yahweh, God → Elohim, …). Applied through the word-replace map, so it only
+// affects translations that carry Strong's tags (KJV, BSB). Each name can be toggled and its
+// rendering customised; the whole thing persists across restarts.
+export interface DivineName {
+  strongs: string
+  hebrew: string // lemma glyph, for the settings UI
+  traditional: string // the usual English rendering
+  default: string // our default replacement
+}
+export const DIVINE_NAMES_LIST: DivineName[] = [
+  { strongs: 'H3068', hebrew: 'יהוה', traditional: 'LORD', default: 'Yahweh' },
+  { strongs: 'H3069', hebrew: 'יהוה', traditional: 'GOD', default: 'Yahweh' },
+  { strongs: 'H3050', hebrew: 'יָהּ', traditional: 'JAH', default: 'Yah' },
+  { strongs: 'H136', hebrew: 'אֲדֹנָי', traditional: 'Lord', default: 'Adonai' },
+  { strongs: 'H410', hebrew: 'אֵל', traditional: 'God', default: 'El' },
+  { strongs: 'H430', hebrew: 'אֱלֹהִים', traditional: 'God', default: 'Elohim' },
+  { strongs: 'H433', hebrew: 'אֱלוֹהַּ', traditional: 'God', default: 'Eloah' },
+  { strongs: 'H7706', hebrew: 'שַׁדַּי', traditional: 'Almighty', default: 'Shaddai' },
+  { strongs: 'H5945', hebrew: 'עֶלְיוֹן', traditional: 'most High', default: 'Elyon' }
+]
+
+export type DivineNameConfig = Record<string, { enabled: boolean; custom: string }>
+
+/** The Strong's→text entries contributed by the divine-names feature (empty when master is off). */
+export function computeDivineReplacements(on: boolean, cfg: DivineNameConfig): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (!on) return out
+  for (const dn of DIVINE_NAMES_LIST) {
+    const c = cfg[dn.strongs]
+    if (c && c.enabled === false) continue
+    out[dn.strongs] = c?.custom?.trim() || dn.default
+  }
+  return out
 }
 
 interface AppState {
@@ -57,8 +78,14 @@ interface AppState {
   setReplacement: (strongs: string, text: string) => void
   clearReplacement: (strongs: string) => void
   clearReplacements: () => void
-  divineNames: boolean
+  divineNames: boolean // master on/off
   toggleDivineNames: () => void
+  divineNameConfig: DivineNameConfig // per-name enable + custom rendering
+  setDivineNameEnabled: (strongs: string, enabled: boolean) => void
+  setDivineNameCustom: (strongs: string, custom: string) => void
+  resetDivineNames: () => void
+  divineNamesModalOpen: boolean
+  setDivineNamesModalOpen: (v: boolean) => void
 
   // Bumped whenever notes/highlights change, to trigger re-fetch.
   userDataNonce: number
@@ -116,16 +143,28 @@ export const useAppStore = create<AppState>()(
         delete next[strongs]
         set({ replacements: next })
       },
-      clearReplacements: () => set({ replacements: {}, divineNames: false }),
+      clearReplacements: () => set({ replacements: {} }),
 
       divineNames: false,
-      toggleDivineNames: () => {
-        const on = !get().divineNames
-        const next = { ...get().replacements }
-        if (on) for (const [k, v] of Object.entries(DIVINE_NAMES)) next[k] = v
-        else for (const k of Object.keys(DIVINE_NAMES)) delete next[k]
-        set({ divineNames: on, replacements: next })
-      },
+      toggleDivineNames: () => set({ divineNames: !get().divineNames }),
+      divineNameConfig: {},
+      setDivineNameEnabled: (strongs, enabled) =>
+        set({
+          divineNameConfig: {
+            ...get().divineNameConfig,
+            [strongs]: { enabled, custom: get().divineNameConfig[strongs]?.custom ?? '' }
+          }
+        }),
+      setDivineNameCustom: (strongs, custom) =>
+        set({
+          divineNameConfig: {
+            ...get().divineNameConfig,
+            [strongs]: { enabled: get().divineNameConfig[strongs]?.enabled ?? true, custom }
+          }
+        }),
+      resetDivineNames: () => set({ divineNameConfig: {} }),
+      divineNamesModalOpen: false,
+      setDivineNamesModalOpen: (divineNamesModalOpen) => set({ divineNamesModalOpen }),
 
       userDataNonce: 0,
       bumpUserData: () => set({ userDataNonce: get().userDataNonce + 1 }),
@@ -158,7 +197,9 @@ export const useAppStore = create<AppState>()(
         strongsVisible: s.strongsVisible,
         interlinear: s.interlinear,
         interlinearEdition: s.interlinearEdition,
-        chronological: s.chronological
+        chronological: s.chronological,
+        divineNames: s.divineNames,
+        divineNameConfig: s.divineNameConfig
       })
     }
   )

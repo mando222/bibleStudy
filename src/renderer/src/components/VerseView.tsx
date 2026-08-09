@@ -1,5 +1,6 @@
+import { useMemo } from 'react'
 import type { Verse, Highlight } from '@shared/types'
-import { useAppStore } from '@/store/useAppStore'
+import { useAppStore, computeDivineReplacements } from '@/store/useAppStore'
 import { highlightVar } from '@/lib/highlights'
 
 interface Props {
@@ -16,8 +17,15 @@ export default function VerseView({ v, highlight, hasNote, onOpenMenu }: Props):
   const selectStrongs = useAppStore((s) => s.selectStrongs)
   const selected = useAppStore((s) => s.selectedStrongs)
   const replacements = useAppStore((s) => s.replacements)
+  const divineNames = useAppStore((s) => s.divineNames)
+  const divineNameConfig = useAppStore((s) => s.divineNameConfig)
 
-  const replActive = Object.keys(replacements).length > 0
+  // Divine-name replacements are derived from the (persisted) config; manual replacements win.
+  const effective = useMemo(
+    () => ({ ...computeDivineReplacements(divineNames, divineNameConfig), ...replacements }),
+    [replacements, divineNames, divineNameConfig]
+  )
+  const replActive = Object.keys(effective).length > 0
   const useTokens = (strongsVisible || replActive) && !!v.tokens && v.tokens.length > 0
 
   const bg = highlight
@@ -49,7 +57,7 @@ export default function VerseView({ v, highlight, hasNote, onOpenMenu }: Props):
           v.tokens!.map((tok) => {
             const clickable = !!tok.strongs
             const isSel = selected != null && selected === tok.strongs
-            const replaced = tok.strongs ? replacements[tok.strongs] : undefined
+            const replaced = tok.strongs ? effective[tok.strongs] : undefined
             return (
               <span key={tok.position}>
                 <span
