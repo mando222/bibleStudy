@@ -2,7 +2,10 @@
   "name": "open-bible-study",
   "version": "0.1.0",
   "description": "Open-source, local, offline Bible study app (Logos-lite) with Strong's numbers, interlinear, and original-language tools.",
-  "author": "",
+  "author": {
+    "name": "Open Bible Study",
+    "email": "noreply@openbiblestudy.app"
+  },
   "license": "MIT",
   "main": "./out/main/index.js",
   "scripts": {
@@ -13,7 +16,7 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
-    "db:build": "NODE_NO_WARNINGS=1 NODE_OPTIONS=--experimental-sqlite tsx data-pipeline/build.ts",
+    "db:build": "cross-env NODE_NO_WARNINGS=1 NODE_OPTIONS=--experimental-sqlite tsx data-pipeline/build.ts",
     "dist": "electron-vite build && electron-builder",
     "dist:mac": "electron-vite build && electron-builder --mac",
     "dist:win": "electron-vite build && electron-builder --win",
@@ -34,6 +37,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
+    "cross-env": "^10.1.0",
     "electron": "^43.0.0",
     "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
