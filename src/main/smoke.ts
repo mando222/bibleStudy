@@ -1,0 +1,55 @@
+import { app } from 'electron'
+import { getChapter, getStrongs, listEditions, getInterlinear, getLexiconEntries } from './db/bible'
+import { aiDb } from './ai/vectors'
+import { openUserDb } from './db/user'
+
+/**
+ * Post-package smoke test (run with `--smoke-test`). Exercises the REAL packaged code paths a
+ * release depends on — bundled DB queries, the LXX/parse layer, the native sqlite-vec extension,
+ * and the writable user DB — then exits 0 (all good) or 1 (a release would be broken). This is
+ * the gate that catches packaging bugs unit tests can't, e.g. a native binary that won't load.
+ */
+export async function runSmokeTest(): Promise<void> {
+  const checks: [string, () => unknown][] = [
+    [
+      'KJV John 1:1 loads from bundled DB',
+      () => {
+        if (!getChapter({ translation: 'KJV', book: 'John', chapter: 1 }).verses.length)
+          throw new Error('no verses')
+      }
+    ],
+    ['Strong’s lexicon (G26)', () => { if (!getStrongs('G26')) throw new Error('no G26') }],
+    ['scholarly lexicons (Abbott-Smith on G26)', () => { if (!getLexiconEntries('G26').length) throw new Error('no lexicon entries') }],
+    ['interlinear editions present', () => { if (listEditions().length < 5) throw new Error('editions missing') }],
+    [
+      'LXX interlinear is tagged',
+      () => {
+        const il = getInterlinear('Gen', 1, 'LXX')
+        if (!il.verses[0]?.tokens.some((t) => t.strongs)) throw new Error('LXX untagged')
+      }
+    ],
+    [
+      'Scripture-attested parses',
+      () => {
+        const il = getInterlinear('John', 1, 'NA', [], true)
+        if (!il.verses.some((v) => v.tokens.some((t) => t.parses && t.parses.length)))
+          throw new Error('no parses')
+      }
+    ],
+    ['sqlite-vec native extension loads', () => aiDb()],
+    ['writable user.sqlite opens', () => openUserDb()]
+  ]
+
+  let failed = 0
+  for (const [name, fn] of checks) {
+    try {
+      await fn()
+      console.log(`  ✓ ${name}`)
+    } catch (e) {
+      failed++
+      console.error(`  ✗ ${name}: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+  console.log(failed ? `SMOKE TEST FAILED (${failed} check(s))` : 'SMOKE TEST PASSED')
+  app.exit(failed ? 1 : 0)
+}

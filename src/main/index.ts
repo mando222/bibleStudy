@@ -4,6 +4,13 @@ import { registerIpc } from './ipc'
 import { registerAiIpc } from './ai/ipc'
 import { openBibleDb } from './db/bible'
 import { openUserDb } from './db/user'
+import { runSmokeTest } from './smoke'
+
+// Never let a stray rejection tear the whole app down for a tester — log it and keep running.
+process.on('uncaughtException', (err) => console.error('[main] uncaughtException:', err))
+process.on('unhandledRejection', (reason) => console.error('[main] unhandledRejection:', reason))
+
+const isSmokeTest = process.argv.includes('--smoke-test')
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -24,10 +31,17 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => mainWindow.show())
 
-  // Open external links in the user's browser, never in-app.
+  // External links open in the user's browser, never in-app.
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
+  })
+  // Block any in-app navigation away from the SPA (e.g. a dropped file or stray link).
+  mainWindow.webContents.on('will-navigate', (e, url) => {
+    if (url !== mainWindow.webContents.getURL()) {
+      e.preventDefault()
+      if (/^https?:/.test(url)) shell.openExternal(url)
+    }
   })
 
   if (process.env['ELECTRON_RENDERER_URL']) {
@@ -37,18 +51,37 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
-  registerIpc()
-  registerAiIpc()
-  openBibleDb() // open the bundled DB if present; renderer shows a hint otherwise
-  openUserDb() // create/open the writable user DB (notes + highlights)
-  createWindow()
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+// Only one instance may write to user.sqlite. A second launch focuses the existing window.
+if (!isSmokeTest && !app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    const win = BrowserWindow.getAllWindows()[0]
+    if (win) {
+      if (win.isMinimized()) win.restore()
+      win.focus()
+    }
   })
-})
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
+  app.whenReady().then(async () => {
+    registerIpc()
+    registerAiIpc()
+    openBibleDb() // open the bundled DB if present; renderer shows a hint otherwise
+    openUserDb() // create/open the writable user DB (notes + highlights)
+
+    if (isSmokeTest) {
+      await runSmokeTest() // exits the process with 0 (ok) or 1 (a release would be broken)
+      return
+    }
+
+    createWindow()
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    })
+  })
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit()
+  })
+}

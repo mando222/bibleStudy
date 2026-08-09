@@ -3,9 +3,9 @@ name: Build installers
 # How to cut a release:
 #   1. Bump "version" in package.json (e.g. 0.1.0 -> 0.2.0)
 #   2. Commit and push to main
-# That builds macOS / Windows / Linux and publishes a GitHub Release for that version.
-# Unrelated package.json edits do NOT re-release (the version's tag already exists).
-# A manual run (Actions -> Run workflow) builds for testing without publishing a release.
+# Gates before anything is published: typecheck + unit tests, the data-pipeline assertions,
+# a DB-integrity test, and a smoke test of the packaged app on each OS. If any fail, no release.
+# Unrelated package.json edits don't re-release. A manual run builds for testing without releasing.
 on:
   workflow_dispatch:
   push:
@@ -17,7 +17,7 @@ permissions:
   contents: write
 
 jobs:
-  # Decide whether package.json's version is new (i.e. has no release yet).
+  # Is package.json's version new (no release yet)?
   check:
     runs-on: ubuntu-latest
     outputs:
@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # need the full tag history
+          fetch-depth: 0
       - id: v
         shell: bash
         run: |
@@ -40,9 +40,21 @@ jobs:
             echo "::notice::v$VERSION is new — building + releasing."
           fi
 
+  # Fast correctness gate: types + unit tests. Blocks the build if it fails.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
   build:
-    needs: check
-    # Build on a new version, or on any manual run (for testing).
+    needs: [check, test]
     if: needs.check.outputs.is_new == 'true' || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
@@ -60,12 +72,24 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Build the Bible database
+      - name: Build the Bible database (pipeline assertions gate the data)
         run: npm run db:build
+      - name: DB integrity test
+        run: npx vitest run test/db.test.ts
       - name: Package the app
         run: npx electron-vite build && npx electron-builder --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Smoke-test the packaged app (boots, opens DB, loads native deps)
+        shell: bash
+        run: |
+          set -e
+          case "$RUNNER_OS" in
+            macOS)   "dist/mac-arm64/Open Bible Study.app/Contents/MacOS/Open Bible Study" --smoke-test ;;
+            Windows) "dist/win-unpacked/Open Bible Study.exe" --smoke-test ;;
+            Linux)   sudo apt-get update && sudo apt-get install -y xvfb
+                     xvfb-run -a "dist/linux-unpacked/open-bible-study" --smoke-test --no-sandbox ;;
+          esac
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
@@ -77,7 +101,7 @@ jobs:
             dist/*.deb
           if-no-files-found: warn
 
-  # One job publishes the Release for a genuinely new version (never on plain test runs).
+  # Publish the Release only after every platform built + passed its smoke test.
   release:
     needs: [check, build]
     if: needs.check.outputs.is_new == 'true'
@@ -92,7 +116,21 @@ jobs:
         with:
           tag_name: v${{ needs.check.outputs.version }}
           name: Open Bible Study v${{ needs.check.outputs.version }}
-          generate_release_notes: true
+          generate_release_notes: true # GitHub's auto "What's Changed" is appended below
+          append_body: true
+          body: |
+            **Open Bible Study v${{ needs.check.outputs.version }}** — free, offline Bible study for macOS, Windows, and Linux.
+
+            ### Download
+            | Platform | File |
+            |---|---|
+            | macOS (Apple Silicon) | `*-mac-arm64.dmg` |
+            | Windows | `*-setup.exe` |
+            | Linux | `*.AppImage` or `*.deb` |
+
+            First launch shows a one-time "unidentified developer" prompt (the app isn't code-signed) — see the [install guide](https://github.com/mando222/bibleStudy/blob/main/docs/INSTALL.md) for the one-click fix per OS. Your notes and settings carry over across updates.
+
+            ---
           files: |
             installers/**/*.dmg
             installers/**/*.exe

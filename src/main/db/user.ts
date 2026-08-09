@@ -16,6 +16,34 @@ import type {
 
 let db: DatabaseSync | null = null
 
+// Bump when the user schema changes, and add exactly one migration step per bump below.
+const USER_SCHEMA_VERSION = 1
+
+/**
+ * Evolve an existing user.sqlite in place across app updates, so notes/highlights/imports are
+ * never lost or broken. The CREATE TABLE block above is the frozen v1 schema; every LATER change
+ * must be an ALTER-style step here (never by editing that block), keyed by version so it runs once.
+ */
+function migrate(d: DatabaseSync): void {
+  d.exec('CREATE TABLE IF NOT EXISTS user_meta (key TEXT PRIMARY KEY, value TEXT)')
+  const row = d.prepare("SELECT value FROM user_meta WHERE key = 'schema_version'").get() as
+    | { value: string }
+    | undefined
+  let v = row ? Number(row.value) : 0
+  // steps[n] upgrades a v=n database to v=n+1 (non-destructively). v1 is the baseline (no-op).
+  const steps: (() => void)[] = [
+    () => {} // 0 -> 1: baseline tables already created above
+    // 1 -> 2 example: () => d.exec('ALTER TABLE notes ADD COLUMN tags TEXT')
+  ]
+  while (v < USER_SCHEMA_VERSION) {
+    steps[v]?.()
+    v++
+  }
+  d.prepare("INSERT OR REPLACE INTO user_meta (key, value) VALUES ('schema_version', ?)").run(
+    String(USER_SCHEMA_VERSION)
+  )
+}
+
 /** Open (creating if needed) the writable user database in userData.
  *  Kept separate from bible.sqlite so app updates never touch user content. */
 export function openUserDb(): void {
@@ -63,6 +91,7 @@ export function openUserDb(): void {
       PRIMARY KEY (translation_id, book_id, chapter, verse)
     );
   `)
+  migrate(db)
 }
 
 function required(): DatabaseSync {
