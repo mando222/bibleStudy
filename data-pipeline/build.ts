@@ -816,6 +816,24 @@ async function main(): Promise<void> {
   ).n
   process.stdout.write(` ${tokenCount} tokens\n`)
 
+  // Backfill divine-name tags the KJV Strong's source left blank. In the KJV OT, small-caps
+  // LORD/GOD always render the Tetragrammaton (YHWH, and YHWH beside Adonai); tagging the gaps
+  // makes every occurrence clickable for study and reachable by the Divine Names feature.
+  const otBooks = "(SELECT id FROM books WHERE testament='OT')"
+  const fixLord = db
+    .prepare(
+      `UPDATE verse_tokens SET strongs='H3068' WHERE translation_id='KJV' AND surface='LORD' AND strongs IS NULL AND book_id IN ${otBooks}`
+    )
+    .run()
+  const fixGod = db
+    .prepare(
+      `UPDATE verse_tokens SET strongs='H3069' WHERE translation_id='KJV' AND surface='GOD' AND strongs IS NULL AND book_id IN ${otBooks}`
+    )
+    .run()
+  process.stdout.write(
+    `  divine-name backfill: LORD +${Number(fixLord.changes)}, GOD +${Number(fixGod.changes)}\n`
+  )
+
   // BSB word-level Strong's + original-language alignment → verse_tokens
   process.stdout.write('• BSB interlinear tagging:')
   const bsbTokens = await tagBsb(db)
