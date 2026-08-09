@@ -87,6 +87,16 @@ export default function ChatDrawer(): JSX.Element {
     }
   }
 
+  // Switch the bundled model tier; download it on demand if not already present.
+  const changeTier = async (tier: string): Promise<void> => {
+    if (!window.ai) return
+    await window.ai.setConfig({ chatTier: tier as never })
+    const st = await window.ai.status()
+    setStatus(st)
+    const needDownload = tier !== 'auto' && !st.installedTiers.includes(tier as never)
+    if (needDownload) await runSetup()
+  }
+
   useEffect(() => {
     refreshStatus()
     loadDocs()
@@ -164,6 +174,24 @@ export default function ChatDrawer(): JSX.Element {
             ))}
           </select>
         )}
+        {status?.activeProvider === 'bundled' && (
+          <select
+            value={status.config.chatTier}
+            onChange={(e) => void changeTier(e.target.value)}
+            disabled={setupBusy}
+            title={status.chatModelLabel ? `Running ${status.chatModelLabel}` : undefined}
+            className="ml-1 bg-elevated border border-line rounded-md text-xs px-1.5 py-1 text-muted disabled:opacity-50"
+          >
+            <option value="auto">Auto</option>
+            <option value="fast">Fast{status.installedTiers.includes('fast') ? '' : ' ↓'}</option>
+            <option value="balanced">
+              Balanced{status.installedTiers.includes('balanced') ? '' : ' ↓'}
+            </option>
+            <option value="quality">
+              Quality{status.installedTiers.includes('quality') ? '' : ' ↓'}
+            </option>
+          </select>
+        )}
         <div className="flex-1" />
         <button
           onClick={() => setShowDocs((v) => !v)}
@@ -187,6 +215,27 @@ export default function ChatDrawer(): JSX.Element {
           ✕
         </button>
       </div>
+
+      {setupBusy && status?.available && (
+        <div className="shrink-0 border-b border-line px-3 py-2 bg-elevated/40">
+          <div className="flex justify-between text-[11px] text-muted mb-1">
+            <span>Downloading {setupProg?.label ?? 'model'}…</span>
+            {setupProg && setupProg.total > 0 && (
+              <span className="tabular-nums">
+                {Math.round((100 * setupProg.received) / setupProg.total)}%
+              </span>
+            )}
+          </div>
+          <div className="h-1 rounded bg-line overflow-hidden">
+            <div
+              className="h-full bg-accent transition-all"
+              style={{
+                width: `${setupProg && setupProg.total > 0 ? Math.round((100 * setupProg.received) / setupProg.total) : 0}%`
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       {showDocs && status?.available && (
         <div className="border-b border-line p-3 bg-elevated/40">

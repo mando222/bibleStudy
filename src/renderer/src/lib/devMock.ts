@@ -183,8 +183,10 @@ export async function installDevMock(): Promise<void> {
     baseUrl: 'http://localhost:11434',
     chatModel: '',
     embedModel: 'nomic-embed-text',
-    provider: 'auto' as const
+    provider: 'auto' as const,
+    chatTier: 'auto' as 'auto' | 'fast' | 'balanced' | 'quality'
   }
+  const installed = new Set<'fast' | 'balanced' | 'quality'>()
   // Preview starts un-set-up so the seamless "Set up the assistant" flow is visible.
   let setupDone = false
   const setupListeners = new Set<(p: AiSetupProgress) => void>()
@@ -202,19 +204,27 @@ export async function installDevMock(): Promise<void> {
   let mockIndexed = 0
   const idxListeners = new Set<(s: { bibleIndexed: number; bibleTotal: number; building: boolean }) => void>()
   const ai: AiApi = {
-    status: async () => ({
-      available: setupDone,
-      activeProvider: setupDone ? 'bundled' : 'none',
-      needsSetup: !setupDone,
-      hasGpu: true,
-      models: [],
-      config: cfg
-    }),
+    status: async () => {
+      const label = { fast: 'Llama 3.2 1B Instruct', balanced: 'Llama 3.2 3B Instruct', quality: 'Qwen2.5 7B Instruct' }
+      const tier = cfg.chatTier === 'auto' ? 'quality' : cfg.chatTier
+      return {
+        available: setupDone,
+        activeProvider: (setupDone ? 'bundled' : 'none') as 'bundled' | 'none',
+        needsSetup: !setupDone,
+        hasGpu: true,
+        models: [] as string[],
+        config: cfg,
+        chatModelLabel: setupDone ? label[tier] : '',
+        installedTiers: [...installed]
+      }
+    },
     setConfig: async (patch) => Object.assign(cfg, patch),
     setupBundled: async () => {
+      const tier = cfg.chatTier === 'auto' ? 'quality' : cfg.chatTier
+      const chat = { fast: ['Llama 3.2 1B Instruct', 807_694_016], balanced: ['Llama 3.2 3B Instruct', 2_019_377_696], quality: ['Qwen2.5 7B Instruct', 4_683_074_240] }[tier] as [string, number]
       // Simulate the one-time model download with progress, then flip to ready.
       const steps: { role: 'chat' | 'embed'; label: string; total: number }[] = [
-        { role: 'chat', label: 'Llama 3.2 3B Instruct', total: 2_019_377_696 },
+        { role: 'chat', label: chat[0], total: chat[1] },
         { role: 'embed', label: 'Nomic Embed Text v1.5', total: 84_106_624 }
       ]
       for (const s of steps) {
@@ -228,6 +238,7 @@ export async function installDevMock(): Promise<void> {
           cb({ role: s.role, label: s.label, received: s.total, total: s.total, done: true })
         )
       }
+      installed.add(tier)
       setupDone = true
     },
     onSetupProgress: (cb) => {

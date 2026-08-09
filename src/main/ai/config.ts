@@ -8,7 +8,8 @@ const DEFAULTS: AiConfig = {
   baseUrl: 'http://localhost:11434',
   chatModel: '',
   embedModel: 'nomic-embed-text',
-  provider: 'auto'
+  provider: 'auto',
+  chatTier: 'auto'
 }
 
 function configPath(): string {

@@ -7,11 +7,13 @@ import {
 import * as llamacpp from './llamacpp'
 import {
   MODELS,
-  chatModelForHardware,
+  modelForTier,
+  resolveTier,
+  presentChatModel,
   modelPath,
   modelPresent,
   downloadModel,
-  type ModelDef
+  type ChatTier
 } from './models'
 import { getConfig, ensureChatModel } from './config'
 import type { AiSetupProgress, AiStatus, ChatMessage } from '../../shared/types'
@@ -19,12 +21,21 @@ import type { AiSetupProgress, AiStatus, ChatMessage } from '../../shared/types'
 export type Active = 'bundled' | 'ollama' | 'none'
 
 function bundledReady(): boolean {
-  return modelPresent(MODELS.chatFast) || modelPresent(MODELS.chatBalanced)
+  return presentChatModel() !== null
 }
-function bundledChatModel(): ModelDef | null {
-  if (modelPresent(MODELS.chatBalanced)) return MODELS.chatBalanced
-  if (modelPresent(MODELS.chatFast)) return MODELS.chatFast
-  return null
+/** The chat model to actually run: the configured tier if downloaded, else the largest present. */
+async function bundledChatModel(): Promise<ReturnType<typeof modelForTier> | null> {
+  const cfg = getConfig()
+  const hasGpu = await llamacpp.detectGpu().catch(() => false)
+  const target = modelForTier(resolveTier(cfg.chatTier ?? 'auto', hasGpu))
+  return modelPresent(target) ? target : presentChatModel()
+}
+function installedTiers(): ChatTier[] {
+  const out: ChatTier[] = []
+  if (modelPresent(MODELS.chatFast)) out.push('fast')
+  if (modelPresent(MODELS.chatBalanced)) out.push('balanced')
+  if (modelPresent(MODELS.chatQuality)) out.push('quality')
+  return out
 }
 
 export async function activeProvider(): Promise<Active> {
@@ -40,7 +51,7 @@ export async function activeProvider(): Promise<Active> {
 export async function* chatStream(messages: ChatMessage[]): AsyncGenerator<string> {
   const active = await activeProvider()
   if (active === 'bundled') {
-    const m = bundledChatModel()
+    const m = await bundledChatModel()
     if (!m) throw new Error('The assistant isn’t set up yet.')
     yield* llamacpp.chatStream(modelPath(m), messages)
     return
@@ -87,7 +98,17 @@ export async function status(): Promise<AiStatus> {
   const hasGpu =
     needsSetup || active === 'bundled' ? await llamacpp.detectGpu().catch(() => false) : false
   const models = active === 'ollama' ? await ollamaList(cfg.baseUrl) : []
-  return { available: active !== 'none', activeProvider: active, needsSetup, hasGpu, models, config: cfg }
+  const chatModelLabel = active === 'bundled' ? ((await bundledChatModel())?.label ?? '') : ''
+  return {
+    available: active !== 'none',
+    activeProvider: active,
+    needsSetup,
+    hasGpu,
+    models,
+    config: cfg,
+    chatModelLabel,
+    installedTiers: installedTiers()
+  }
 }
 
 let setupRunning = false
@@ -95,8 +116,9 @@ export async function setupBundled(onProgress: (p: AiSetupProgress) => void): Pr
   if (setupRunning) return
   setupRunning = true
   try {
+    const cfg = getConfig()
     const hasGpu = await llamacpp.detectGpu().catch(() => false)
-    const chat = chatModelForHardware(hasGpu)
+    const chat = modelForTier(resolveTier(cfg.chatTier ?? 'auto', hasGpu))
     await downloadModel(chat, (received, total) =>
       onProgress({ role: 'chat', label: chat.label, received, total, done: false })
     )

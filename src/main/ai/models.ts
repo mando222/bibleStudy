@@ -11,7 +11,9 @@ export interface ModelDef {
   label: string
 }
 
-// Small, offline, Q4_K_M GGUFs. 1B is CPU-friendly; 3B is used when a GPU is present.
+// Offline Q4_K_M GGUFs, three quality tiers. Fast (1B) is CPU-quick; Balanced (3B) is a good
+// CPU default; Quality (Qwen2.5-7B) gives the most faithful, least-hallucinatory answers and
+// shines on a GPU.
 export const MODELS = {
   chatFast: {
     id: 'chatFast',
@@ -29,6 +31,14 @@ export const MODELS = {
     sizeBytes: 2_019_377_696,
     label: 'Llama 3.2 3B Instruct'
   },
+  chatQuality: {
+    id: 'chatQuality',
+    role: 'chat',
+    file: 'Qwen2.5-7B-Instruct-Q4_K_M.gguf',
+    url: 'https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf',
+    sizeBytes: 4_683_074_240,
+    label: 'Qwen2.5 7B Instruct'
+  },
   embed: {
     id: 'embed',
     role: 'embed',
@@ -38,6 +48,24 @@ export const MODELS = {
     label: 'Nomic Embed Text v1.5'
   }
 } satisfies Record<string, ModelDef>
+
+export type ChatTier = 'fast' | 'balanced' | 'quality'
+
+export function modelForTier(tier: ChatTier): ModelDef {
+  return tier === 'quality' ? MODELS.chatQuality : tier === 'balanced' ? MODELS.chatBalanced : MODELS.chatFast
+}
+
+/** Resolve 'auto' from hardware: Quality (7B) on a GPU, Balanced (3B) on CPU-only. */
+export function resolveTier(tier: 'auto' | ChatTier, hasGpu: boolean): ChatTier {
+  if (tier !== 'auto') return tier
+  return hasGpu ? 'quality' : 'balanced'
+}
+
+/** The largest downloaded chat model (quality → balanced → fast), or null if none present. */
+export function presentChatModel(): ModelDef | null {
+  for (const m of [MODELS.chatQuality, MODELS.chatBalanced, MODELS.chatFast]) if (modelPresent(m)) return m
+  return null
+}
 
 export function modelsDir(): string {
   const d = join(app.getPath('userData'), 'models')
@@ -50,11 +78,6 @@ export function modelPath(def: ModelDef): string {
 export function modelPresent(def: ModelDef): boolean {
   const p = modelPath(def)
   return existsSync(p) && statSync(p).size > def.sizeBytes * 0.5
-}
-
-/** Fast 1B on CPU-only, 3B when a GPU is present. */
-export function chatModelForHardware(hasGpu: boolean): ModelDef {
-  return hasGpu ? MODELS.chatBalanced : MODELS.chatFast
 }
 
 export async function downloadModel(

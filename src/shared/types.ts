@@ -152,11 +152,13 @@ export interface VerseVariant {
 
 // ---- Local AI assistant + RAG ----
 
+export type ChatTier = 'fast' | 'balanced' | 'quality'
 export interface AiConfig {
   baseUrl: string
   chatModel: string
   embedModel: string
   provider: 'auto' | 'bundled' | 'ollama'
+  chatTier: 'auto' | ChatTier
 }
 export interface AiStatus {
   available: boolean
@@ -165,6 +167,8 @@ export interface AiStatus {
   hasGpu: boolean
   models: string[]
   config: AiConfig
+  chatModelLabel: string // active bundled model's display name (empty if none)
+  installedTiers: ChatTier[] // which bundled chat tiers are downloaded
 }
 export interface AiSetupProgress {
   role: 'chat' | 'embed'
