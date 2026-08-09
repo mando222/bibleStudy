@@ -1,20 +1,49 @@
 name: Build installers
 
-# Build macOS (Apple Silicon + Intel), Windows, and Linux installers on native runners —
-# each builds the correct platform binaries for node-llama-cpp + sqlite-vec.
-# Run manually from the Actions tab, or push a v* tag to also create a GitHub Release.
+# How to cut a release:
+#   1. Bump "version" in package.json (e.g. 0.1.0 -> 0.2.0)
+#   2. Commit and push to main
+# That builds macOS / Windows / Linux and publishes a GitHub Release for that version.
+# Unrelated package.json edits do NOT re-release (the version's tag already exists).
+# A manual run (Actions -> Run workflow) builds for testing without publishing a release.
 on:
   workflow_dispatch:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+    paths:
+      - 'package.json'
 
-# Needed so the release step can create the GitHub Release and upload installers.
 permissions:
   contents: write
 
 jobs:
+  # Decide whether package.json's version is new (i.e. has no release yet).
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      is_new: ${{ steps.v.outputs.is_new }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need the full tag history
+      - id: v
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "is_new=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::v$VERSION already released — no new release."
+          else
+            echo "is_new=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::v$VERSION is new — building + releasing."
+          fi
+
   build:
+    needs: check
+    # Build on a new version, or on any manual run (for testing).
+    if: needs.check.outputs.is_new == 'true' || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
@@ -25,23 +54,18 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
       - name: Install dependencies
         run: npm ci
-
       - name: Build the Bible database
         run: npm run db:build
-
       - name: Package the app
         run: npx electron-vite build && npx electron-builder --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
@@ -53,10 +77,10 @@ jobs:
             dist/*.deb
           if-no-files-found: warn
 
-  # One job publishes the Release (only on v* tags), so the three build jobs never race.
+  # One job publishes the Release for a genuinely new version (never on plain test runs).
   release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [check, build]
+    if: needs.check.outputs.is_new == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Download all installers
@@ -66,6 +90,8 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ needs.check.outputs.version }}
+          name: Open Bible Study v${{ needs.check.outputs.version }}
           generate_release_notes: true
           files: |
             installers/**/*.dmg
