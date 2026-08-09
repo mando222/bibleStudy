@@ -53,6 +53,20 @@ we start it.
   trial.
 - **Design pass** — a formal design-critique + accessibility (WCAG) review before a wider release.
 
+### App icon — sourced, but verify end-to-end + wire the runtime window
+Audit (2026-08-09):
+- ✅ `build/icon.png` (1024×1024) is committed and `directories.buildResources: build` is set, so
+  electron-builder **auto-generates** the packaged icons from it — mac `.icns`, Windows `.ico`, Linux
+  png set. The *packaged* app icon should therefore be correct.
+- ⚠️ **Never verified in a produced installer** — no release has been cut since the icon landed, so no
+  one has confirmed the generated `.icns`/`.ico` actually show on the installed app / dock / taskbar.
+  Confirm on the next `workflow_dispatch` build before a real release.
+- ❌ **Dev + Linux runtime window icon not wired** — `BrowserWindow` sets no `icon:`, so `npm run dev`
+  and the Linux window/taskbar fall back to the default Electron icon. Add `icon` to `BrowserWindow`
+  (and optionally `app.dock.setIcon()` on macOS dev).
+- (minor) No favicon in `src/renderer/index.html` — cosmetic for a desktop window (the OS uses the app
+  icon, not the HTML favicon), but add one for completeness.
+
 ### Permanent constraints (not TODOs)
 - **NKJV / NASB95** stay **import-only** — proprietary, can't be bundled. The importer is the lawful path.
 - **CATSS-tagged LXX** stays import-only (NC + user-declaration license). Our open tagging is the bundled path.
@@ -61,7 +75,9 @@ we start it.
 
 ## 🧭 Backlog — candidate features (pull from here)
 
-Grouped by theme; unordered within a group. Add freely.
+Grouped by theme; unordered within a group. Add freely. For *content* features (commentaries,
+dictionaries, word-study, maps), see the **Logos parity — gap analysis** section below — it's the
+home for those, grouped by how license-clean each is.
 
 ### Study & reading
 - Bookmarks + reading history (data model exists; tables/UI not built yet).
@@ -89,6 +105,8 @@ Grouped by theme; unordered within a group. Add freely.
 - Summarize a chapter / word-study assistant flows.
 
 ### Platform & polish
+- **Multiple tabs / parallel study sessions** (structural — see design sketch below).
+- **Verify + wire the app icon everywhere** (see the App-icon task under Deferred).
 - Keyboard shortcuts + command palette.
 - Remember window size/position; light/dark refinements; font-size controls.
 - Rounded macOS-style app icon; better installer branding.
@@ -98,6 +116,90 @@ Grouped by theme; unordered within a group. Add freely.
 - Optional cloud sync of notes across devices (needs a backend + auth).
 - Sharing (share a verse image / a note).
 - Community/annotation layer.
+
+---
+
+## 🗂️ Multiple tabs / parallel studies  *(proposed — next structural feature)*
+
+Goal: keep several independent studies open at once and switch between them like browser tabs —
+e.g. one tab in Romans with KJV+Greek stacked and the lexicon open on G26, another in Genesis
+reading the Masoretic, a third comparing translations of John 3:16.
+
+**What a "tab" is** — a self-contained *study session*: current book/chapter (+ scroll position),
+the translation stack + active translation, Strong's on/off, interlinear settings (stack,
+best-guess ⇄ all-parses), Divine-Names state, and the study-pane state (which word / Strong's /
+lexicon is open). **Notes & highlights stay global** — they belong to verses, not tabs, so every
+tab sees the same annotations for a verse.
+
+**Architecture** — today the store holds a single reading context. Refactor to
+`sessions: StudySession[]` + `activeTabId`; the reading/study slices read & write *the active
+session*. Each `StudySession` is a serializable snapshot, so:
+- persist `sessions` + `activeTabId` (existing `partialize`) → tabs **restore on relaunch**;
+- new / close / reorder / rename tabs; **duplicate-tab = clone the snapshot** (great for
+  "branch this study and compare").
+
+**UI** — a tab strip above the reader, title auto-derived ("Rom 8 · KJV+Grk"). `Cmd/Ctrl+T` new,
+`Cmd/Ctrl+W` close, `Cmd/Ctrl+1..9` jump, drag to reorder, middle-click / × to close; optional
+"reopen closed tab."
+
+**Scope call** — v1: reading + study-tool state per tab; the **AI chat + document manager stay
+global** (one assistant). Later: an optional per-tab AI thread ("ask about *this* study").
+
+**Stretch — split view:** we already use `react-resizable-panels`; a "split" that shows two
+sessions side-by-side (not just switch) is a natural follow-on. Ship tabs first, split later.
+
+**Effort:** medium — mostly a store refactor (single slice → array of sessions) + the tab strip.
+No data-model / DB changes.
+
+---
+
+## 📚 Logos parity — what they have that we don't  *(gap analysis)*
+
+Logos is a paid research platform; much of its power is a huge **paid library** + several
+**proprietary datasets** we can't (and don't want to) replicate. But a surprising amount maps onto
+**public-domain / open** sources we *can* bundle, or onto tools we can build on data we **already
+ship**. Grouped by how reachable each is for us:
+
+### 🟢 Clean wins — public-domain / open data we can bundle
+| Logos feature | Our open equivalent | Notes |
+|---|---|---|
+| Commentaries (whole shelf) | Matthew Henry, JFB, Barnes, Gill, Calvin, Clarke — all **PD** (CCEL / SWORD) | Verse-keyed; drop into the study pane. **Biggest single content gap.** |
+| Bible dictionaries / encyclopedias | Easton's, **ISBE (1915)**, Smith's — **PD** | Powers a "Factbook-lite" + word/name lookups. |
+| Cross-references | **Treasury of Scripture Knowledge** — PD (already deferred) | Clickable `ScriptureRef`s. |
+| Topical index | **Nave's Topical Bible**, Torrey's — PD | "Everything on *grace*." |
+| Atlas / maps | openbible.info geodata (CC-BY) + PD historical maps | Interactive place lookup; ties to Factbook. |
+| Timeline / biblical events | Build from PD chronology data | Events → passages. |
+| More translations | ASV, Geneva 1599, Darby, Douay-Rheims, Brenton LXX EN — PD | Already in backlog. |
+
+### 🟡 Feasible now — tools over data we already ship
+| Logos feature | We already have… | Build |
+|---|---|---|
+| **Bible Word Study** "translation ring" | `verse_tokens.strongs` + aligned translations | How one Strong's is rendered across versions + every occurrence. |
+| **Reverse interlinear** | BSB alignment | Click an English word → original + all its forms (backlog). |
+| **Morphology search** | `morph` on every tagged token | Search by grammatical form ("all aorist imperatives"). |
+| **Text-comparison tool** | parallel translations + apparatus | Word-level diff across versions for a verse. |
+| **Passage Guide-lite** | reader + (added) cross-refs / commentary / dict | One panel aggregating everything for a passage. |
+| **Exegetical Guide-lite** | interlinear + lexicons + parses | Word-by-word original with morph + gloss (mostly built). |
+| Morphology → plain English | `morph` codes | Decoder popover (already deferred). |
+
+### 🟠 Proprietary datasets — import-only or skip
+- **Louw–Nida semantic domains** / UBS dictionaries — licensed; import-only at best.
+- **Syntax / discourse databases** (Cascadia, Andersen–Forbes, Lexham) — proprietary; skip.
+- **Logos Factbook / Atlas / Media** *as datasets* — their curation is proprietary; we build a
+  *lite* version from the PD sources in 🟢 instead.
+- **NKJV / NASB & other © translations** — import-only (already a permanent constraint).
+
+### 🔵 Out of scope by design (or big bets)
+- **Cloud sync + mobile + web** — we're deliberately **local-first / offline**; sync is a "bigger
+  bet" already in the backlog, mobile/web aren't planned.
+- **Community / Faithlife, sharing, sermon marketplace, courses** — not our lane.
+- **Sentence diagramming / Canvas** — large effort, niche; possible far-future.
+- **Sermon / preaching builder, prayer lists, guided workflows** — could arrive later as "study
+  workflows."
+
+**Takeaway — highest-leverage, license-clean gaps to close first:** **commentaries**, **Bible
+dictionaries (Factbook-lite)**, **cross-references (TSK)**, and a **Bible Word Study** panel —
+each is either PD data or built on data we already ship.
 
 ---
 
