@@ -1,6 +1,6 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
-import { ping, listModels } from './ollama'
-import { getConfig, setConfig, ensureChatModel } from './config'
+import { setConfig } from './config'
+import { status, setupBundled } from './provider'
 import { answer } from './assistant'
 import { importDocument } from './documents'
 import { listDocuments, setDocumentActive, deleteDocument } from './vectors'
@@ -8,15 +8,17 @@ import { indexStatus, buildBibleIndex } from './bibleIndex'
 import type { AiConfig, ChatCitation, ChatMessage } from '../../shared/types'
 
 export function registerAiIpc(): void {
-  ipcMain.handle('ai:status', async () => {
-    const cfg = getConfig()
-    const available = await ping(cfg.baseUrl)
-    const models = available ? await listModels(cfg.baseUrl) : []
-    const config = available ? await ensureChatModel() : cfg
-    return { available, models, config }
-  })
+  ipcMain.handle('ai:status', () => status())
 
   ipcMain.handle('ai:setConfig', (_e, patch: Partial<AiConfig>) => setConfig(patch))
+
+  // First-run: download the hardware-adapted bundled model(s) into userData, with progress.
+  ipcMain.handle('ai:setupBundled', async (e) => {
+    await setupBundled((p) => {
+      if (!e.sender.isDestroyed()) e.sender.send('ai:setupProgress', p)
+    })
+    return status()
+  })
 
   ipcMain.handle(
     'ai:chat',

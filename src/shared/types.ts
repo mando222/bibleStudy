@@ -141,11 +141,23 @@ export interface AiConfig {
   baseUrl: string
   chatModel: string
   embedModel: string
+  provider: 'auto' | 'bundled' | 'ollama'
 }
 export interface AiStatus {
   available: boolean
+  activeProvider: 'bundled' | 'ollama' | 'none'
+  needsSetup: boolean
+  hasGpu: boolean
   models: string[]
   config: AiConfig
+}
+export interface AiSetupProgress {
+  role: 'chat' | 'embed'
+  label: string
+  received: number
+  total: number
+  done: boolean
+  error?: string
 }
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
@@ -196,6 +208,9 @@ export interface AiApi {
   indexStatus(translation: string): Promise<AiIndexStatus>
   buildBibleIndex(translation: string): Promise<void>
   onIndexProgress(cb: (s: AiIndexStatus) => void): () => void
+
+  setupBundled(): Promise<void>
+  onSetupProgress(cb: (p: AiSetupProgress) => void): () => void
 }
 
 // ---- User data (notes + highlighting), stored in a separate user.sqlite ----

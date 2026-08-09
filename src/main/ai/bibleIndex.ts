@@ -1,6 +1,5 @@
 import { allVerses } from '../db/bible'
-import { embed } from './ollama'
-import { getConfig } from './config'
+import { embed } from './provider'
 import { addBibleVerses, indexedVerseKeys, indexedCount } from './vectors'
 import type { AiIndexStatus } from '../../shared/types'
 
@@ -21,13 +20,12 @@ export async function buildBibleIndex(
     const verses = allVerses(translation)
     const done = indexedVerseKeys(translation)
     const todo = verses.filter((v) => !done.has(`${v.book}:${v.chapter}:${v.verse}`))
-    const cfg = getConfig()
     const BATCH = 64
     let indexed = done.size
     onProgress({ bibleIndexed: indexed, bibleTotal: verses.length, building: true })
     for (let i = 0; i < todo.length; i += BATCH) {
       const batch = todo.slice(i, i + BATCH)
-      const vecs = await embed(cfg.baseUrl, cfg.embedModel, batch.map((v) => v.text))
+      const vecs = await embed(batch.map((v) => v.text))
       if (vecs.length === batch.length) {
         addBibleVerses(
           translation,

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AiDoc, AiIndexStatus, AiStatus, ChatCitation } from '@shared/types'
+import type { AiDoc, AiIndexStatus, AiSetupProgress, AiStatus, ChatCitation } from '@shared/types'
 import { useAppStore } from '@/store/useAppStore'
 import { SparkleIcon, SendIcon, FileIcon } from './icons'
 
@@ -72,9 +72,25 @@ export default function ChatDrawer(): JSX.Element {
       .then(setStatus)
       .catch(() => setStatus(null))
   }
+
+  const [setupBusy, setSetupBusy] = useState(false)
+  const [setupProg, setSetupProg] = useState<AiSetupProgress | null>(null)
+  const runSetup = async (): Promise<void> => {
+    if (setupBusy || !window.ai) return
+    setSetupProg(null)
+    setSetupBusy(true)
+    try {
+      await window.ai.setupBundled()
+    } finally {
+      setSetupBusy(false)
+      refreshStatus()
+    }
+  }
+
   useEffect(() => {
     refreshStatus()
     loadDocs()
+    const unsubSetup = window.ai?.onSetupProgress(setSetupProg)
     const unsub = window.ai?.onToken((ev) => {
       setMessages((prev) => {
         if (!prev.length) return prev
@@ -89,7 +105,10 @@ export default function ChatDrawer(): JSX.Element {
       })
       if (ev.done) setBusy(false)
     })
-    return unsub
+    return () => {
+      unsub?.()
+      unsubSetup?.()
+    }
   }, [])
 
   useEffect(() => {
@@ -132,7 +151,7 @@ export default function ChatDrawer(): JSX.Element {
       <div className="h-12 shrink-0 border-b border-line px-3 flex items-center gap-2">
         <SparkleIcon className="w-5 h-5 text-accent" />
         <span className="font-semibold text-sm text-ink">Assistant</span>
-        {status?.available && status.models.length > 0 && (
+        {status?.activeProvider === 'ollama' && status.models.length > 0 && (
           <select
             value={status.config.chatModel}
             onChange={(e) => setModel(e.target.value)}
@@ -246,7 +265,7 @@ export default function ChatDrawer(): JSX.Element {
       )}
 
       {status && !status.available ? (
-        <Setup onRetry={refreshStatus} />
+        <Setup busy={setupBusy} progress={setupProg} onSetup={() => void runSetup()} />
       ) : (
         <>
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
@@ -339,24 +358,70 @@ function Bubble({
   )
 }
 
-function Setup({ onRetry }: { onRetry: () => void }): JSX.Element {
+function Setup({
+  busy,
+  progress,
+  onSetup
+}: {
+  busy: boolean
+  progress: AiSetupProgress | null
+  onSetup: () => void
+}): JSX.Element {
+  const mb = (n: number): string => `${(n / 1_048_576).toFixed(0)} MB`
+  const pct =
+    progress && progress.total > 0 ? Math.min(100, Math.round((100 * progress.received) / progress.total)) : 0
+  const err = progress?.error
+
   return (
     <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-sm text-muted">
       <SparkleIcon className="w-9 h-9 text-faint mb-3" />
-      <p className="text-ink font-medium">AI isn&rsquo;t connected</p>
-      <p className="mt-1 max-w-xs leading-relaxed">
-        The assistant runs locally through <span className="text-accent">Ollama</span>. Install it
-        from ollama.com, then start it and pull a model:
-      </p>
-      <pre className="mt-3 text-xs bg-elevated border border-line rounded-md p-2 text-ink text-left">
-        ollama serve{'\n'}ollama pull llama3.1
-      </pre>
-      <button
-        onClick={onRetry}
-        className="mt-4 px-3 py-1.5 rounded-md bg-accent text-white text-sm hover:opacity-90"
-      >
-        Retry
-      </button>
+      {busy ? (
+        <>
+          <p className="text-ink font-medium">Setting up the assistant…</p>
+          <p className="mt-1 max-w-xs leading-relaxed">
+            Getting things ready. This one-time step runs entirely on your computer.
+          </p>
+          <div className="mt-4 w-full max-w-xs">
+            <div className="h-1.5 rounded bg-line overflow-hidden">
+              <div className="h-full bg-accent transition-all" style={{ width: `${pct}%` }} />
+            </div>
+            <div className="mt-1.5 flex justify-between text-[11px] text-faint tabular-nums">
+              <span>{pct}%</span>
+              {progress && progress.total > 0 && (
+                <span>
+                  {mb(progress.received)} / {mb(progress.total)}
+                </span>
+              )}
+            </div>
+          </div>
+        </>
+      ) : err ? (
+        <>
+          <p className="text-ink font-medium">Setup didn&rsquo;t finish</p>
+          <p className="mt-1 max-w-xs leading-relaxed text-red-500">{err}</p>
+          <button
+            onClick={onSetup}
+            className="mt-4 px-3 py-1.5 rounded-md bg-accent text-white text-sm hover:opacity-90"
+          >
+            Try again
+          </button>
+        </>
+      ) : (
+        <>
+          <p className="text-ink font-medium">Turn on the assistant</p>
+          <p className="mt-1 max-w-xs leading-relaxed">
+            Ask study questions and get answers grounded in the text you&rsquo;re reading. It runs
+            privately on this computer and works offline — no account, no cloud.
+          </p>
+          <button
+            onClick={onSetup}
+            className="mt-4 px-4 py-2 rounded-md bg-accent text-white text-sm font-medium hover:opacity-90"
+          >
+            Set up the assistant
+          </button>
+          <p className="mt-2 text-[11px] text-faint">One-time setup · a few minutes</p>
+        </>
+      )}
     </div>
   )
 }

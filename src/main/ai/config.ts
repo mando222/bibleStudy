@@ -7,7 +7,8 @@ import { listModels } from './ollama'
 const DEFAULTS: AiConfig = {
   baseUrl: 'http://localhost:11434',
   chatModel: '',
-  embedModel: 'nomic-embed-text'
+  embedModel: 'nomic-embed-text',
+  provider: 'auto'
 }
 
 function configPath(): string {

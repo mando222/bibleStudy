@@ -1,7 +1,6 @@
 import { retrieveByKeywords } from '../db/bible'
 import { BOOK_BY_ID } from '../../shared/books'
-import { chatStream, embed } from './ollama'
-import { ensureChatModel, getConfig } from './config'
+import { chatStream, embed } from './provider'
 import { retrieveDocs } from './documents'
 import { hasBibleIndex, searchBible } from './vectors'
 import type { ChatMessage, ChatCitation } from '../../shared/types'
@@ -45,8 +44,7 @@ export async function retrieveBible(question: string, translation: string): Prom
   let sem: ChatCitation[] = []
   try {
     if (hasBibleIndex(translation)) {
-      const cfg = getConfig()
-      const [qv] = await embed(cfg.baseUrl, cfg.embedModel, [question])
+      const [qv] = await embed([question])
       if (qv) {
         sem = searchBible(translation, qv, 8).map((m) => ({
           book: m.book,
@@ -78,9 +76,6 @@ export async function* answer(
   grounding: { translation: string } | null,
   extraContext: ChatCitation[] = []
 ): AsyncGenerator<{ token?: string; citations?: ChatCitation[] }> {
-  const cfg = await ensureChatModel()
-  if (!cfg.chatModel) throw new Error('No chat model is available in Ollama.')
-
   const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content ?? ''
   // Active user documents (semantic) always contribute; Scripture (FTS) when grounding is on.
   const docHits = lastUser ? await retrieveDocs(lastUser, 5) : []
@@ -112,5 +107,5 @@ export async function* answer(
     ...(ctx ? [{ role: 'system' as const, content: ctx }] : []),
     ...messages
   ]
-  for await (const tok of chatStream(cfg.baseUrl, cfg.chatModel, full)) yield { token: tok }
+  for await (const tok of chatStream(full)) yield { token: tok }
 }

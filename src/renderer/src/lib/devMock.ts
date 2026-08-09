@@ -6,6 +6,7 @@
 import type {
   AiApi,
   AiDoc,
+  AiSetupProgress,
   AiTokenEvent,
   BibleApi,
   ChapterContent,
@@ -148,7 +149,15 @@ export async function installDevMock(): Promise<void> {
   // Simulated assistant so the chat UI previews in the browser (real one runs on Ollama in-app).
   const tokenListeners = new Set<(e: AiTokenEvent) => void>()
   const emit = (e: AiTokenEvent): void => tokenListeners.forEach((cb) => cb(e))
-  const cfg = { baseUrl: 'http://localhost:11434', chatModel: 'llama3.1:latest', embedModel: 'nomic-embed-text' }
+  const cfg = {
+    baseUrl: 'http://localhost:11434',
+    chatModel: '',
+    embedModel: 'nomic-embed-text',
+    provider: 'auto' as const
+  }
+  // Preview starts un-set-up so the seamless "Set up the assistant" flow is visible.
+  let setupDone = false
+  const setupListeners = new Set<(p: AiSetupProgress) => void>()
   const mockCites = (): ChatCitation[] =>
     (data.search?.hits ?? []).slice(0, 4).map((h) => ({
       book: h.book,
@@ -163,13 +172,43 @@ export async function installDevMock(): Promise<void> {
   let mockIndexed = 0
   const idxListeners = new Set<(s: { bibleIndexed: number; bibleTotal: number; building: boolean }) => void>()
   const ai: AiApi = {
-    status: async () => ({ available: true, models: ['llama3.1:latest', 'qwen3:1.7b'], config: cfg }),
+    status: async () => ({
+      available: setupDone,
+      activeProvider: setupDone ? 'bundled' : 'none',
+      needsSetup: !setupDone,
+      hasGpu: true,
+      models: [],
+      config: cfg
+    }),
     setConfig: async (patch) => Object.assign(cfg, patch),
+    setupBundled: async () => {
+      // Simulate the one-time model download with progress, then flip to ready.
+      const steps: { role: 'chat' | 'embed'; label: string; total: number }[] = [
+        { role: 'chat', label: 'Llama 3.2 3B Instruct', total: 2_019_377_696 },
+        { role: 'embed', label: 'Nomic Embed Text v1.5', total: 84_106_624 }
+      ]
+      for (const s of steps) {
+        for (let got = 0; got < s.total; got += Math.ceil(s.total / 20)) {
+          await new Promise((r) => setTimeout(r, 60))
+          setupListeners.forEach((cb) =>
+            cb({ role: s.role, label: s.label, received: Math.min(got, s.total), total: s.total, done: false })
+          )
+        }
+        setupListeners.forEach((cb) =>
+          cb({ role: s.role, label: s.label, received: s.total, total: s.total, done: true })
+        )
+      }
+      setupDone = true
+    },
+    onSetupProgress: (cb) => {
+      setupListeners.add(cb)
+      return () => setupListeners.delete(cb)
+    },
     chat: async (messages, grounding) => {
       const cites = grounding ? mockCites() : []
       emit({ citations: cites })
       const refs = cites.map((c) => `${c.bookName} ${c.chapter}:${c.verse}`).join(', ')
-      const text = `This is a preview reply — the real assistant runs on your local Ollama inside the desktop app. Grounding in the cited passages${refs ? ` (${refs})` : ''}, it would answer your question here, streaming word by word and citing the verses it used.`
+      const text = `This is a preview reply — in the desktop app the assistant runs privately on your computer. Grounding in the cited passages${refs ? ` (${refs})` : ''}, it would answer your question here, streaming word by word and citing the verses it used.`
       for (const w of text.split(/(\s+)/)) {
         await new Promise((r) => setTimeout(r, 18))
         emit({ token: w })

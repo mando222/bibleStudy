@@ -28,6 +28,12 @@ const api: BibleApi = {
 const ai: AiApi = {
   status: () => ipcRenderer.invoke('ai:status'),
   setConfig: (patch) => ipcRenderer.invoke('ai:setConfig', patch),
+  setupBundled: () => ipcRenderer.invoke('ai:setupBundled'),
+  onSetupProgress: (cb) => {
+    const listener = (_e: unknown, p: Parameters<typeof cb>[0]): void => cb(p)
+    ipcRenderer.on('ai:setupProgress', listener)
+    return () => ipcRenderer.removeListener('ai:setupProgress', listener)
+  },
   chat: (messages, grounding) => ipcRenderer.invoke('ai:chat', messages, grounding),
   onToken: (cb) => {
     const listener = (_e: unknown, ev: Parameters<typeof cb>[0]): void => cb(ev)

@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { basename, extname } from 'node:path'
-import { embed } from './ollama'
-import { getConfig } from './config'
+import { embed } from './provider'
 import { addChunks, upsertDocument } from './vectors'
 import type { AiDoc } from '../../shared/types'
 
@@ -45,12 +44,12 @@ export async function importDocument(path: string): Promise<AiDoc> {
   const chunks = chunkText(text)
   if (!chunks.length) throw new Error('No readable text found in that file.')
 
-  const cfg = getConfig()
   const embeddings: number[][] = []
   for (let i = 0; i < chunks.length; i += 16) {
     const batch = chunks.slice(i, i + 16)
-    const vecs = await embed(cfg.baseUrl, cfg.embedModel, batch)
-    if (vecs.length !== batch.length) throw new Error('Embedding failed — is the embed model installed?')
+    const vecs = await embed(batch)
+    if (vecs.length !== batch.length)
+      throw new Error('Embedding failed — the assistant’s model may still be downloading.')
     embeddings.push(...vecs)
   }
 
@@ -69,9 +68,8 @@ export async function retrieveDocs(
   query: string,
   k = 5
 ): Promise<{ text: string; source: string }[]> {
-  const cfg = getConfig()
   try {
-    const [qvec] = await embed(cfg.baseUrl, cfg.embedModel, [query])
+    const [qvec] = await embed([query])
     if (!qvec) return []
     const { searchChunks } = await import('./vectors')
     return searchChunks(qvec, k)
