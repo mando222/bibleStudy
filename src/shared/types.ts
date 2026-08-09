@@ -127,7 +127,11 @@ export interface InterlinearContent {
   chapter: number
   edition: string
   direction: TextDirection
-  verses: { verse: number; tokens: VerseToken[] }[]
+  verses: {
+    verse: number
+    tokens: VerseToken[]
+    lines?: { id: string; text: string }[] // untagged stacked translations, shown as a verse line
+  }[]
 }
 
 export interface ImportedTranslation {

@@ -113,20 +113,28 @@ export async function installDevMock(): Promise<void> {
         verses: []
       }
       if (!translations.length) return base
-      // Deep-clone and align stacked translations by Strong's (mirrors the real backend).
-      const out = { ...base, verses: base.verses.map((v) => ({ ...v, tokens: v.tokens.map((t) => ({ ...t })) })) }
+      // Deep-clone; align tagged translations by Strong's, stack untagged ones as verse lines.
+      const out = {
+        ...base,
+        verses: base.verses.map((v) => ({ ...v, tokens: v.tokens.map((t) => ({ ...t })), lines: [] as { id: string; text: string }[] }))
+      }
       for (const tid of translations) {
         const ch = data.chapters[`${tid}/${book}/${chapter}`]
         if (!ch) continue
+        const tagged = ch.verses.some((v) => (v.tokens ?? []).some((t) => t.strongs))
         for (const v of out.verses) {
           const src = ch.verses.find((x) => x.verse === v.verse)
-          const q = new Map<string, string[]>()
-          for (const tok of src?.tokens ?? [])
-            if (tok.strongs) (q.get(tok.strongs) ?? q.set(tok.strongs, []).get(tok.strongs)!).push(tok.surface)
-          for (const t of v.tokens) {
-            if (!t.strongs) continue
-            const w = q.get(t.strongs)?.shift()
-            if (w) t.aligned = { ...(t.aligned ?? {}), [tid]: w }
+          if (tagged) {
+            const q = new Map<string, string[]>()
+            for (const tok of src?.tokens ?? [])
+              if (tok.strongs) (q.get(tok.strongs) ?? q.set(tok.strongs, []).get(tok.strongs)!).push(tok.surface)
+            for (const t of v.tokens) {
+              if (!t.strongs) continue
+              const w = q.get(t.strongs)?.shift()
+              if (w) t.aligned = { ...(t.aligned ?? {}), [tid]: w }
+            }
+          } else if (src) {
+            v.lines.push({ id: tid, text: src.text })
           }
         }
       }

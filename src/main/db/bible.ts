@@ -306,41 +306,56 @@ export function getInterlinear(
     })
   }
 
-  // Stack English translations under each original word, aligned by Strong's number within a verse.
+  // Stack translations. Strong's-tagged ones (KJV, BSB) align word-for-word by matching Strong's
+  // within a verse; untagged ones (WEB, YLT, Julia Smith, …) show as a verse line beneath the grid.
+  const linesByVerse = new Map<number, { id: string; text: string }[]>()
   for (const tid of translations) {
-    const trows = d
-      .prepare(
-        `SELECT verse, surface, strongs FROM verse_tokens
-         WHERE translation_id = ? AND book_id = ? AND chapter = ? AND strongs IS NOT NULL
-         ORDER BY verse, position`
-      )
-      .all(tid, book, chapter) as { verse: number; surface: string; strongs: string }[]
-    const queues = new Map<number, Map<string, string[]>>() // verse → strongs → surfaces (in order)
-    for (const r of trows) {
-      let q = queues.get(r.verse)
-      if (!q) {
-        q = new Map()
-        queues.set(r.verse, q)
+    const tagged = !!d
+      .prepare('SELECT 1 FROM verse_tokens WHERE translation_id = ? LIMIT 1')
+      .get(tid)
+    if (tagged) {
+      const trows = d
+        .prepare(
+          `SELECT verse, surface, strongs FROM verse_tokens
+           WHERE translation_id = ? AND book_id = ? AND chapter = ? AND strongs IS NOT NULL
+           ORDER BY verse, position`
+        )
+        .all(tid, book, chapter) as { verse: number; surface: string; strongs: string }[]
+      const queues = new Map<number, Map<string, string[]>>()
+      for (const r of trows) {
+        let q = queues.get(r.verse)
+        if (!q) {
+          q = new Map()
+          queues.set(r.verse, q)
+        }
+        const arr = q.get(r.strongs)
+        if (arr) arr.push(r.surface)
+        else q.set(r.strongs, [r.surface])
       }
-      const arr = q.get(r.strongs)
-      if (arr) arr.push(r.surface)
-      else q.set(r.strongs, [r.surface])
-    }
-    for (const [verse, tokens] of byVerse) {
-      const q = queues.get(verse)
-      if (!q) continue
-      for (const tok of tokens) {
-        if (!tok.strongs) continue
-        const arr = q.get(tok.strongs)
-        const w = arr?.shift()
-        if (w) tok.aligned = { ...(tok.aligned ?? {}), [tid]: w }
+      for (const [verse, tokens] of byVerse) {
+        const q = queues.get(verse)
+        if (!q) continue
+        for (const tok of tokens) {
+          if (!tok.strongs) continue
+          const w = q.get(tok.strongs)?.shift()
+          if (w) tok.aligned = { ...(tok.aligned ?? {}), [tid]: w }
+        }
+      }
+    } else {
+      const vrows = d
+        .prepare('SELECT verse, text FROM verses WHERE translation_id = ? AND book_id = ? AND chapter = ?')
+        .all(tid, book, chapter) as { verse: number; text: string }[]
+      for (const r of vrows) {
+        const arr = linesByVerse.get(r.verse) ?? []
+        arr.push({ id: tid, text: r.text })
+        linesByVerse.set(r.verse, arr)
       }
     }
   }
 
   const verses = [...byVerse.entries()]
     .sort((a, b) => a[0] - b[0])
-    .map(([verse, tokens]) => ({ verse, tokens }))
+    .map(([verse, tokens]) => ({ verse, tokens, lines: linesByVerse.get(verse) }))
 
   return { book, chapter, edition, direction, verses }
 }

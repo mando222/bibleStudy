@@ -74,6 +74,8 @@ interface AppState {
   toggleInterlinearStack: (id: string) => void
   selectedStrongs: string | null
   studyTab: StudyTab
+  searchQuery: string
+  searchFor: (text: string) => void
 
   // Word-replace ("agape"): Strong's number → display text (lemma/translit), per session.
   replacements: Record<string, string>
@@ -141,6 +143,8 @@ export const useAppStore = create<AppState>()(
       },
       selectedStrongs: null,
       studyTab: 'lexicon',
+      searchQuery: '',
+      searchFor: (text) => set({ searchQuery: text.trim(), studyTab: 'search' }),
 
       replacements: {},
       setReplacement: (strongs, text) =>

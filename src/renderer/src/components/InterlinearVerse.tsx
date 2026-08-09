@@ -7,31 +7,42 @@ export default function InterlinearVerse({
   v,
   rtl,
   stack = [],
-  labels = {}
+  labels = {},
+  lines = []
 }: {
   v: Verse
   rtl?: boolean
   stack?: string[]
   labels?: Record<string, string>
+  lines?: { id: string; text: string }[]
 }): JSX.Element {
   const selectStrongs = useAppStore((s) => s.selectStrongs)
   const selected = useAppStore((s) => s.selectedStrongs)
+  const searchFor = useAppStore((s) => s.searchFor)
 
   return (
-    <div dir={rtl ? 'rtl' : 'ltr'} className="flex flex-wrap gap-x-2.5 gap-y-3 items-start mb-4">
-      <span className="text-xs font-sans font-semibold text-accent/70 pt-1.5 tabular-nums">
-        {v.verse}
-      </span>
-      {(v.tokens ?? []).map((tok) => {
+    <div className="mb-4">
+      <div dir={rtl ? 'rtl' : 'ltr'} className="flex flex-wrap gap-x-2.5 gap-y-3 items-start">
+        <span className="text-xs font-sans font-semibold text-accent/70 pt-1.5 tabular-nums">
+          {v.verse}
+        </span>
+        {(v.tokens ?? []).map((tok) => {
         const isHeb = tok.strongs?.startsWith('H') ?? false
         const isSel = selected != null && selected === tok.strongs
         return (
           <button
             key={tok.position}
-            onClick={() => tok.strongs && selectStrongs(tok.strongs)}
-            className={`flex flex-col items-center text-center rounded-md px-1.5 py-1 min-w-[2.5rem] ${
-              tok.strongs ? 'hover:bg-elevated cursor-pointer' : 'cursor-default'
-            } ${isSel ? 'bg-accent-soft' : ''}`}
+            onClick={() => {
+              if (tok.strongs) selectStrongs(tok.strongs)
+              else {
+                const w = (tok.surface || tok.lemma || '').trim()
+                if (w) searchFor(w)
+              }
+            }}
+            title={tok.strongs ? undefined : 'Search for this word'}
+            className={`flex flex-col items-center text-center rounded-md px-1.5 py-1 min-w-[2.5rem] hover:bg-elevated cursor-pointer ${
+              isSel ? 'bg-accent-soft' : ''
+            }`}
           >
             {tok.lemma && (
               <span
@@ -58,8 +69,21 @@ export default function InterlinearVerse({
               </span>
             )}
           </button>
-        )
-      })}
+          )
+        })}
+      </div>
+      {lines.length > 0 && (
+        <div className="mt-2 ml-5 space-y-0.5">
+          {lines.map((ln) => (
+            <div key={ln.id} className="text-sm text-muted leading-snug">
+              <span className="text-[10px] uppercase text-faint mr-2 tabular-nums">
+                {labels[ln.id] ?? ln.id}
+              </span>
+              {ln.text}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

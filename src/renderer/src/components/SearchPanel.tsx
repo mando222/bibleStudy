@@ -9,11 +9,17 @@ type Scope = 'all' | 'OT' | 'NT'
 export default function SearchPanel(): JSX.Element {
   const primary = useAppStore((s) => s.primary)
   const goToVerse = useAppStore((s) => s.goToVerse)
+  const searchQuery = useAppStore((s) => s.searchQuery)
 
-  const [q, setQ] = useState('')
+  const [q, setQ] = useState(searchQuery)
   const [scope, setScope] = useState<Scope>('all')
   const [res, setRes] = useState<SearchResponse | null>(null)
   const [loading, setLoading] = useState(false)
+
+  // Seed the box when a word click elsewhere requests a search.
+  useEffect(() => {
+    if (searchQuery) setQ(searchQuery)
+  }, [searchQuery])
 
   // Debounced search whenever the query, scope, or translation changes.
   useEffect(() => {

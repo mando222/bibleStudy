@@ -23,9 +23,13 @@ export default function InterlinearReader({
   // Use the stored choice if it applies to this testament, else the default (first applicable).
   const effective = applicable.find((e) => e.id === stored)?.id ?? applicable[0]?.id ?? ''
 
-  // Translations that carry Strong's tags can be aligned word-for-word onto the original.
-  const stackable = translations.filter((t) => t.hasStrongs)
+  // All bundled translations can be stacked: Strong's-tagged ones align word-for-word, the rest
+  // show as a verse line beneath the grid.
+  const stackable = translations.filter((t) => t.language !== 'imported')
   const labels = Object.fromEntries(stackable.map((t) => [t.id, t.abbrev]))
+  const taggedIds = new Set(stackable.filter((t) => t.hasStrongs).map((t) => t.id))
+  // Only tagged translations get a per-word row; untagged ones render as a verse line.
+  const wordStack = stack.filter((id) => taggedIds.has(id))
 
   const { data, loading, error } = useInterlinear(book, chapter, effective, stack)
 
@@ -96,8 +100,9 @@ export default function InterlinearReader({
               key={v.verse}
               v={{ verse: v.verse, text: '', tokens: v.tokens }}
               rtl={data.direction === 'rtl'}
-              stack={stack}
+              stack={wordStack}
               labels={labels}
+              lines={v.lines}
             />
           ))
         )}
