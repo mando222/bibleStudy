@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { EventItem } from '@shared/types'
+import { useAppStore } from '@/store/useAppStore'
 import VerseRefs from './VerseRefs'
 
 const yr = (y: number | null): string => (y == null ? '—' : y < 0 ? `${-y} BC` : `${y} AD`)
@@ -7,6 +8,8 @@ const yr = (y: number | null): string => (y == null ? '—' : y < 0 ? `${-y} BC`
 /** Timelines: biblical events in chronological order, each linked to its scripture references. */
 export default function TimelinesView(): JSX.Element {
   const [events, setEvents] = useState<EventItem[]>([])
+  const focusPerson = useAppStore((s) => s.focusPerson)
+  const focusPlace = useAppStore((s) => s.focusPlace)
   useEffect(() => {
     window.api
       .getEvents()
@@ -28,14 +31,29 @@ export default function TimelinesView(): JSX.Element {
               <div className="text-xs font-mono text-accent">{yr(e.startYear)}</div>
               <div className="text-[15px] text-ink font-medium leading-snug">{e.title}</div>
               {e.participants.length > 0 && (
-                <div className="text-xs text-muted mt-0.5">
-                  {e.participants.slice(0, 10).map((p) => p.name).join(', ')}
-                  {e.participants.length > 10 ? '…' : ''}
+                <div className="text-xs text-muted mt-0.5 flex flex-wrap gap-x-1.5">
+                  {e.participants.slice(0, 12).map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => focusPerson(p.id)}
+                      className="hover:text-accent hover:underline"
+                    >
+                      {p.name}
+                    </button>
+                  ))}
                 </div>
               )}
               {e.places.length > 0 && (
-                <div className="text-xs text-faint mt-0.5">
-                  {e.places.map((p) => p.name).join(' · ')}
+                <div className="text-xs text-faint mt-0.5 flex flex-wrap gap-x-1.5">
+                  {e.places.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => focusPlace(p.id)}
+                      className="hover:text-accent hover:underline"
+                    >
+                      {p.name}
+                    </button>
+                  ))}
                 </div>
               )}
               {e.verses.length > 0 && (

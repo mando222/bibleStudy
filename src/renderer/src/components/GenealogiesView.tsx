@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { PersonListItem, PersonDetail, PersonRef } from '@shared/types'
+import { useAppStore } from '@/store/useAppStore'
 import { SearchIcon } from './icons'
 import VerseRefs from './VerseRefs'
 
@@ -15,6 +16,16 @@ export default function GenealogiesView(): JSX.Element {
   const [list, setList] = useState<PersonListItem[]>([])
   const [id, setId] = useState<number | null>(null)
   const [person, setPerson] = useState<PersonDetail | null>(null)
+  const focusPersonId = useAppStore((s) => s.focusPersonId)
+  const clearFocus = useAppStore((s) => s.clearFocus)
+
+  // Arriving from another view (e.g. a Timeline participant) focuses that person.
+  useEffect(() => {
+    if (focusPersonId != null) {
+      setId(focusPersonId)
+      clearFocus()
+    }
+  }, [focusPersonId, clearFocus])
 
   useEffect(() => {
     const t = setTimeout(() => {

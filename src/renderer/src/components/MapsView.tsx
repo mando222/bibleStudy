@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { PlaceItem } from '@shared/types'
+import { useAppStore } from '@/store/useAppStore'
 import { SearchIcon } from './icons'
 import VerseRefs from './VerseRefs'
 
@@ -20,6 +21,8 @@ export default function MapsView(): JSX.Element {
   const [q, setQ] = useState('')
   const [sel, setSel] = useState<PlaceItem | null>(null)
   const [verses, setVerses] = useState<string[]>([])
+  const focusPlaceId = useAppStore((s) => s.focusPlaceId)
+  const clearFocus = useAppStore((s) => s.clearFocus)
 
   useEffect(() => {
     window.api
@@ -27,6 +30,16 @@ export default function MapsView(): JSX.Element {
       .then(setPlaces)
       .catch(() => setPlaces([]))
   }, [])
+
+  // Arriving from another view (e.g. a Timeline location) selects that place once loaded.
+  useEffect(() => {
+    if (focusPlaceId == null || !places.length) return
+    const p = places.find((x) => x.id === focusPlaceId)
+    if (p) {
+      setSel(p)
+      clearFocus()
+    }
+  }, [focusPlaceId, places, clearFocus])
   useEffect(() => {
     if (!sel) return setVerses([])
     window.api

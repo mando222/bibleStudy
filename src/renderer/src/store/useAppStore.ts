@@ -137,6 +137,12 @@ interface AppState {
   // Far-right activity rail: which workspace is showing.
   activity: Activity
   setActivity: (a: Activity) => void
+  // Cross-view focus: jump to a person in Genealogies / a place in Maps.
+  focusPersonId: number | null
+  focusPerson: (id: number) => void
+  focusPlaceId: number | null
+  focusPlace: (id: number) => void
+  clearFocus: () => void
 
   // Library
   translations: Translation[]
@@ -221,6 +227,11 @@ export const useAppStore = create<AppState>()(
       toggleTheme: () => set({ theme: get().theme === 'light' ? 'dark' : 'light' }),
       activity: 'bible',
       setActivity: (activity) => set({ activity }),
+      focusPersonId: null,
+      focusPerson: (focusPersonId) => set({ focusPersonId, activity: 'genealogies' }),
+      focusPlaceId: null,
+      focusPlace: (focusPlaceId) => set({ focusPlaceId, activity: 'maps' }),
+      clearFocus: () => set({ focusPersonId: null, focusPlaceId: null }),
 
       translations: [],
       setTranslations: (translations) => set({ translations }),
