@@ -1,4 +1,4 @@
-import { ipcMain, dialog, BrowserWindow } from 'electron'
+import { ipcMain, dialog, BrowserWindow, app } from 'electron'
 import * as bible from './db/bible'
 import * as user from './db/user'
 import type {
@@ -10,6 +10,7 @@ import type {
 
 /** Register all IPC handlers (bible read-only + user read/write). */
 export function registerIpc(): void {
+  ipcMain.handle('app:version', () => app.getVersion())
   ipcMain.handle('bible:listTranslations', () => [
     ...bible.listTranslations(),
     ...user.listImported()

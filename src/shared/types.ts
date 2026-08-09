@@ -276,6 +276,7 @@ export type NoteInput = { id?: number; book: string; chapter: number; verse: num
 
 /** The full API surface exposed on `window.api` via contextBridge. */
 export interface BibleApi {
+  version(): Promise<string>
   listTranslations(): Promise<Translation[]>
   getChapter(ref: ChapterRef): Promise<ChapterContent>
   getStrongs(id: string): Promise<StrongsEntry | null>

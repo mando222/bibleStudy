@@ -38,6 +38,7 @@ export async function installDevMock(): Promise<void> {
   let nid = 1
 
   const mock: BibleApi = {
+    version: async () => '0.0.0-dev',
     listTranslations: async () => data.translations as never,
     getChapter: async (ref) =>
       data.chapters[`${ref.translation}/${ref.book}/${ref.chapter}`] ??

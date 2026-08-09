@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { AiApi, BibleApi } from '../shared/types'
 
 const api: BibleApi = {
+  version: () => ipcRenderer.invoke('app:version'),
   listTranslations: () => ipcRenderer.invoke('bible:listTranslations'),
   getChapter: (ref) => ipcRenderer.invoke('bible:getChapter', ref),
   getStrongs: (id) => ipcRenderer.invoke('bible:getStrongs', id),

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAppStore } from '@/store/useAppStore'
 import { BookIcon } from './icons'
 
@@ -34,6 +34,14 @@ export default function AboutModal(): JSX.Element | null {
   const setTranslations = useAppStore((s) => s.setTranslations)
   const [status, setStatus] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [version, setVersion] = useState('')
+
+  useEffect(() => {
+    window.api
+      ?.version()
+      .then(setVersion)
+      .catch(() => undefined)
+  }, [])
 
   const imported = translations.filter((t) => t.language === 'imported')
 
@@ -76,6 +84,7 @@ export default function AboutModal(): JSX.Element | null {
           <div className="flex items-center gap-2 text-accent">
             <BookIcon className="w-5 h-5" />
             <span className="font-semibold text-ink">Open Bible Study</span>
+            {version && <span className="text-xs text-faint tabular-nums">v{version}</span>}
           </div>
           <button
             onClick={() => setOpen(false)}
