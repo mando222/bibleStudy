@@ -15,7 +15,7 @@ export default function ActivityRail(): JSX.Element {
   const setActivity = useAppStore((s) => s.setActivity)
 
   return (
-    <div className="w-14 shrink-0 border-l border-line bg-panel flex flex-col items-center py-2 gap-1">
+    <div className="w-14 shrink-0 border-r border-line bg-panel flex flex-col items-center py-2 gap-1">
       {TABS.map(({ id, label, title, Icon }) => {
         const active = activity === id
         return (

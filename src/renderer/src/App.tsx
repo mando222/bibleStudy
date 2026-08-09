@@ -40,6 +40,7 @@ export default function App(): JSX.Element {
     <div className="h-full flex flex-col bg-bg text-ink">
       <TopBar />
       <div className="flex-1 min-h-0 flex">
+        <ActivityRail />
         <div className="flex-1 min-w-0">
           {activity === 'bible' && <BibleWorkspace />}
           {activity === 'words' && <WordsView />}
@@ -68,7 +69,6 @@ export default function App(): JSX.Element {
             />
           )}
         </div>
-        <ActivityRail />
       </div>
       <AboutModal />
       <QuickReplaceModal />

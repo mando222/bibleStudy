@@ -24,7 +24,8 @@ export default function ReadingPanel(): JSX.Element {
   const book = useAppStore((s) => s.book)
   const chapter = useAppStore((s) => s.chapter)
   const interlinear = useAppStore((s) => s.interlinear)
-  const bookName = BOOK_BY_ID[book]?.name ?? book
+  const translations = useAppStore((s) => s.translations)
+  const setParallels = useAppStore((s) => s.setParallels)
 
   // Absolute scrollTop sync across parallel columns.
   const refs = useRef<(HTMLDivElement | null)[]>([])
@@ -41,15 +42,14 @@ export default function ReadingPanel(): JSX.Element {
     })
   }
 
+  const canAdd = translations.length > parallels.length && parallels.length < 4
+  const addColumn = (): void => {
+    const next = translations.find((t) => !parallels.includes(t.id))?.id
+    if (next) setParallels([...parallels, next])
+  }
+
   return (
     <div className="h-full flex flex-col bg-bg">
-      <div className="h-10 shrink-0 border-b border-line px-4 flex items-center justify-between bg-panel">
-        <h2 className="font-serif text-lg text-ink">
-          {bookName} <span className="text-accent">{chapter}</span>
-        </h2>
-        <div className="text-xs text-muted">{parallels.join('  ·  ')}</div>
-      </div>
-
       <ReplacementsBar />
 
       {interlinear ? (
@@ -62,14 +62,71 @@ export default function ReadingPanel(): JSX.Element {
             <Column
               key={t + i}
               translation={t}
+              index={i}
+              canRemove={parallels.length > 1}
               book={book}
               chapter={chapter}
-              showLabel={parallels.length > 1}
               registerRef={(el) => (refs.current[i] = el)}
               onScroll={() => onScroll(i)}
             />
           ))}
+          {canAdd && (
+            <button
+              onClick={addColumn}
+              title="Add a parallel translation"
+              className="w-9 shrink-0 self-stretch flex items-start justify-center pt-1.5 text-xl leading-none text-muted hover:text-accent hover:bg-elevated"
+            >
+              +
+            </button>
+          )}
         </div>
+      )}
+    </div>
+  )
+}
+
+/** Per-column header: the translation picker for this column and its close button. */
+function ColumnHeader({
+  translation,
+  index,
+  canRemove
+}: {
+  translation: string
+  index: number
+  canRemove: boolean
+}): JSX.Element {
+  const translations = useAppStore((s) => s.translations)
+  const parallels = useAppStore((s) => s.parallels)
+  const setParallels = useAppStore((s) => s.setParallels)
+  const options = translations.length
+    ? translations.map((t) => ({ id: t.id, label: t.abbrev }))
+    : parallels.map((id) => ({ id, label: id }))
+  const setColumn = (id: string): void => {
+    const p = [...parallels]
+    p[index] = id
+    setParallels(p)
+  }
+  return (
+    <div className="h-9 shrink-0 border-b border-line bg-panel px-2 flex items-center gap-1">
+      <select
+        value={translation}
+        onChange={(e) => setColumn(e.target.value)}
+        className="flex-1 min-w-0 bg-elevated border border-line rounded-md text-xs px-2 py-1 text-ink outline-none focus:border-accent"
+      >
+        {options.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+      {canRemove && (
+        <button
+          onClick={() => setParallels(parallels.filter((_, i) => i !== index))}
+          title="Close this column"
+          className="w-6 h-6 shrink-0 rounded text-faint hover:text-accent hover:bg-elevated text-xs leading-none"
+        >
+          ✕
+        </button>
       )}
     </div>
   )
@@ -77,14 +134,15 @@ export default function ReadingPanel(): JSX.Element {
 
 interface ColumnProps {
   translation: string
+  index: number
+  canRemove: boolean
   book: string
   chapter: number
-  showLabel: boolean
   registerRef: (el: HTMLDivElement | null) => void
   onScroll: () => void
 }
 
-function Column({ translation, book, chapter, showLabel, registerRef, onScroll }: ColumnProps): JSX.Element {
+function Column({ translation, index, canRemove, book, chapter, registerRef, onScroll }: ColumnProps): JSX.Element {
   const { data, loading, error } = useChapter(translation, book, chapter)
   const meta = useAppStore((s) => s.translations.find((x) => x.id === translation))
   const strongsVisible = useAppStore((s) => s.strongsVisible)
@@ -158,26 +216,22 @@ function Column({ translation, book, chapter, showLabel, registerRef, onScroll }
   }
 
   return (
-    <div
-      ref={(el) => {
-        containerRef.current = el
-        registerRef(el)
-      }}
-      onScroll={() => {
-        onScroll()
-        if (sel) setSel(null)
-      }}
-      onMouseUp={onMouseUp}
-      className="flex-1 min-w-0 overflow-y-auto relative"
-    >
-      <div className="max-w-prose mx-auto px-8 py-8">
-        {showLabel && (
-          <div className="text-[11px] uppercase tracking-wider text-faint mb-4">
-            {meta?.abbrev ?? translation}
-          </div>
-        )}
-
-        {error ? (
+    <div className="flex-1 min-w-0 flex flex-col min-h-0">
+      <ColumnHeader translation={translation} index={index} canRemove={canRemove} />
+      <div
+        ref={(el) => {
+          containerRef.current = el
+          registerRef(el)
+        }}
+        onScroll={() => {
+          onScroll()
+          if (sel) setSel(null)
+        }}
+        onMouseUp={onMouseUp}
+        className="flex-1 overflow-y-auto relative"
+      >
+        <div className="max-w-prose mx-auto px-8 py-8">
+          {error ? (
           <StateBlock title="Library not built">
             {/not found/i.test(error) ? (
               <>
@@ -244,6 +298,7 @@ function Column({ translation, book, chapter, showLabel, registerRef, onScroll }
           onClose={() => setMenu(null)}
         />
       )}
+      </div>
     </div>
   )
 }
