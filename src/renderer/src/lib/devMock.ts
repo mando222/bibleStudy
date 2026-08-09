@@ -131,7 +131,9 @@ export async function installDevMock(): Promise<void> {
     deleteNote: async (id) => {
       const i = notes.findIndex((n) => n.id === id)
       if (i >= 0) notes.splice(i, 1)
-    }
+    },
+    importTranslation: async () => null, // file import only works in the Electron app
+    deleteImportedTranslation: async () => undefined
   }
 
   ;(window as unknown as { api: BibleApi }).api = mock

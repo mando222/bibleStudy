@@ -17,7 +17,10 @@ const api: BibleApi = {
 
   listNotes: (ref) => ipcRenderer.invoke('user:listNotes', ref),
   saveNote: (input) => ipcRenderer.invoke('user:saveNote', input),
-  deleteNote: (id) => ipcRenderer.invoke('user:deleteNote', id)
+  deleteNote: (id) => ipcRenderer.invoke('user:deleteNote', id),
+
+  importTranslation: () => ipcRenderer.invoke('user:importTranslation'),
+  deleteImportedTranslation: (id) => ipcRenderer.invoke('user:deleteImportedTranslation', id)
 }
 
 if (process.contextIsolated) {

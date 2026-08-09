@@ -114,6 +114,14 @@ export interface InterlinearContent {
   verses: { verse: number; tokens: VerseToken[] }[]
 }
 
+export interface ImportedTranslation {
+  id: string
+  abbrev: string
+  name: string
+  direction: TextDirection
+  verseCount: number
+}
+
 // ---- User data (notes + highlighting), stored in a separate user.sqlite ----
 
 export type HighlightColor = 'yellow' | 'green' | 'blue' | 'pink' | 'orange'
@@ -159,4 +167,7 @@ export interface BibleApi {
   listNotes(ref: { book: string; chapter: number }): Promise<Note[]>
   saveNote(input: NoteInput): Promise<Note>
   deleteNote(id: number): Promise<void>
+
+  importTranslation(): Promise<ImportedTranslation | null>
+  deleteImportedTranslation(id: string): Promise<void>
 }

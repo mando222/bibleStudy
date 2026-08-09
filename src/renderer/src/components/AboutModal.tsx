@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useAppStore } from '@/store/useAppStore'
 import { BookIcon } from './icons'
 
@@ -27,6 +28,37 @@ const ORIGINALS: Source[] = [
 export default function AboutModal(): JSX.Element | null {
   const open = useAppStore((s) => s.aboutOpen)
   const setOpen = useAppStore((s) => s.setAboutOpen)
+  const translations = useAppStore((s) => s.translations)
+  const setTranslations = useAppStore((s) => s.setTranslations)
+  const [status, setStatus] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const imported = translations.filter((t) => t.language === 'imported')
+
+  const refresh = async (): Promise<void> => {
+    const list = await window.api.listTranslations()
+    setTranslations(list)
+  }
+  const doImport = async (): Promise<void> => {
+    setBusy(true)
+    setStatus(null)
+    try {
+      const res = await window.api.importTranslation()
+      if (res) {
+        await refresh()
+        setStatus(`Imported ${res.name} (${res.verseCount.toLocaleString()} verses).`)
+      }
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : 'Import failed.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  const remove = async (id: string): Promise<void> => {
+    await window.api.deleteImportedTranslation(id)
+    await refresh()
+  }
+
   if (!open) return null
 
   return (
@@ -56,6 +88,45 @@ export default function AboutModal(): JSX.Element | null {
             A local, offline, open-source Bible study app. The application code is MIT-licensed.
             Bundled texts and lexicons retain their own licenses, credited below.
           </p>
+
+          <div className="mt-5 rounded-lg border border-line bg-elevated p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium text-ink">Your translations</div>
+                <div className="text-xs text-muted">
+                  Load NKJV, NASB, or others you own — MySword or e-Sword (.mybible / .bblx) modules.
+                </div>
+              </div>
+              <button
+                onClick={doImport}
+                disabled={busy}
+                className="px-3 py-1.5 rounded-md bg-accent text-white text-sm hover:opacity-90 disabled:opacity-50 whitespace-nowrap"
+              >
+                {busy ? 'Importing…' : 'Import…'}
+              </button>
+            </div>
+            {status && <div className="mt-2 text-xs text-muted">{status}</div>}
+            {imported.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {imported.map((t) => (
+                  <li
+                    key={t.id}
+                    className="flex items-center justify-between text-sm border-t border-line/60 pt-1.5"
+                  >
+                    <span className="text-ink">
+                      {t.name} <span className="text-faint">({t.abbrev})</span>
+                    </span>
+                    <button
+                      onClick={() => remove(t.id)}
+                      className="text-xs text-muted hover:text-red-500"
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
           <Section title="Translations">
             {TRANSLATIONS.map((s) => (
