@@ -94,7 +94,9 @@ export default function AboutModal(): JSX.Element | null {
               <div>
                 <div className="text-sm font-medium text-ink">Your translations</div>
                 <div className="text-xs text-muted">
-                  Load NKJV, NASB, or others you own — MySword or e-Sword (.mybible / .bblx) modules.
+                  Load a module you legally own — MySword (.mybible) or e-Sword (.bblx/.bbli). NKJV
+                  and NASB are copyrighted, so import a copy you own (we can&rsquo;t bundle or
+                  download them).
                 </div>
               </div>
               <button
@@ -104,6 +106,13 @@ export default function AboutModal(): JSX.Element | null {
               >
                 {busy ? 'Importing…' : 'Import…'}
               </button>
+            </div>
+            <div className="mt-2 text-xs text-faint">
+              Where to get them (you must own a copy):{' '}
+              <LinkBtn url="https://www.lockman.org">NASB · Lockman</LinkBtn> ·{' '}
+              <LinkBtn url="https://www.thomasnelsonbibles.com">NKJV · Thomas Nelson</LinkBtn> ·{' '}
+              <LinkBtn url="https://www.e-sword.net">e-Sword</LinkBtn> ·{' '}
+              <LinkBtn url="https://www.mysword.info">MySword</LinkBtn>
             </div>
             {status && <div className="mt-2 text-xs text-muted">{status}</div>}
             {imported.length > 0 && (
@@ -147,6 +156,14 @@ export default function AboutModal(): JSX.Element | null {
         </div>
       </div>
     </div>
+  )
+}
+
+function LinkBtn({ url, children }: { url: string; children: React.ReactNode }): JSX.Element {
+  return (
+    <button onClick={() => window.open(url, '_blank')} className="text-accent hover:underline">
+      {children}
+    </button>
   )
 }
 
