@@ -5,6 +5,21 @@ import type { Translation } from '@shared/types'
 export type Theme = 'light' | 'dark'
 export type StudyTab = 'lexicon' | 'notes' | 'search' | 'apparatus'
 
+// One-click "restore the divine names": Strong's number → the name to render in place of the
+// traditional English rendering (LORD → Yahweh, God → Elohim, …). Applied via the word-replace
+// map, so it only affects translations that carry Strong's tags (KJV, BSB).
+export const DIVINE_NAMES: Record<string, string> = {
+  H3068: 'Yahweh', // יהוה — usually "LORD"
+  H3069: 'Yahweh', // יהוה — "GOD" beside Adonai
+  H3050: 'Yah', // יָהּ — "JAH"/"LORD"
+  H136: 'Adonai', // אֲדֹנָי — "Lord"
+  H410: 'El', // אֵל — "God"
+  H430: 'Elohim', // אֱלֹהִים — "God"
+  H433: 'Eloah', // אֱלוֹהַּ — "God"
+  H7706: 'Shaddai', // שַׁדַּי — "Almighty"
+  H5945: 'Elyon' // עֶלְיוֹן — "most High"
+}
+
 interface AppState {
   theme: Theme
   toggleTheme: () => void
@@ -42,6 +57,8 @@ interface AppState {
   setReplacement: (strongs: string, text: string) => void
   clearReplacement: (strongs: string) => void
   clearReplacements: () => void
+  divineNames: boolean
+  toggleDivineNames: () => void
 
   // Bumped whenever notes/highlights change, to trigger re-fetch.
   userDataNonce: number
@@ -99,7 +116,16 @@ export const useAppStore = create<AppState>()(
         delete next[strongs]
         set({ replacements: next })
       },
-      clearReplacements: () => set({ replacements: {} }),
+      clearReplacements: () => set({ replacements: {}, divineNames: false }),
+
+      divineNames: false,
+      toggleDivineNames: () => {
+        const on = !get().divineNames
+        const next = { ...get().replacements }
+        if (on) for (const [k, v] of Object.entries(DIVINE_NAMES)) next[k] = v
+        else for (const k of Object.keys(DIVINE_NAMES)) delete next[k]
+        set({ divineNames: on, replacements: next })
+      },
 
       userDataNonce: 0,
       bumpUserData: () => set({ userDataNonce: get().userDataNonce + 1 }),

@@ -16,6 +16,8 @@ export default function TopBar(): JSX.Element {
   const toggleTheme = useAppStore((s) => s.toggleTheme)
   const strongsVisible = useAppStore((s) => s.strongsVisible)
   const toggleStrongs = useAppStore((s) => s.toggleStrongs)
+  const divineNames = useAppStore((s) => s.divineNames)
+  const toggleDivineNames = useAppStore((s) => s.toggleDivineNames)
   const interlinear = useAppStore((s) => s.interlinear)
   const toggleInterlinear = useAppStore((s) => s.toggleInterlinear)
   const setAboutOpen = useAppStore((s) => s.setAboutOpen)
@@ -109,6 +111,19 @@ export default function TopBar(): JSX.Element {
       >
         <HashIcon className="w-4 h-4" />
         Strong&rsquo;s
+      </button>
+
+      <button
+        onClick={toggleDivineNames}
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-sm border transition-colors whitespace-nowrap ${
+          divineNames
+            ? 'bg-accent-soft border-accent text-accent'
+            : 'border-line hover:bg-elevated text-muted'
+        }`}
+        title="Restore the divine names (LORD → Yahweh, God → Elohim). Needs a Strong's-tagged translation (KJV/BSB)."
+      >
+        <span className="font-hebrew text-[13px] leading-none">יהוה</span>
+        Divine Names
       </button>
 
       <button
