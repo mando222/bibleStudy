@@ -8,13 +8,15 @@ export default function InterlinearVerse({
   rtl,
   stack = [],
   labels = {},
-  lines = []
+  lines = [],
+  showParses = false
 }: {
   v: Verse
   rtl?: boolean
   stack?: string[]
   labels?: Record<string, string>
   lines?: { id: string; text: string }[]
+  showParses?: boolean
 }): JSX.Element {
   const selectStrongs = useAppStore((s) => s.selectStrongs)
   const selected = useAppStore((s) => s.selectedStrongs)
@@ -64,13 +66,40 @@ export default function InterlinearVerse({
                 {tok.aligned?.[tid] ?? '·'}
               </span>
             ))}
-            {tok.strongs && (
-              <span className="text-[10px] text-accent tabular-nums mt-0.5">{tok.strongs}</span>
-            )}
-            {tok.morph && (
-              <span className="text-[9px] text-faint mt-0.5 max-w-[8rem] truncate" title={tok.morph}>
-                {tok.morph}
+            {showParses && tok.parses && tok.parses.length > 0 ? (
+              <span className="mt-1 flex flex-col items-center gap-0.5 border-t border-line/60 pt-1 w-full">
+                {tok.parses.map((p, i) => {
+                  const isBest = p.strongs === tok.strongs && p.morph === tok.morph
+                  return (
+                    <span
+                      key={i}
+                      role="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (p.strongs) selectStrongs(p.strongs)
+                      }}
+                      title={`${p.gloss ?? ''} · attested ${p.count}×`}
+                      className={`text-[9px] leading-tight cursor-pointer ${
+                        isBest ? 'text-accent font-medium' : 'text-faint hover:text-accent'
+                      }`}
+                    >
+                      <span className="tabular-nums">{p.strongs ?? '—'}</span> {p.morph ?? ''}{' '}
+                      <span className="opacity-60">×{p.count}</span>
+                    </span>
+                  )
+                })}
               </span>
+            ) : (
+              <>
+                {tok.strongs && (
+                  <span className="text-[10px] text-accent tabular-nums mt-0.5">{tok.strongs}</span>
+                )}
+                {tok.morph && (
+                  <span className="text-[9px] text-faint mt-0.5 max-w-[8rem] truncate" title={tok.morph}>
+                    {tok.morph}
+                  </span>
+                )}
+              </>
             )}
           </button>
           )

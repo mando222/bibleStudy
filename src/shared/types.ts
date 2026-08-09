@@ -25,6 +25,15 @@ export interface VerseToken {
   morph: string | null
   gloss: string | null
   aligned?: Record<string, string> // interlinear: stacked translation id → aligned word(s)
+  parses?: WordParse[] // interlinear "all parses": Scripture-attested analyses of this form
+}
+
+/** One Scripture-attested analysis of an original-language form (from the scholar-tagged text). */
+export interface WordParse {
+  strongs: string | null
+  morph: string | null
+  gloss: string | null
+  count: number // how often the form is tagged this way across the corpus
 }
 
 export interface Verse {
@@ -278,7 +287,8 @@ export interface BibleApi {
     book: string,
     chapter: number,
     edition: string,
-    translations?: string[]
+    translations?: string[],
+    includeParses?: boolean
   ): Promise<InterlinearContent>
   getChapterApparatus(book: string, chapter: number): Promise<VerseVariant[]>
   search(query: SearchQuery): Promise<SearchResponse>

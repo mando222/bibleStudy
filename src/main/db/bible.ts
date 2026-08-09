@@ -314,13 +314,15 @@ export function getInterlinear(
   book: string,
   chapter: number,
   edition: string,
-  translations: string[] = []
+  translations: string[] = [],
+  includeParses = false
 ): InterlinearContent {
   const d = required()
   const ed = d.prepare('SELECT language FROM editions WHERE id = ?').get(edition) as
     | { language: string }
     | undefined
   const direction = ed?.language === 'hbo' ? 'rtl' : 'ltr'
+  const lang = ed?.language === 'hbo' ? 'hebrew' : 'greek'
 
   const rows = d
     .prepare(
@@ -388,6 +390,32 @@ export function getInterlinear(
         const arr = linesByVerse.get(r.verse) ?? []
         arr.push({ id: tid, text: r.text })
         linesByVerse.set(r.verse, arr)
+      }
+    }
+  }
+
+  // "All parses": attach every Scripture-attested analysis of each word's form (scholar-tagged).
+  if (includeParses) {
+    const norm = lang === 'hebrew' ? normHebrewWord : normGreekWord
+    const stmt = d.prepare(
+      'SELECT strongs, morph, gloss, count FROM form_parses WHERE form = ? AND lang = ? ORDER BY count DESC'
+    )
+    const cache = new Map<string, { strongs: string | null; morph: string | null; gloss: string | null; count: number }[]>()
+    for (const [, tokens] of byVerse) {
+      for (const tok of tokens) {
+        const form = norm(tok.lemma ?? '')
+        if (!form) continue
+        let parses = cache.get(form)
+        if (!parses) {
+          parses = stmt.all(form, lang) as {
+            strongs: string | null
+            morph: string | null
+            gloss: string | null
+            count: number
+          }[]
+          cache.set(form, parses)
+        }
+        if (parses.length) tok.parses = parses
       }
     }
   }

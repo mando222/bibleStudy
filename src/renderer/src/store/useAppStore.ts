@@ -72,6 +72,8 @@ interface AppState {
   setInterlinearEdition: (id: string) => void
   interlinearStack: string[] // translation ids stacked under each original word
   toggleInterlinearStack: (id: string) => void
+  interlinearParses: boolean // show all Scripture-attested parses per word vs the single best guess
+  toggleInterlinearParses: () => void
   selectedStrongs: string | null
   studyTab: StudyTab
 
@@ -139,6 +141,8 @@ export const useAppStore = create<AppState>()(
         const cur = get().interlinearStack
         set({ interlinearStack: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] })
       },
+      interlinearParses: false,
+      toggleInterlinearParses: () => set({ interlinearParses: !get().interlinearParses }),
       selectedStrongs: null,
       studyTab: 'lexicon',
 
@@ -205,6 +209,7 @@ export const useAppStore = create<AppState>()(
         interlinear: s.interlinear,
         interlinearEdition: s.interlinearEdition,
         interlinearStack: s.interlinearStack,
+        interlinearParses: s.interlinearParses,
         chronological: s.chronological,
         divineNames: s.divineNames,
         divineNameConfig: s.divineNameConfig

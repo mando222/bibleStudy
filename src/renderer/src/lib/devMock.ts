@@ -105,7 +105,7 @@ export async function installDevMock(): Promise<void> {
     },
     listEditions: async () => data.editions ?? [],
     getChapterApparatus: async (book, chapter) => data.apparatus?.[`${book}/${chapter}`] ?? [],
-    getInterlinear: async (book, chapter, edition, translations = []) => {
+    getInterlinear: async (book, chapter, edition, translations = [], includeParses = false) => {
       const base = data.interlinear?.[`${edition}/${book}/${chapter}`] ?? {
         book,
         chapter,
@@ -113,12 +113,21 @@ export async function installDevMock(): Promise<void> {
         direction: 'ltr' as const,
         verses: []
       }
-      if (!translations.length) return base
+      if (!translations.length && !includeParses) return base
       // Deep-clone; align tagged translations by Strong's, stack untagged ones as verse lines.
       const out = {
         ...base,
         verses: base.verses.map((v) => ({ ...v, tokens: v.tokens.map((t) => ({ ...t })), lines: [] as { id: string; text: string }[] }))
       }
+      if (includeParses)
+        for (const v of out.verses)
+          for (const t of v.tokens) {
+            const self = { strongs: t.strongs, morph: t.morph, gloss: t.gloss ?? t.surface, count: 6 }
+            // give λόγος a second attested parse to preview genuine ambiguity
+            t.parses = /^λόγ/.test(t.lemma ?? '')
+              ? [self, { strongs: 'G3004', morph: 'V-PAI', gloss: 'to say', count: 2 }]
+              : [self]
+          }
       for (const tid of translations) {
         const ch = data.chapters[`${tid}/${book}/${chapter}`]
         if (!ch) continue

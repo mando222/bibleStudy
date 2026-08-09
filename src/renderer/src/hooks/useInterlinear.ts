@@ -29,7 +29,8 @@ export function useInterlinear(
   book: string,
   chapter: number,
   edition: string,
-  stack: string[] = []
+  stack: string[] = [],
+  parses = false
 ): State {
   const [state, setState] = useState<State>({ data: null, loading: true, error: null })
   const stackKey = stack.join(',')
@@ -42,7 +43,7 @@ export function useInterlinear(
     let cancelled = false
     setState((s) => ({ ...s, loading: true, error: null }))
     window.api
-      .getInterlinear(book, chapter, edition, stackKey ? stackKey.split(',') : [])
+      .getInterlinear(book, chapter, edition, stackKey ? stackKey.split(',') : [], parses)
       .then((data) => {
         if (!cancelled) setState({ data, loading: false, error: null })
       })
@@ -53,7 +54,7 @@ export function useInterlinear(
     return () => {
       cancelled = true
     }
-  }, [book, chapter, edition, stackKey])
+  }, [book, chapter, edition, stackKey, parses])
 
   return state
 }

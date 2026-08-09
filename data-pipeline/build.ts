@@ -653,6 +653,49 @@ function normGreek(s: string): string {
     .replace(/[^α-ω]/g, '')
     .replace(/ς/g, 'σ')
 }
+/** Normalise a Hebrew word: drop cantillation + vowel points, keep consonants. */
+function normHebrew(s: string): string {
+  return s.normalize('NFC').replace(/[֑-ׇ]/g, '').replace(/[^א-ת]/g, '')
+}
+
+/**
+ * Scripture-attested parses: for every original-language form, collect the distinct analyses it
+ * receives across the SCHOLAR-tagged editions (Greek: NA/TR/BYZ = STEPBible TAGNT; Hebrew: MT =
+ * TAHOT). Only human scholarship — never the derived LXX/KJV tags — so the "all parses" view
+ * surfaces real, attested readings, not machine guesses.
+ */
+function buildFormParses(db: DatabaseSync): number {
+  const agg = new Map<
+    string,
+    { form: string; lang: string; strongs: string | null; morph: string | null; gloss: string | null; count: number }
+  >()
+  const collect = (lang: 'greek' | 'hebrew', norm: (s: string) => string, sql: string): void => {
+    for (const r of db.prepare(sql).all() as {
+      original: string
+      strongs: string | null
+      morph: string | null
+      gloss: string | null
+    }[]) {
+      const form = norm(r.original)
+      if (!form || (!r.strongs && !r.morph)) continue
+      const key = `${form} ${lang} ${r.strongs ?? ''} ${r.morph ?? ''}`
+      let e = agg.get(key)
+      if (!e) {
+        e = { form, lang, strongs: r.strongs ?? null, morph: r.morph ?? null, gloss: r.gloss ?? null, count: 0 }
+        agg.set(key, e)
+      }
+      e.count++
+      if (!e.gloss && r.gloss) e.gloss = r.gloss
+    }
+  }
+  collect('greek', normGreek, "SELECT original, strongs, morph, gloss FROM original_tokens WHERE edition IN ('NA','TR','BYZ')")
+  collect('hebrew', normHebrew, "SELECT original, strongs, morph, gloss FROM original_tokens WHERE edition = 'MT'")
+  const ins = db.prepare('INSERT INTO form_parses (form, lang, strongs, morph, gloss, count) VALUES (?,?,?,?,?,?)')
+  db.exec('BEGIN')
+  for (const e of agg.values()) ins.run(e.form, e.lang, e.strongs, e.morph, e.gloss, e.count)
+  db.exec('COMMIT')
+  return agg.size
+}
 
 /**
  * LXX Phase 2 — tag the Septuagint from our OWN data, no CATSS. Build a surface→Strong's map from
@@ -923,6 +966,10 @@ async function main(): Promise<void> {
   const lexEntries = await buildLexicons(db)
   process.stdout.write(` ${lexEntries} entries\n`)
 
+  process.stdout.write('• Scripture-attested parses (scholar-tagged)…')
+  const parseCount = buildFormParses(db)
+  process.stdout.write(` ${parseCount} form-analyses\n`)
+
   const insMeta = db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?,?)')
   insMeta.run('schema_version', '1')
   insMeta.run(
@@ -1061,7 +1108,15 @@ async function main(): Promise<void> {
   const h430lex = (
     db.prepare("SELECT COUNT(*) n FROM lexicon_entries WHERE strongs='H430' AND lexicon='TBESH'").get() as { n: number }
   ).n
-  if (h430lex < 1) errors.push('TBESH (BDB) should have an entry for H430 (אֱלֹהִים)')
+  if (h430lex < 1) errors.push('TBESH (BDB) should have an entry for H430 (Elohim)')
+
+  // Scripture-attested parses exist and capture real ambiguity (χάριν = noun χάρις AND prep χάριν).
+  const parseTotal = (db.prepare('SELECT COUNT(*) n FROM form_parses').get() as { n: number }).n
+  if (parseTotal < 50000) errors.push(`form_parses too sparse: ${parseTotal}`)
+  const charinParses = (
+    db.prepare("SELECT COUNT(DISTINCT strongs) n FROM form_parses WHERE form='χαριν' AND lang='greek'").get() as { n: number }
+  ).n
+  if (charinParses < 2) errors.push(`χάριν should have ≥2 attested parses, got ${charinParses}`)
 
   db.close()
 

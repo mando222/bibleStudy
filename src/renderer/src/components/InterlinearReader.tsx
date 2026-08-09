@@ -17,6 +17,8 @@ export default function InterlinearReader({
   const translations = useAppStore((s) => s.translations)
   const stack = useAppStore((s) => s.interlinearStack)
   const toggleStack = useAppStore((s) => s.toggleInterlinearStack)
+  const parses = useAppStore((s) => s.interlinearParses)
+  const toggleParses = useAppStore((s) => s.toggleInterlinearParses)
 
   const testament = BOOK_BY_ID[book]?.testament ?? 'NT'
   const applicable = editions.filter((e) => e.testament === testament)
@@ -31,7 +33,7 @@ export default function InterlinearReader({
   // Only tagged translations get a per-word row; untagged ones render as a verse line.
   const wordStack = stack.filter((id) => taggedIds.has(id))
 
-  const { data, loading, error } = useInterlinear(book, chapter, effective, stack)
+  const { data, loading, error } = useInterlinear(book, chapter, effective, stack, parses)
 
   return (
     <div className="h-full overflow-y-auto">
@@ -56,8 +58,17 @@ export default function InterlinearReader({
               {data.direction === 'rtl' ? 'Hebrew · read right-to-left' : 'Greek'}
             </span>
           )}
+          <button
+            onClick={toggleParses}
+            title="Switch between the single best-guess analysis and every Scripture-attested parse of each word"
+            className={`ml-auto text-xs px-2 py-1 rounded-md border transition-colors ${
+              parses ? 'bg-accent-soft border-accent text-accent' : 'border-line text-muted hover:bg-elevated'
+            }`}
+          >
+            {parses ? 'All parses' : 'Best guess'}
+          </button>
           {stackable.length > 0 && (
-            <div className="flex items-center gap-1.5 ml-auto">
+            <div className="flex items-center gap-1.5">
               <span className="text-[11px] uppercase tracking-wider text-faint">Stack</span>
               {stackable.map((t) => {
                 const on = stack.includes(t.id)
@@ -79,6 +90,14 @@ export default function InterlinearReader({
             </div>
           )}
         </div>
+
+        {parses && (
+          <p className="text-[11px] text-muted -mt-3 mb-4 leading-relaxed">
+            Every analysis each form receives in the scholar-tagged text (STEPBible), with how often
+            it&rsquo;s attested; the contextual best guess is highlighted. Matching is
+            accent-insensitive, and nothing here is generated.
+          </p>
+        )}
 
         {loading ? (
           <div className="animate-pulse space-y-4 mt-2">
@@ -103,6 +122,7 @@ export default function InterlinearReader({
               stack={wordStack}
               labels={labels}
               lines={v.lines}
+              showParses={parses}
             />
           ))
         )}

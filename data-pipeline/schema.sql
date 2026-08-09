@@ -110,6 +110,22 @@ CREATE TABLE lexicon_entries (
 
 CREATE INDEX idx_lex_strongs ON lexicon_entries (strongs, lexicon, sort);
 
+-- Scripture-attested parses: every distinct analysis (Strong's + morphology + gloss) that an
+-- original-language WORD FORM receives across the scholar-tagged editions (STEPBible TAGNT for
+-- Greek, TAHOT for Hebrew). Powers the "all parses" view — it surfaces existing scholarship and
+-- the real ambiguity in the text; it never generates or guesses. `count` = how often attested.
+CREATE TABLE form_parses (
+  id      INTEGER PRIMARY KEY,
+  form    TEXT NOT NULL,     -- accent/point-insensitive normalised surface
+  lang    TEXT NOT NULL,     -- 'greek' | 'hebrew'
+  strongs TEXT,
+  morph   TEXT,
+  gloss   TEXT,
+  count   INTEGER NOT NULL
+);
+
+CREATE INDEX idx_form_parses ON form_parses (form, lang, count);
+
 -- Full-text search over verse text (standalone contentless-style table).
 CREATE VIRTUAL TABLE verses_fts USING fts5 (
   text,

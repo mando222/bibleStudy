@@ -28,8 +28,8 @@ export function registerIpc(): void {
   ipcMain.handle('bible:listEditions', () => bible.listEditions())
   ipcMain.handle(
     'bible:getInterlinear',
-    (_e, book: string, chapter: number, edition: string, translations?: string[]) =>
-      bible.getInterlinear(book, chapter, edition, translations ?? [])
+    (_e, book: string, chapter: number, edition: string, translations?: string[], includeParses?: boolean) =>
+      bible.getInterlinear(book, chapter, edition, translations ?? [], includeParses ?? false)
   )
   ipcMain.handle('bible:getChapterApparatus', (_e, book: string, chapter: number) =>
     bible.getChapterApparatus(book, chapter)
