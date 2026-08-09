@@ -1,16 +1,24 @@
 import { DatabaseSync } from 'node:sqlite'
 import * as sqliteVec from 'sqlite-vec'
 import { app } from 'electron'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import type { AiDoc } from '../../shared/types'
 
 // A separate ai.sqlite (userData) holds the RAG document store + vector index.
 let db: DatabaseSync | null = null
 
+/** In a packaged app the loadable extension is unpacked from the asar; point at that copy. */
+function vecLoadablePath(): string {
+  const p = sqliteVec.getLoadablePath()
+  return p.includes(`app.asar.unpacked${sep}`)
+    ? p
+    : p.replace(`app.asar${sep}`, `app.asar.unpacked${sep}`)
+}
+
 export function aiDb(): DatabaseSync {
   if (db) return db
   db = new DatabaseSync(join(app.getPath('userData'), 'ai.sqlite'), { allowExtension: true })
-  db.loadExtension(sqliteVec.getLoadablePath())
+  db.loadExtension(vecLoadablePath())
   db.exec(`
     CREATE TABLE IF NOT EXISTS documents (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1,

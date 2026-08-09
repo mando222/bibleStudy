@@ -1,0 +1,52 @@
+appId: com.mando222.openbiblestudy
+productName: Open Bible Study
+copyright: Open Bible Study — free & open-source
+
+directories:
+  buildResources: build
+  output: dist
+
+# electron-vite emits the app to out/; electron-builder packages that + production deps.
+files:
+  - out/**
+  - package.json
+
+# The bundled Bible database ships as a resource; resolveDbPath() looks in process.resourcesPath.
+extraResources:
+  - from: resources/bible.sqlite
+    to: bible.sqlite
+
+# Native binaries (llama.cpp N-API + the sqlite-vec loadable extension) can't live inside the asar.
+asarUnpack:
+  - '**/node_modules/node-llama-cpp/**'
+  - '**/node_modules/@node-llama-cpp/**'
+  - '**/node_modules/sqlite-vec/**'
+  - '**/node_modules/sqlite-vec-*/**'
+
+# node-llama-cpp / sqlite-vec ship prebuilt binaries — never let electron-builder run node-gyp.
+npmRebuild: false
+
+mac:
+  category: public.app-category.reference
+  target:
+    - target: dmg
+    - target: zip
+  identity: null # unsigned / ad-hoc — testers bypass Gatekeeper once (see docs/INSTALL.md)
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+
+win:
+  target:
+    - target: nsis
+  artifactName: ${productName}-${version}-setup.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+
+linux:
+  category: Education
+  target:
+    - target: AppImage
+    - target: deb
+  artifactName: ${productName}-${version}-${arch}.${ext}
