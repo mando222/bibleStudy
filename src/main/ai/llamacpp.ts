@@ -92,6 +92,10 @@ export async function* chatStream(modelFile: string, messages: ChatMessage[]): A
     let finished = false
     const done = session
       .prompt(last?.content ?? '', {
+        // Low temperature keeps grounded study answers faithful to the retrieved context
+        // and curbs invented verses/references.
+        temperature: 0.2,
+        topP: 0.9,
         onTextChunk(chunk: string) {
           queue.push(chunk)
           if (notify) {
