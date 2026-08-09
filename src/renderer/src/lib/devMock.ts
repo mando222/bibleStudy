@@ -5,6 +5,7 @@
  */
 import type {
   AiApi,
+  AiDoc,
   AiTokenEvent,
   BibleApi,
   ChapterContent,
@@ -156,6 +157,9 @@ export async function installDevMock(): Promise<void> {
       verse: h.verse,
       text: h.snippet.replace(/\{\{|\}\}/g, '')
     }))
+  const mockDocs: AiDoc[] = [
+    { id: 'doc_sample', name: 'Position paper — ecclesiology.pdf', chunks: 12, active: true, addedAt: Date.now() }
+  ]
   const ai: AiApi = {
     status: async () => ({ available: true, models: ['llama3.1:latest', 'qwen3:1.7b'], config: cfg }),
     setConfig: async (patch) => Object.assign(cfg, patch),
@@ -175,10 +179,26 @@ export async function installDevMock(): Promise<void> {
       tokenListeners.add(cb)
       return () => tokenListeners.delete(cb)
     },
-    listDocuments: async () => [],
-    importDocument: async () => null,
-    setDocumentActive: async () => undefined,
-    deleteDocument: async () => undefined,
+    listDocuments: async () => mockDocs,
+    importDocument: async () => {
+      const d: AiDoc = {
+        id: `doc_${mockDocs.length + 1}`,
+        name: `document-${mockDocs.length + 1}.txt`,
+        chunks: 8,
+        active: true,
+        addedAt: Date.now()
+      }
+      mockDocs.unshift(d)
+      return d
+    },
+    setDocumentActive: async (id, active) => {
+      const d = mockDocs.find((x) => x.id === id)
+      if (d) d.active = active
+    },
+    deleteDocument: async (id) => {
+      const i = mockDocs.findIndex((x) => x.id === id)
+      if (i >= 0) mockDocs.splice(i, 1)
+    },
     indexStatus: async () => ({ bibleIndexed: 0, bibleTotal: 0, building: false }),
     buildBibleIndex: async () => undefined,
     onIndexProgress: () => () => undefined

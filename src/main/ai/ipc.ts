@@ -1,7 +1,9 @@
-import { ipcMain } from 'electron'
+import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { ping, listModels } from './ollama'
 import { getConfig, setConfig, ensureChatModel } from './config'
 import { answer } from './assistant'
+import { importDocument } from './documents'
+import { listDocuments, setDocumentActive, deleteDocument } from './vectors'
 import type { AiConfig, ChatCitation, ChatMessage } from '../../shared/types'
 
 export function registerAiIpc(): void {
@@ -42,11 +44,27 @@ export function registerAiIpc(): void {
     }
   )
 
-  // ---- Phase 6 (documents + semantic index) — implemented in the next stage ----
-  ipcMain.handle('ai:listDocuments', () => [])
-  ipcMain.handle('ai:importDocument', () => null)
-  ipcMain.handle('ai:setDocumentActive', () => undefined)
-  ipcMain.handle('ai:deleteDocument', () => undefined)
+  // ---- Documents (RAG) ----
+  ipcMain.handle('ai:listDocuments', () => listDocuments())
+  ipcMain.handle('ai:importDocument', async (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const res = await dialog.showOpenDialog(win!, {
+      title: 'Add a document for the assistant',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Documents', extensions: ['pdf', 'txt', 'md', 'markdown', 'csv', 'text'] },
+        { name: 'All files', extensions: ['*'] }
+      ]
+    })
+    if (res.canceled || !res.filePaths[0]) return null
+    return importDocument(res.filePaths[0])
+  })
+  ipcMain.handle('ai:setDocumentActive', (_e, id: string, active: boolean) =>
+    setDocumentActive(id, active)
+  )
+  ipcMain.handle('ai:deleteDocument', (_e, id: string) => deleteDocument(id))
+
+  // Bible semantic index (deferred — retrieval currently uses FTS)
   ipcMain.handle('ai:indexStatus', () => ({ bibleIndexed: 0, bibleTotal: 0, building: false }))
   ipcMain.handle('ai:buildBibleIndex', () => undefined)
 }

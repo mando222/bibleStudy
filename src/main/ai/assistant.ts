@@ -1,6 +1,7 @@
 import { retrieveByKeywords } from '../db/bible'
 import { chatStream } from './ollama'
 import { ensureChatModel } from './config'
+import { retrieveDocs } from './documents'
 import type { ChatMessage, ChatCitation } from '../../shared/types'
 
 const SYSTEM =
@@ -50,8 +51,18 @@ export async function* answer(
   if (!cfg.chatModel) throw new Error('No chat model is available in Ollama.')
 
   const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content ?? ''
+  // Active user documents (semantic) always contribute; Scripture (FTS) when grounding is on.
+  const docHits = lastUser ? await retrieveDocs(lastUser, 5) : []
+  const docCites: ChatCitation[] = docHits.map((h) => ({
+    book: '',
+    bookName: h.source,
+    chapter: 0,
+    verse: 0,
+    text: h.text,
+    source: h.source
+  }))
   const bibleCites = grounding && lastUser ? retrieveBible(lastUser, grounding.translation) : []
-  const citations = [...extraContext, ...bibleCites]
+  const citations = [...extraContext, ...docCites, ...bibleCites]
   yield { citations }
 
   const ctx = citations.length

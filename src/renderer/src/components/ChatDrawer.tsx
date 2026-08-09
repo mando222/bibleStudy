@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AiStatus, ChatCitation } from '@shared/types'
+import type { AiDoc, AiStatus, ChatCitation } from '@shared/types'
 import { useAppStore } from '@/store/useAppStore'
-import { SparkleIcon, SendIcon } from './icons'
+import { SparkleIcon, SendIcon, FileIcon } from './icons'
 
 interface Msg {
   role: 'user' | 'assistant'
@@ -20,7 +20,39 @@ export default function ChatDrawer(): JSX.Element {
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [ground, setGround] = useState(true)
+  const [showDocs, setShowDocs] = useState(false)
+  const [docs, setDocs] = useState<AiDoc[]>([])
+  const [docBusy, setDocBusy] = useState(false)
+  const [docErr, setDocErr] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+
+  const loadDocs = (): void => {
+    window.ai
+      ?.listDocuments()
+      .then(setDocs)
+      .catch(() => undefined)
+  }
+  const importDoc = async (): Promise<void> => {
+    setDocErr(null)
+    setDocBusy(true)
+    try {
+      const d = await window.ai.importDocument()
+      if (d) loadDocs()
+    } catch (e) {
+      setDocErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setDocBusy(false)
+    }
+  }
+  const toggleDoc = async (id: string, active: boolean): Promise<void> => {
+    await window.ai.setDocumentActive(id, active)
+    loadDocs()
+  }
+  const removeDoc = async (id: string): Promise<void> => {
+    await window.ai.deleteDocument(id)
+    loadDocs()
+  }
+  const activeDocs = docs.filter((d) => d.active).length
 
   const refreshStatus = (): void => {
     window.ai
@@ -30,6 +62,7 @@ export default function ChatDrawer(): JSX.Element {
   }
   useEffect(() => {
     refreshStatus()
+    loadDocs()
     const unsub = window.ai?.onToken((ev) => {
       setMessages((prev) => {
         if (!prev.length) return prev
@@ -101,6 +134,16 @@ export default function ChatDrawer(): JSX.Element {
           </select>
         )}
         <div className="flex-1" />
+        <button
+          onClick={() => setShowDocs((v) => !v)}
+          className={`flex items-center gap-1 text-xs px-1.5 py-1 rounded-md ${
+            showDocs ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-elevated'
+          }`}
+          title="Documents used as context"
+        >
+          <FileIcon className="w-3.5 h-3.5" />
+          {activeDocs > 0 && <span className="tabular-nums">{activeDocs}</span>}
+        </button>
         {messages.length > 0 && (
           <button
             onClick={() => setMessages([])}
@@ -113,6 +156,54 @@ export default function ChatDrawer(): JSX.Element {
           ✕
         </button>
       </div>
+
+      {showDocs && status?.available && (
+        <div className="border-b border-line p-3 bg-elevated/40">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] uppercase tracking-wider text-faint">
+              Documents · used as context
+            </span>
+            <button
+              onClick={() => void importDoc()}
+              disabled={docBusy}
+              className="text-xs text-accent hover:underline disabled:opacity-50"
+            >
+              {docBusy ? 'Adding…' : '+ Add document…'}
+            </button>
+          </div>
+          {docErr && <div className="text-xs text-red-500 mb-1">{docErr}</div>}
+          {docs.length === 0 ? (
+            <p className="text-xs text-muted leading-relaxed">
+              Add your notes or a position paper (PDF, txt, md). Checked documents are retrieved and
+              fed to the assistant as context.
+            </p>
+          ) : (
+            <ul className="space-y-1 max-h-40 overflow-y-auto">
+              {docs.map((d) => (
+                <li key={d.id} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={d.active}
+                    onChange={(e) => void toggleDoc(d.id, e.target.checked)}
+                  />
+                  <span className="flex-1 truncate text-ink" title={d.name}>
+                    {d.name}
+                  </span>
+                  <span className="text-[11px] text-faint tabular-nums" title="chunks">
+                    {d.chunks}
+                  </span>
+                  <button
+                    onClick={() => void removeDoc(d.id)}
+                    className="text-xs text-muted hover:text-red-500"
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {status && !status.available ? (
         <Setup onRetry={refreshStatus} />
