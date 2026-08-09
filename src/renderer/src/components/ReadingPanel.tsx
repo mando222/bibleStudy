@@ -6,7 +6,18 @@ import { useHighlights, useNotes } from '@/hooks/useUserData'
 import VerseView from './VerseView'
 import VersePopover from './VersePopover'
 import InterlinearReader from './InterlinearReader'
-import { BookIcon } from './icons'
+import { BookIcon, SparkleIcon } from './icons'
+
+/** Walk up from a DOM node to the nearest verse element, returning its verse number. */
+function verseOf(node: Node | null, container: HTMLElement): number | null {
+  let el: Element | null = node instanceof Element ? node : (node?.parentElement ?? null)
+  while (el && el !== container) {
+    const dv = el.getAttribute('data-verse')
+    if (dv) return Number(dv)
+    el = el.parentElement
+  }
+  return null
+}
 
 export default function ReadingPanel(): JSX.Element {
   const parallels = useAppStore((s) => s.parallels)
@@ -81,9 +92,51 @@ function Column({ translation, book, chapter, showLabel, registerRef, onScroll }
   const { byVerse } = useNotes(book, chapter)
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [menu, setMenu] = useState<{ verse: number; x: number; y: number } | null>(null)
+  // Floating "Ask the assistant" button shown when the reader selects text.
+  const [sel, setSel] = useState<{ x: number; y: number; text: string; v1: number; v2: number } | null>(null)
+  const askAssistantAbout = useAppStore((s) => s.askAssistantAbout)
   const scrollToVerse = useAppStore((s) => s.scrollToVerse)
   const clearScroll = useAppStore((s) => s.clearScroll)
   const rtl = data?.direction === 'rtl'
+  const bookName = BOOK_BY_ID[book]?.name ?? book
+
+  // On mouse-up, if the reader selected some verse text, offer to ask the assistant about it.
+  const onMouseUp = (): void => {
+    const el = containerRef.current
+    const selection = window.getSelection()
+    if (!el || !selection || selection.isCollapsed) return setSel(null)
+    const text = selection.toString().trim()
+    const range = selection.rangeCount ? selection.getRangeAt(0) : null
+    if (!text || !range || !el.contains(range.commonAncestorContainer)) return setSel(null)
+    const v1 = verseOf(range.startContainer, el)
+    const v2 = verseOf(range.endContainer, el)
+    if (v1 == null) return setSel(null)
+    const rect = range.getBoundingClientRect()
+    const cr = el.getBoundingClientRect()
+    setSel({
+      x: rect.left - cr.left + el.scrollLeft,
+      y: rect.top - cr.top + el.scrollTop,
+      text,
+      v1,
+      v2: v2 ?? v1
+    })
+  }
+
+  const askAboutSelection = (): void => {
+    if (!sel) return
+    const lo = Math.min(sel.v1, sel.v2)
+    const hi = Math.max(sel.v1, sel.v2)
+    askAssistantAbout({
+      book,
+      bookName,
+      chapter,
+      verse: lo,
+      endVerse: hi !== lo ? hi : undefined,
+      text: sel.text
+    })
+    setSel(null)
+    window.getSelection()?.removeAllRanges()
+  }
 
   // Scroll to a verse requested via search / navigation, then flash it briefly.
   useEffect(() => {
@@ -110,7 +163,11 @@ function Column({ translation, book, chapter, showLabel, registerRef, onScroll }
         containerRef.current = el
         registerRef(el)
       }}
-      onScroll={onScroll}
+      onScroll={() => {
+        onScroll()
+        if (sel) setSel(null)
+      }}
+      onMouseUp={onMouseUp}
       className="flex-1 min-w-0 overflow-y-auto relative"
     >
       <div className="max-w-prose mx-auto px-8 py-8">
@@ -162,6 +219,17 @@ function Column({ translation, book, chapter, showLabel, registerRef, onScroll }
         )}
       </div>
 
+      {sel && (
+        <button
+          style={{ top: Math.max(sel.y - 34, 0), left: sel.x }}
+          onMouseDown={(e) => e.preventDefault()} // keep the text selection intact
+          onClick={askAboutSelection}
+          className="absolute z-30 flex items-center gap-1 rounded-md bg-accent text-white text-xs font-medium px-2 py-1 shadow-lg hover:opacity-90"
+        >
+          <SparkleIcon className="w-3.5 h-3.5" /> Ask
+        </button>
+      )}
+
       {menu && (
         <VersePopover
           x={menu.x}
@@ -170,6 +238,7 @@ function Column({ translation, book, chapter, showLabel, registerRef, onScroll }
           book={book}
           chapter={chapter}
           verse={menu.verse}
+          verseText={data?.verses.find((x) => x.verse === menu.verse)?.text ?? ''}
           highlight={highlights.get(menu.verse)}
           note={byVerse.get(menu.verse)?.[0]}
           onClose={() => setMenu(null)}

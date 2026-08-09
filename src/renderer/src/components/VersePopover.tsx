@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import type { Highlight, Note } from '@shared/types'
+import { BOOK_BY_ID } from '@shared/books'
 import { useAppStore } from '@/store/useAppStore'
 import { HIGHLIGHT_COLORS, highlightVar } from '@/lib/highlights'
-import { PenIcon } from './icons'
+import { PenIcon, SparkleIcon } from './icons'
 
 interface Props {
   x: number
@@ -11,6 +12,7 @@ interface Props {
   book: string
   chapter: number
   verse: number
+  verseText: string
   highlight?: Highlight
   note?: Note
   onClose: () => void
@@ -23,11 +25,13 @@ export default function VersePopover({
   book,
   chapter,
   verse,
+  verseText,
   highlight,
   note,
   onClose
 }: Props): JSX.Element {
   const bump = useAppStore((s) => s.bumpUserData)
+  const askAssistantAbout = useAppStore((s) => s.askAssistantAbout)
   const [noteText, setNoteText] = useState(note?.body ?? '')
   const [editingNote, setEditingNote] = useState(false)
 
@@ -122,6 +126,25 @@ export default function VersePopover({
               Add a note
             </button>
           )}
+        </div>
+
+        <div className="border-t border-line pt-2 mt-2">
+          <button
+            onClick={() => {
+              askAssistantAbout({
+                book,
+                bookName: BOOK_BY_ID[book]?.name ?? book,
+                chapter,
+                verse,
+                text: verseText
+              })
+              onClose()
+            }}
+            className="w-full flex items-center gap-2 px-1 py-1.5 text-sm text-muted hover:text-accent rounded-md"
+          >
+            <SparkleIcon className="w-4 h-4" />
+            Ask the assistant
+          </button>
         </div>
       </div>
     </>

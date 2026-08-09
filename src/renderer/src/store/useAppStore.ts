@@ -41,6 +41,16 @@ export function computeDivineReplacements(on: boolean, cfg: DivineNameConfig): R
   return out
 }
 
+/** A passage the user picked (verse menu or text selection) to ask the assistant about. */
+export interface PendingContext {
+  book: string
+  bookName: string
+  chapter: number
+  verse: number
+  endVerse?: number // for a multi-verse selection
+  text: string
+}
+
 interface AppState {
   theme: Theme
   toggleTheme: () => void
@@ -56,6 +66,10 @@ interface AppState {
   // AI assistant drawer
   assistantOpen: boolean
   setAssistantOpen: (v: boolean) => void
+  // A passage selected to ask the assistant about (shown as a context pill; transient).
+  pendingContext: PendingContext | null
+  askAssistantAbout: (ctx: PendingContext) => void
+  clearPendingContext: () => void
 
   // Reading selection
   primary: string // primary translation id
@@ -124,6 +138,9 @@ export const useAppStore = create<AppState>()(
 
       assistantOpen: false,
       setAssistantOpen: (assistantOpen) => set({ assistantOpen }),
+      pendingContext: null,
+      askAssistantAbout: (pendingContext) => set({ pendingContext, assistantOpen: true }),
+      clearPendingContext: () => set({ pendingContext: null }),
 
       primary: 'KJV',
       parallels: ['KJV'],

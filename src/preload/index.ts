@@ -37,7 +37,9 @@ const ai: AiApi = {
     ipcRenderer.on('ai:setupProgress', listener)
     return () => ipcRenderer.removeListener('ai:setupProgress', listener)
   },
-  chat: (messages, grounding) => ipcRenderer.invoke('ai:chat', messages, grounding),
+  chat: (conversationId, messages, grounding, extraContext) =>
+    ipcRenderer.invoke('ai:chat', conversationId, messages, grounding, extraContext),
+  stop: (conversationId) => ipcRenderer.invoke('ai:stop', conversationId),
   onToken: (cb) => {
     const listener = (_e: unknown, ev: Parameters<typeof cb>[0]): void => cb(ev)
     ipcRenderer.on('ai:token', listener)

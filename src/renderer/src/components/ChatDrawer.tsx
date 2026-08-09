@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { AiDoc, AiIndexStatus, AiSetupProgress, AiStatus, ChatCitation } from '@shared/types'
 import { useAppStore } from '@/store/useAppStore'
 import { SparkleIcon, SendIcon, FileIcon } from './icons'
+import LinkedScripture from './LinkedScripture'
 
 interface Msg {
   role: 'user' | 'assistant'
@@ -14,11 +15,20 @@ export default function ChatDrawer(): JSX.Element {
   const setOpen = useAppStore((s) => s.setAssistantOpen)
   const primary = useAppStore((s) => s.primary)
   const goToVerse = useAppStore((s) => s.goToVerse)
+  const pendingContext = useAppStore((s) => s.pendingContext)
+  const clearPendingContext = useAppStore((s) => s.clearPendingContext)
 
   const [status, setStatus] = useState<AiStatus | null>(null)
   const [messages, setMessages] = useState<Msg[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  // A stable id per conversation so the main process can keep a KV-cached session and cancel it.
+  const [convId, setConvId] = useState(() => `c_${Date.now().toString(36)}`)
+  const newConversation = (): void => {
+    setConvId(`c_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`)
+    setMessages([])
+  }
+  const stop = (): void => void window.ai?.stop(convId)
   const [ground, setGround] = useState(true)
   const [showDocs, setShowDocs] = useState(false)
   const [docs, setDocs] = useState<AiDoc[]>([])
@@ -135,8 +145,21 @@ export default function ChatDrawer(): JSX.Element {
     }]
     setMessages((prev) => [...prev, { role: 'user', content: q }, { role: 'assistant', content: '' }])
     setBusy(true)
+    // Include the selected passage (if any) as extra context, then consume it.
+    const extra = pendingContext
+      ? [
+          {
+            book: pendingContext.book,
+            bookName: pendingContext.bookName,
+            chapter: pendingContext.chapter,
+            verse: pendingContext.verse,
+            text: pendingContext.text
+          }
+        ]
+      : []
+    clearPendingContext()
     try {
-      await window.ai.chat(history, ground ? { translation: primary } : null)
+      await window.ai.chat(convId, history, ground ? { translation: primary } : null, extra)
     } catch (e) {
       setBusy(false)
       setMessages((prev) => {
@@ -204,10 +227,7 @@ export default function ChatDrawer(): JSX.Element {
           {activeDocs > 0 && <span className="tabular-nums">{activeDocs}</span>}
         </button>
         {messages.length > 0 && (
-          <button
-            onClick={() => setMessages([])}
-            className="text-xs text-muted hover:text-accent px-2"
-          >
+          <button onClick={newConversation} className="text-xs text-muted hover:text-accent px-2">
             Clear
           </button>
         )}
@@ -333,6 +353,23 @@ export default function ChatDrawer(): JSX.Element {
           </div>
 
           <div className="border-t border-line p-2.5">
+            {pendingContext && (
+              <div className="mb-2 flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent-soft/40 px-2 py-1 text-xs">
+                <SparkleIcon className="w-3.5 h-3.5 text-accent shrink-0" />
+                <span className="text-accent font-medium shrink-0">About</span>
+                <span className="text-muted truncate">
+                  {pendingContext.bookName} {pendingContext.chapter}:{pendingContext.verse}
+                  {pendingContext.endVerse ? `–${pendingContext.endVerse}` : ''}
+                </span>
+                <button
+                  onClick={clearPendingContext}
+                  title="Remove context"
+                  className="ml-auto text-muted hover:text-accent shrink-0"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
             <label className="flex items-center gap-1.5 text-xs text-muted mb-2 select-none">
               <input type="checkbox" checked={ground} onChange={(e) => setGround(e.target.checked)} />
               Ground answers in Scripture ({primary})
@@ -351,13 +388,23 @@ export default function ChatDrawer(): JSX.Element {
                 rows={2}
                 className="flex-1 resize-none rounded-md border border-line bg-elevated p-2 text-sm text-ink outline-none focus:border-accent"
               />
-              <button
-                onClick={() => void send()}
-                disabled={busy || !input.trim()}
-                className="h-9 w-9 shrink-0 rounded-md bg-accent text-white flex items-center justify-center disabled:opacity-40"
-              >
-                <SendIcon className="w-4 h-4" />
-              </button>
+              {busy ? (
+                <button
+                  onClick={stop}
+                  title="Stop generating"
+                  className="h-9 px-3 shrink-0 rounded-md border border-line text-xs font-medium text-muted hover:text-accent hover:border-accent flex items-center"
+                >
+                  Stop
+                </button>
+              ) : (
+                <button
+                  onClick={() => void send()}
+                  disabled={!input.trim()}
+                  className="h-9 w-9 shrink-0 rounded-md bg-accent text-white flex items-center justify-center disabled:opacity-40"
+                >
+                  <SendIcon className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
         </>
@@ -386,7 +433,7 @@ function Bubble({
     <div className="flex justify-start">
       <div className="max-w-[92%]">
         <div className="rounded-2xl rounded-bl-sm bg-elevated text-ink px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed">
-          {m.content || '…'}
+          {m.content ? <LinkedScripture text={m.content} /> : '…'}
         </div>
         {m.citations && m.citations.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1.5">

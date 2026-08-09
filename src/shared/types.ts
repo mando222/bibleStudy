@@ -230,7 +230,13 @@ export interface AiIndexStatus {
 export interface AiApi {
   status(): Promise<AiStatus>
   setConfig(patch: Partial<AiConfig>): Promise<AiConfig>
-  chat(messages: ChatMessage[], grounding: { translation: string } | null): Promise<ChatResult>
+  chat(
+    conversationId: string,
+    messages: ChatMessage[],
+    grounding: { translation: string } | null,
+    extraContext?: ChatCitation[]
+  ): Promise<ChatResult>
+  stop(conversationId: string): Promise<void>
   onToken(cb: (e: AiTokenEvent) => void): () => void
 
   listDocuments(): Promise<AiDoc[]>

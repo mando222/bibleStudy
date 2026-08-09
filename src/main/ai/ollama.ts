@@ -26,12 +26,14 @@ export async function listModels(baseUrl: string): Promise<string[]> {
 export async function* chatStream(
   baseUrl: string,
   model: string,
-  messages: ChatMessage[]
+  messages: ChatMessage[],
+  signal?: AbortSignal
 ): AsyncGenerator<string> {
   const res = await fetch(`${baseUrl}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, messages, stream: true, options: { temperature: 0.2 } })
+    body: JSON.stringify({ model, messages, stream: true, options: { temperature: 0.2 } }),
+    signal
   })
   if (!res.ok || !res.body) throw new Error(`Ollama chat failed: ${res.status}`)
 

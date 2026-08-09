@@ -284,10 +284,13 @@ export async function installDevMock(): Promise<void> {
       setupListeners.add(cb)
       return () => setupListeners.delete(cb)
     },
-    chat: async (messages, grounding) => {
-      const cites = grounding ? mockCites() : []
+    chat: async (_conversationId, _messages, grounding, extraContext) => {
+      const cites = [...(extraContext ?? []), ...(grounding ? mockCites() : [])]
       emit({ citations: cites })
-      const refs = cites.map((c) => `${c.bookName} ${c.chapter}:${c.verse}`).join(', ')
+      const refs = cites
+        .filter((c) => !c.source)
+        .map((c) => `${c.bookName} ${c.chapter}:${c.verse}`)
+        .join(', ')
       const text = `This is a preview reply — in the desktop app the assistant runs privately on your computer. Grounding in the cited passages${refs ? ` (${refs})` : ''}, it would answer your question here, streaming word by word and citing the verses it used.`
       for (const w of text.split(/(\s+)/)) {
         await new Promise((r) => setTimeout(r, 18))
@@ -296,6 +299,7 @@ export async function installDevMock(): Promise<void> {
       emit({ done: true })
       return { text, citations: cites }
     },
+    stop: async () => undefined,
     onToken: (cb) => {
       tokenListeners.add(cb)
       return () => tokenListeners.delete(cb)

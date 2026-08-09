@@ -7,6 +7,9 @@ import { listDocuments, setDocumentActive, deleteDocument } from './vectors'
 import { indexStatus, buildBibleIndex } from './bibleIndex'
 import type { AiConfig, ChatCitation, ChatMessage } from '../../shared/types'
 
+// One AbortController per active conversation so `ai:stop` can cancel generation.
+const chatControllers = new Map<string, AbortController>()
+
 export function registerAiIpc(): void {
   ipcMain.handle('ai:status', () => status())
 
@@ -22,14 +25,28 @@ export function registerAiIpc(): void {
 
   ipcMain.handle(
     'ai:chat',
-    async (e, messages: ChatMessage[], grounding: { translation: string } | null) => {
+    async (
+      e,
+      conversationId: string,
+      messages: ChatMessage[],
+      grounding: { translation: string } | null,
+      extraContext: ChatCitation[] = []
+    ) => {
       const send = (ev: unknown): void => {
         if (!e.sender.isDestroyed()) e.sender.send('ai:token', ev)
       }
+      const controller = new AbortController()
+      chatControllers.set(conversationId, controller)
       let text = ''
       let citations: ChatCitation[] = []
       try {
-        for await (const part of answer(messages, grounding)) {
+        for await (const part of answer(
+          conversationId,
+          messages,
+          grounding,
+          extraContext,
+          controller.signal
+        )) {
           if (part.citations) {
             citations = part.citations
             send({ citations })
@@ -41,11 +58,20 @@ export function registerAiIpc(): void {
         }
         send({ done: true })
       } catch (err) {
-        send({ error: err instanceof Error ? err.message : String(err), done: true })
+        // A user-initiated Stop is a graceful end, not an error.
+        if (controller.signal.aborted) send({ done: true })
+        else send({ error: err instanceof Error ? err.message : String(err), done: true })
+      } finally {
+        chatControllers.delete(conversationId)
       }
       return { text, citations }
     }
   )
+
+  // Stop an in-flight generation for a conversation.
+  ipcMain.handle('ai:stop', (_e, conversationId: string) => {
+    chatControllers.get(conversationId)?.abort()
+  })
 
   // ---- Documents (RAG) ----
   ipcMain.handle('ai:listDocuments', () => listDocuments())

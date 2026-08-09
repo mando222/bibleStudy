@@ -63,16 +63,17 @@ export async function importDocument(path: string): Promise<AiDoc> {
   return { id, name, chunks: chunks.length, active: true, addedAt: Date.now() }
 }
 
-/** Semantic retrieval over active documents for the assistant. */
+/** Semantic retrieval over active documents. Pass a precomputed query vector to avoid re-embedding. */
 export async function retrieveDocs(
   query: string,
-  k = 5
+  k = 5,
+  qvec?: number[]
 ): Promise<{ text: string; source: string }[]> {
   try {
-    const [qvec] = await embed([query])
-    if (!qvec) return []
+    const v = qvec ?? (await embed([query]))[0]
+    if (!v) return []
     const { searchChunks } = await import('./vectors')
-    return searchChunks(qvec, k)
+    return searchChunks(v, k)
   } catch {
     return []
   }

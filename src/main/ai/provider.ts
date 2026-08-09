@@ -48,20 +48,37 @@ export async function activeProvider(): Promise<Active> {
   return 'none'
 }
 
-export async function* chatStream(messages: ChatMessage[]): AsyncGenerator<string> {
+/** Stream one conversation turn. Bundled keeps a KV-cached session; Ollama is stateless HTTP. */
+export async function* chatTurn(opts: {
+  conversationId: string
+  system: string
+  priorTurns: ChatMessage[]
+  userPrompt: string
+  signal?: AbortSignal
+}): AsyncGenerator<string> {
   const active = await activeProvider()
   if (active === 'bundled') {
     const m = await bundledChatModel()
     if (!m) throw new Error('The assistant isn’t set up yet.')
-    yield* llamacpp.chatStream(modelPath(m), messages)
+    yield* llamacpp.chatTurn({ modelFile: modelPath(m), ...opts })
     return
   }
   if (active === 'ollama') {
     const cfg = await ensureChatModel()
-    yield* ollamaChat(cfg.baseUrl, cfg.chatModel, messages)
+    const messages: ChatMessage[] = [
+      { role: 'system', content: opts.system },
+      ...opts.priorTurns,
+      { role: 'user', content: opts.userPrompt }
+    ]
+    yield* ollamaChat(cfg.baseUrl, cfg.chatModel, messages, opts.signal)
     return
   }
   throw new Error('The assistant isn’t set up yet.')
+}
+
+/** Drop the bundled KV-cached session (on model/tier switch or a fresh conversation). */
+export async function disposeChat(): Promise<void> {
+  await llamacpp.disposeChat()
 }
 
 export async function embed(texts: string[]): Promise<number[][]> {

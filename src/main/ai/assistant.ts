@@ -1,6 +1,6 @@
 import { retrieveByKeywords } from '../db/bible'
 import { BOOK_BY_ID } from '../../shared/books'
-import { chatStream, embed } from './provider'
+import { chatTurn, embed } from './provider'
 import { retrieveDocs } from './documents'
 import { hasBibleIndex, searchBible } from './vectors'
 import type { ChatMessage, ChatCitation } from '../../shared/types'
@@ -35,8 +35,19 @@ function keywords(q: string): string[] {
   return out.slice(0, 6)
 }
 
-/** Hybrid Bible retrieval: keyword (FTS) always; semantic (embeddings) when the index exists. */
-export async function retrieveBible(question: string, translation: string): Promise<ChatCitation[]> {
+const citeKey = (c: ChatCitation): string =>
+  c.source ? `doc:${c.source}:${c.text.slice(0, 48)}` : `${c.book}:${c.chapter}:${c.verse}`
+
+/**
+ * Hybrid Bible retrieval: keyword (FTS) always; semantic (embeddings) when the index exists.
+ * The two ranked lists are merged with reciprocal-rank fusion so the best of each rises. Pass a
+ * precomputed query vector to avoid embedding the question a second time.
+ */
+export async function retrieveBible(
+  question: string,
+  translation: string,
+  qvec?: number[]
+): Promise<ChatCitation[]> {
   const fts: ChatCitation[] = retrieveByKeywords(translation, keywords(question), 8).map((h) => ({
     book: h.book,
     bookName: h.bookName,
@@ -46,42 +57,79 @@ export async function retrieveBible(question: string, translation: string): Prom
   }))
   let sem: ChatCitation[] = []
   try {
-    if (hasBibleIndex(translation)) {
-      const [qv] = await embed([question])
-      if (qv) {
-        sem = searchBible(translation, qv, 8).map((m) => ({
-          book: m.book,
-          bookName: BOOK_BY_ID[m.book]?.name ?? m.book,
-          chapter: m.chapter,
-          verse: m.verse,
-          text: m.text
-        }))
-      }
+    if (qvec && hasBibleIndex(translation)) {
+      sem = searchBible(translation, qvec, 8).map((m) => ({
+        book: m.book,
+        bookName: BOOK_BY_ID[m.book]?.name ?? m.book,
+        chapter: m.chapter,
+        verse: m.verse,
+        text: m.text
+      }))
     }
   } catch {
     /* semantic retrieval unavailable */
   }
+  return fuse([sem, fts]).slice(0, 10)
+}
+
+/** Reciprocal-rank fusion of several ranked citation lists (dedup by verse/doc key). */
+function fuse(lists: ChatCitation[][], k = 60): ChatCitation[] {
+  const score = new Map<string, number>()
+  const byKey = new Map<string, ChatCitation>()
+  for (const list of lists) {
+    list.forEach((c, rank) => {
+      const key = citeKey(c)
+      score.set(key, (score.get(key) ?? 0) + 1 / (k + rank))
+      if (!byKey.has(key)) byKey.set(key, c)
+    })
+  }
+  return [...byKey.keys()]
+    .sort((a, b) => (score.get(b) ?? 0) - (score.get(a) ?? 0))
+    .map((key) => byKey.get(key) as ChatCitation)
+}
+
+/** Dedup + budget the assembled context so it can't overflow the model's window. */
+function assembleContext(cites: ChatCitation[], maxChars = 6000): ChatCitation[] {
   const seen = new Set<string>()
   const out: ChatCitation[] = []
-  for (const c of [...sem, ...fts]) {
-    const k = `${c.book}:${c.chapter}:${c.verse}`
-    if (!seen.has(k)) {
-      seen.add(k)
-      out.push(c)
-    }
+  let used = 0
+  for (const c of cites) {
+    const key = citeKey(c)
+    if (seen.has(key)) continue
+    if (out.length && used + c.text.length > maxChars) break
+    seen.add(key)
+    out.push(c)
+    used += c.text.length
   }
-  return out.slice(0, 10)
+  return out
 }
 
 /** Stream a grounded answer: yields citations first, then content tokens. */
 export async function* answer(
+  conversationId: string,
   messages: ChatMessage[],
   grounding: { translation: string } | null,
-  extraContext: ChatCitation[] = []
+  extraContext: ChatCitation[] = [],
+  signal?: AbortSignal
 ): AsyncGenerator<{ token?: string; citations?: ChatCitation[] }> {
-  const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content ?? ''
-  // Active user documents (semantic) always contribute; Scripture (FTS) when grounding is on.
-  const docHits = lastUser ? await retrieveDocs(lastUser, 5) : []
+  const priorTurns = messages.slice(0, -1).filter((m) => m.role !== 'system')
+  const lastUser =
+    messages[messages.length - 1]?.role === 'user'
+      ? messages[messages.length - 1].content
+      : ([...messages].reverse().find((m) => m.role === 'user')?.content ?? '')
+
+  // Embed the question once and reuse it for both document and Scripture retrieval.
+  let qvec: number[] | undefined
+  if (lastUser) {
+    try {
+      qvec = (await embed([lastUser]))[0]
+    } catch {
+      qvec = undefined
+    }
+  }
+
+  // Active user documents (semantic) always contribute; Scripture (hybrid) when grounding is on.
+  const docHits = lastUser ? await retrieveDocs(lastUser, 5, qvec) : []
   const docCites: ChatCitation[] = docHits.map((h) => ({
     book: '',
     bookName: h.source,
@@ -90,25 +138,27 @@ export async function* answer(
     text: h.text,
     source: h.source
   }))
-  const bibleCites = grounding && lastUser ? await retrieveBible(lastUser, grounding.translation) : []
-  const citations = [...extraContext, ...docCites, ...bibleCites]
+  const bibleCites =
+    grounding && lastUser ? await retrieveBible(lastUser, grounding.translation, qvec) : []
+  const citations = assembleContext([...extraContext, ...docCites, ...bibleCites])
   yield { citations }
 
   const ctx = citations.length
     ? 'Context passages:\n' +
       citations
         .map((c) =>
-          c.source
-            ? `[${c.source}] ${c.text}`
-            : `(${c.bookName} ${c.chapter}:${c.verse}) ${c.text}`
+          c.source ? `[${c.source}] ${c.text}` : `(${c.bookName} ${c.chapter}:${c.verse}) ${c.text}`
         )
         .join('\n')
     : ''
+  const userPrompt = ctx ? `${ctx}\n\nQuestion: ${lastUser}` : lastUser
 
-  const full: ChatMessage[] = [
-    { role: 'system', content: SYSTEM },
-    ...(ctx ? [{ role: 'system' as const, content: ctx }] : []),
-    ...messages
-  ]
-  for await (const tok of chatStream(full)) yield { token: tok }
+  for await (const tok of chatTurn({
+    conversationId,
+    system: SYSTEM,
+    priorTurns,
+    userPrompt,
+    signal
+  }))
+    yield { token: tok }
 }
