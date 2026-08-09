@@ -20,7 +20,9 @@ import type {
   VariantItem,
   VerseVariant,
   LexiconGroup,
-  LexiconEntry
+  LexiconEntry,
+  LexBrowseOptions,
+  LexBrowseResult
 } from '../../shared/types'
 
 let db: DatabaseSync | null = null
@@ -154,6 +156,49 @@ export function getStrongs(id: string): StrongsEntry | null {
     kjvDef: (row.kjv_def as string) ?? null,
     occurrences: occ.n
   }
+}
+
+/** Browse the Strong's lexicon by hand: filter by language, search by number/translit/lemma/gloss. */
+export function browseLexicon(opts: LexBrowseOptions): LexBrowseResult {
+  const d = required()
+  const filters: string[] = []
+  const params: (string | number)[] = []
+  if (opts.language === 'greek' || opts.language === 'hebrew') {
+    filters.push('language = ?')
+    params.push(opts.language)
+  }
+  const query = (opts.query ?? '').trim()
+  if (query) {
+    filters.push('(id LIKE ? OR translit LIKE ? OR lemma LIKE ? OR kjv_def LIKE ? OR definition LIKE ?)')
+    const like = `%${query}%`
+    params.push(like, like, like, like, like)
+  }
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : ''
+  const total = (d.prepare(`SELECT COUNT(*) n FROM strongs_lexicon ${where}`).get(...params) as {
+    n: number
+  }).n
+  const limit = Math.min(opts.limit ?? 120, 400)
+  const offset = opts.offset ?? 0
+  const rows = d
+    .prepare(
+      `SELECT id, language, lemma, translit, kjv_def, definition FROM strongs_lexicon ${where}
+       ORDER BY language, CAST(substr(id, 2) AS INTEGER) LIMIT ? OFFSET ?`
+    )
+    .all(...params, limit, offset) as Record<string, unknown>[]
+  const entries = rows.map((r) => {
+    const gloss = ((r.kjv_def as string) || (r.definition as string) || '')
+      .replace(/<[^>]+>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+    return {
+      id: r.id as string,
+      language: r.language as string,
+      lemma: (r.lemma as string) ?? '',
+      translit: (r.translit as string) ?? '',
+      gloss: gloss.length > 90 ? gloss.slice(0, 90) + '…' : gloss
+    }
+  })
+  return { total, entries }
 }
 
 // Extra lexicons keyed to Strong's, filtered to the ones matching the word's language.

@@ -50,6 +50,35 @@ export const ChevronRight = (p: P) => (
     <path d="m9 6 6 6-6 6" />
   </svg>
 )
+export const GenealogyIcon = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="5" r="2.2" />
+    <circle cx="6" cy="19" r="2.2" />
+    <circle cx="18" cy="19" r="2.2" />
+    <path d="M12 7.2v3.3M6 16.8V13h12v3.8" />
+  </svg>
+)
+export const TimelineIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M6 3v18" />
+    <circle cx="6" cy="7" r="1.7" />
+    <circle cx="6" cy="14" r="1.7" />
+    <path d="M9 7h9M9 14h6" />
+  </svg>
+)
+export const MapPinIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z" />
+    <circle cx="12" cy="10" r="2.5" />
+  </svg>
+)
+export const WordsIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M5 6V4h14v2" />
+    <path d="M12 4v16" />
+    <path d="M9 20h6" />
+  </svg>
+)
 export const ColumnsIcon = (p: P) => (
   <svg {...base(p)}>
     <rect x="3" y="4" width="18" height="16" rx="1.5" />

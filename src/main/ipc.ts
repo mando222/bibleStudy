@@ -19,6 +19,7 @@ export function registerIpc(): void {
     user.isImported(ref.translation) ? user.getImportedChapter(ref) : bible.getChapter(ref)
   )
   ipcMain.handle('bible:getStrongs', (_e, id: string) => bible.getStrongs(id))
+  ipcMain.handle('bible:browseLexicon', (_e, opts) => bible.browseLexicon(opts))
   ipcMain.handle('bible:getLexiconEntries', (_e, strongs: string) =>
     bible.getLexiconEntries(strongs)
   )

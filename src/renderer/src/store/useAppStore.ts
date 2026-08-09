@@ -4,6 +4,8 @@ import type { Translation, ChatCitation } from '@shared/types'
 
 export type Theme = 'light' | 'dark'
 export type StudyTab = 'lexicon' | 'notes' | 'search' | 'apparatus'
+/** Far-right workspace tabs. 'bible' is the reader; the rest are their own full-window views. */
+export type Activity = 'bible' | 'genealogies' | 'timelines' | 'maps' | 'words'
 
 /** One turn in the assistant transcript (persisted so a conversation survives a restart). */
 export interface ChatMsg {
@@ -132,6 +134,10 @@ interface AppState {
   theme: Theme
   toggleTheme: () => void
 
+  // Far-right activity rail: which workspace is showing.
+  activity: Activity
+  setActivity: (a: Activity) => void
+
   // Library
   translations: Translation[]
   setTranslations: (t: Translation[]) => void
@@ -213,6 +219,8 @@ export const useAppStore = create<AppState>()(
     (set, get) => ({
       theme: 'light',
       toggleTheme: () => set({ theme: get().theme === 'light' ? 'dark' : 'light' }),
+      activity: 'bible',
+      setActivity: (activity) => set({ activity }),
 
       translations: [],
       setTranslations: (translations) => set({ translations }),
@@ -308,7 +316,8 @@ export const useAppStore = create<AppState>()(
       chronological: false,
       toggleChronological: () => set({ chronological: !get().chronological }),
       scrollToVerse: null,
-      goToVerse: (book, chapter, verse) => set({ book, chapter, scrollToVerse: verse }),
+      goToVerse: (book, chapter, verse) =>
+        set({ book, chapter, scrollToVerse: verse, activity: 'bible' }),
       clearScroll: () => set({ scrollToVerse: null }),
 
       goTo: (book, chapter) => set({ book, chapter, scrollToVerse: null }),
@@ -340,6 +349,7 @@ export const useAppStore = create<AppState>()(
       name: 'obs-app-state',
       partialize: (s) => ({
         theme: s.theme,
+        activity: s.activity,
         primary: s.primary,
         parallels: s.parallels,
         book: s.book,

@@ -283,12 +283,31 @@ export interface Note {
 }
 export type NoteInput = { id?: number; book: string; chapter: number; verse: number; body: string }
 
+export interface LexBrowseOptions {
+  language?: 'greek' | 'hebrew'
+  query?: string
+  limit?: number
+  offset?: number
+}
+export interface LexBrowseEntry {
+  id: string
+  language: string
+  lemma: string
+  translit: string
+  gloss: string
+}
+export interface LexBrowseResult {
+  total: number
+  entries: LexBrowseEntry[]
+}
+
 /** The full API surface exposed on `window.api` via contextBridge. */
 export interface BibleApi {
   version(): Promise<string>
   listTranslations(): Promise<Translation[]>
   getChapter(ref: ChapterRef): Promise<ChapterContent>
   getStrongs(id: string): Promise<StrongsEntry | null>
+  browseLexicon(opts: LexBrowseOptions): Promise<LexBrowseResult>
   getLexiconEntries(strongs: string): Promise<LexiconGroup[]>
   getLexiconByWord(word: string): Promise<string | null>
   getConcordance(strongs: string, opts?: ConcordanceOptions): Promise<ConcordanceResponse>
