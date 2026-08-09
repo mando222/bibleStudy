@@ -12,38 +12,108 @@ export interface ChatMsg {
   citations?: ChatCitation[]
 }
 
-// "Restore the divine names": render the Hebrew names in place of their traditional English
-// forms (LORD → Yahweh, God → Elohim, …). Applied through the word-replace map, so it only
-// affects translations that carry Strong's tags (KJV, BSB). Each name can be toggled and its
-// rendering customised; the whole thing persists across restarts.
-export interface DivineName {
-  strongs: string
-  hebrew: string // lemma glyph, for the settings UI
-  traditional: string // the usual English rendering
-  default: string // our default replacement
-}
-export const DIVINE_NAMES_LIST: DivineName[] = [
-  { strongs: 'H3068', hebrew: 'יהוה', traditional: 'LORD', default: 'Yahweh' },
-  { strongs: 'H3069', hebrew: 'יהוה', traditional: 'GOD', default: 'Yahweh' },
-  { strongs: 'H3050', hebrew: 'יָהּ', traditional: 'JAH', default: 'Yah' },
-  { strongs: 'H136', hebrew: 'אֲדֹנָי', traditional: 'Lord', default: 'Adonai' },
-  { strongs: 'H410', hebrew: 'אֵל', traditional: 'God', default: 'El' },
-  { strongs: 'H430', hebrew: 'אֱלֹהִים', traditional: 'God', default: 'Elohim' },
-  { strongs: 'H433', hebrew: 'אֱלוֹהַּ', traditional: 'God', default: 'Eloah' },
-  { strongs: 'H7706', hebrew: 'שַׁדַּי', traditional: 'Almighty', default: 'Shaddai' },
-  { strongs: 'H5945', hebrew: 'עֶלְיוֹן', traditional: 'most High', default: 'Elyon' }
+// "Quick Replace": render the ORIGINAL word (its transliteration) in place of the traditional
+// English rendering — LORD → Yahweh, love → agape, Christ → Christos. It only ever shows the
+// original text, never a new interpretation. Applied through the word-replace map, so it affects
+// translations that carry Strong's tags (KJV, BSB). Each term can be toggled and its rendering
+// customised; divine names are on by default, everything else is opt-in. Persists across restarts.
+export type QuickReplaceCategory =
+  | 'divine'
+  | 'jesus'
+  | 'love'
+  | 'marriage'
+  | 'satan'
+  | 'afterlife'
+  | 'other'
+
+export const QUICK_REPLACE_CATEGORIES: { id: QuickReplaceCategory; label: string }[] = [
+  { id: 'divine', label: 'Divine names' },
+  { id: 'jesus', label: 'Jesus & his titles' },
+  { id: 'love', label: 'Love' },
+  { id: 'marriage', label: 'Marriage' },
+  { id: 'satan', label: 'Satan & evil' },
+  { id: 'afterlife', label: 'Heaven & hell' },
+  { id: 'other', label: 'Other key terms' }
 ]
 
-export type DivineNameConfig = Record<string, { enabled: boolean; custom: string }>
+export interface QuickReplaceItem {
+  strongs: string
+  glyph: string // original-language lemma glyph, for the settings UI
+  traditional: string // the usual English rendering
+  default: string // default replacement — always the ORIGINAL word, transliterated
+  category: QuickReplaceCategory
+  defaultOn?: boolean // divine names default on (preserves prior behaviour); others opt-in
+}
 
-/** The Strong's→text entries contributed by the divine-names feature (empty when master is off). */
-export function computeDivineReplacements(on: boolean, cfg: DivineNameConfig): Record<string, string> {
+export const QUICK_REPLACE_LIST: QuickReplaceItem[] = [
+  // Divine names (Hebrew) — on by default
+  { strongs: 'H3068', glyph: 'יהוה', traditional: 'LORD', default: 'Yahweh', category: 'divine', defaultOn: true },
+  { strongs: 'H3069', glyph: 'יהוה', traditional: 'GOD', default: 'Yahweh', category: 'divine', defaultOn: true },
+  { strongs: 'H3050', glyph: 'יָהּ', traditional: 'JAH', default: 'Yah', category: 'divine', defaultOn: true },
+  { strongs: 'H136', glyph: 'אֲדֹנָי', traditional: 'Lord', default: 'Adonai', category: 'divine', defaultOn: true },
+  { strongs: 'H410', glyph: 'אֵל', traditional: 'God', default: 'El', category: 'divine', defaultOn: true },
+  { strongs: 'H430', glyph: 'אֱלֹהִים', traditional: 'God', default: 'Elohim', category: 'divine', defaultOn: true },
+  { strongs: 'H433', glyph: 'אֱלוֹהַּ', traditional: 'God', default: 'Eloah', category: 'divine', defaultOn: true },
+  { strongs: 'H7706', glyph: 'שַׁדַּי', traditional: 'Almighty', default: 'Shaddai', category: 'divine', defaultOn: true },
+  { strongs: 'H5945', glyph: 'עֶלְיוֹן', traditional: 'most High', default: 'Elyon', category: 'divine', defaultOn: true },
+  // Jesus & his titles (Greek) — original forms, not reinterpretations
+  { strongs: 'G2424', glyph: 'Ἰησοῦς', traditional: 'Jesus', default: 'Yeshua', category: 'jesus' },
+  { strongs: 'G5547', glyph: 'Χριστός', traditional: 'Christ', default: 'Christos', category: 'jesus' },
+  { strongs: 'G2962', glyph: 'κύριος', traditional: 'Lord', default: 'Kyrios', category: 'jesus' },
+  { strongs: 'G1694', glyph: 'Ἐμμανουήλ', traditional: 'Emmanuel', default: 'Immanuel', category: 'jesus' },
+  { strongs: 'G3056', glyph: 'λόγος', traditional: 'Word', default: 'Logos', category: 'jesus' },
+  // Love
+  { strongs: 'G26', glyph: 'ἀγάπη', traditional: 'love', default: 'agape', category: 'love' },
+  { strongs: 'G25', glyph: 'ἀγαπάω', traditional: 'love', default: 'agapao', category: 'love' },
+  { strongs: 'G5368', glyph: 'φιλέω', traditional: 'love', default: 'phileo', category: 'love' },
+  { strongs: 'G5373', glyph: 'φιλία', traditional: 'friendship', default: 'philia', category: 'love' },
+  { strongs: 'H160', glyph: 'אַהֲבָה', traditional: 'love', default: 'ahavah', category: 'love' },
+  { strongs: 'H157', glyph: 'אָהֵב', traditional: 'love', default: 'ahav', category: 'love' },
+  { strongs: 'H2617', glyph: 'חֶסֶד', traditional: 'lovingkindness', default: 'chesed', category: 'love' },
+  // Marriage
+  { strongs: 'G1062', glyph: 'γάμος', traditional: 'marriage', default: 'gamos', category: 'marriage' },
+  { strongs: 'G3565', glyph: 'νύμφη', traditional: 'bride', default: 'nymphe', category: 'marriage' },
+  { strongs: 'G3566', glyph: 'νυμφίος', traditional: 'bridegroom', default: 'nymphios', category: 'marriage' },
+  // Satan & evil
+  { strongs: 'H7854', glyph: 'שָׂטָן', traditional: 'Satan', default: 'satan', category: 'satan' },
+  { strongs: 'G4567', glyph: 'Σατανᾶς', traditional: 'Satan', default: 'Satanas', category: 'satan' },
+  { strongs: 'G1228', glyph: 'διάβολος', traditional: 'devil', default: 'diabolos', category: 'satan' },
+  { strongs: 'G954', glyph: 'Βεελζεβούλ', traditional: 'Beelzebub', default: 'Beelzeboul', category: 'satan' },
+  { strongs: 'H1100', glyph: 'בְּלִיַּעַל', traditional: 'Belial', default: 'Belial', category: 'satan' },
+  { strongs: 'H5175', glyph: 'נָחָשׁ', traditional: 'serpent', default: 'nachash', category: 'satan' },
+  // Heaven & hell
+  { strongs: 'H8064', glyph: 'שָׁמַיִם', traditional: 'heaven', default: 'shamayim', category: 'afterlife' },
+  { strongs: 'G3772', glyph: 'οὐρανός', traditional: 'heaven', default: 'ouranos', category: 'afterlife' },
+  { strongs: 'H7585', glyph: 'שְׁאוֹל', traditional: 'hell / grave', default: 'sheol', category: 'afterlife' },
+  { strongs: 'G86', glyph: 'ᾅδης', traditional: 'hell', default: 'hades', category: 'afterlife' },
+  { strongs: 'G1067', glyph: 'γέεννα', traditional: 'hell', default: 'gehenna', category: 'afterlife' },
+  // Other key terms
+  { strongs: 'H7307', glyph: 'רוּחַ', traditional: 'Spirit', default: 'ruach', category: 'other' },
+  { strongs: 'G4151', glyph: 'πνεῦμα', traditional: 'Spirit', default: 'pneuma', category: 'other' },
+  { strongs: 'G5485', glyph: 'χάρις', traditional: 'grace', default: 'charis', category: 'other' },
+  { strongs: 'G4102', glyph: 'πίστις', traditional: 'faith', default: 'pistis', category: 'other' },
+  { strongs: 'H7965', glyph: 'שָׁלוֹם', traditional: 'peace', default: 'shalom', category: 'other' },
+  { strongs: 'G1515', glyph: 'εἰρήνη', traditional: 'peace', default: 'eirene', category: 'other' },
+  { strongs: 'H1285', glyph: 'בְּרִית', traditional: 'covenant', default: 'berith', category: 'other' },
+  { strongs: 'G1242', glyph: 'διαθήκη', traditional: 'covenant', default: 'diatheke', category: 'other' },
+  { strongs: 'G1391', glyph: 'δόξα', traditional: 'glory', default: 'doxa', category: 'other' },
+  { strongs: 'H3519', glyph: 'כָּבוֹד', traditional: 'glory', default: 'kavod', category: 'other' }
+]
+
+export type QuickReplaceConfig = Record<string, { enabled: boolean; custom: string }>
+
+/** The Strong's→text entries contributed by Quick Replace (empty when the master toggle is off). */
+export function computeQuickReplacements(
+  on: boolean,
+  cfg: QuickReplaceConfig
+): Record<string, string> {
   const out: Record<string, string> = {}
   if (!on) return out
-  for (const dn of DIVINE_NAMES_LIST) {
-    const c = cfg[dn.strongs]
-    if (c && c.enabled === false) continue
-    out[dn.strongs] = c?.custom?.trim() || dn.default
+  for (const item of QUICK_REPLACE_LIST) {
+    const c = cfg[item.strongs]
+    const enabled = c ? c.enabled : !!item.defaultOn
+    if (!enabled) continue
+    out[item.strongs] = c?.custom?.trim() || item.default
   }
   return out
 }
@@ -99,6 +169,10 @@ interface AppState {
   interlinearParses: boolean // show all Scripture-attested parses per word vs the single best guess
   toggleInterlinearParses: () => void
   selectedStrongs: string | null
+  strongsBack: string[] // study-pane history (browser-style back/forward through looked-up words)
+  strongsForward: string[]
+  strongsNavBack: () => void
+  strongsNavForward: () => void
   studyTab: StudyTab
 
   // Word-replace ("agape"): Strong's number → display text (lemma/translit), per session.
@@ -106,14 +180,14 @@ interface AppState {
   setReplacement: (strongs: string, text: string) => void
   clearReplacement: (strongs: string) => void
   clearReplacements: () => void
-  divineNames: boolean // master on/off
-  toggleDivineNames: () => void
-  divineNameConfig: DivineNameConfig // per-name enable + custom rendering
-  setDivineNameEnabled: (strongs: string, enabled: boolean) => void
-  setDivineNameCustom: (strongs: string, custom: string) => void
-  resetDivineNames: () => void
-  divineNamesModalOpen: boolean
-  setDivineNamesModalOpen: (v: boolean) => void
+  quickReplace: boolean // master on/off
+  toggleQuickReplace: () => void
+  quickReplaceConfig: QuickReplaceConfig // per-term enable + custom rendering
+  setQuickReplaceEnabled: (strongs: string, enabled: boolean) => void
+  setQuickReplaceCustom: (strongs: string, custom: string) => void
+  resetQuickReplace: () => void
+  quickReplaceModalOpen: boolean
+  setQuickReplaceModalOpen: (v: boolean) => void
 
   // Bumped whenever notes/highlights change, to trigger re-fetch.
   userDataNonce: number
@@ -173,6 +247,28 @@ export const useAppStore = create<AppState>()(
       interlinearParses: false,
       toggleInterlinearParses: () => set({ interlinearParses: !get().interlinearParses }),
       selectedStrongs: null,
+      strongsBack: [],
+      strongsForward: [],
+      strongsNavBack: () => {
+        const { strongsBack, strongsForward, selectedStrongs } = get()
+        if (!strongsBack.length) return
+        set({
+          selectedStrongs: strongsBack[strongsBack.length - 1],
+          studyTab: 'lexicon',
+          strongsBack: strongsBack.slice(0, -1),
+          strongsForward: selectedStrongs ? [...strongsForward, selectedStrongs] : strongsForward
+        })
+      },
+      strongsNavForward: () => {
+        const { strongsBack, strongsForward, selectedStrongs } = get()
+        if (!strongsForward.length) return
+        set({
+          selectedStrongs: strongsForward[strongsForward.length - 1],
+          studyTab: 'lexicon',
+          strongsForward: strongsForward.slice(0, -1),
+          strongsBack: selectedStrongs ? [...strongsBack, selectedStrongs] : strongsBack
+        })
+      },
       studyTab: 'lexicon',
 
       replacements: {},
@@ -185,26 +281,26 @@ export const useAppStore = create<AppState>()(
       },
       clearReplacements: () => set({ replacements: {} }),
 
-      divineNames: false,
-      toggleDivineNames: () => set({ divineNames: !get().divineNames }),
-      divineNameConfig: {},
-      setDivineNameEnabled: (strongs, enabled) =>
+      quickReplace: false,
+      toggleQuickReplace: () => set({ quickReplace: !get().quickReplace }),
+      quickReplaceConfig: {},
+      setQuickReplaceEnabled: (strongs, enabled) =>
         set({
-          divineNameConfig: {
-            ...get().divineNameConfig,
-            [strongs]: { enabled, custom: get().divineNameConfig[strongs]?.custom ?? '' }
+          quickReplaceConfig: {
+            ...get().quickReplaceConfig,
+            [strongs]: { enabled, custom: get().quickReplaceConfig[strongs]?.custom ?? '' }
           }
         }),
-      setDivineNameCustom: (strongs, custom) =>
+      setQuickReplaceCustom: (strongs, custom) =>
         set({
-          divineNameConfig: {
-            ...get().divineNameConfig,
-            [strongs]: { enabled: get().divineNameConfig[strongs]?.enabled ?? true, custom }
+          quickReplaceConfig: {
+            ...get().quickReplaceConfig,
+            [strongs]: { enabled: get().quickReplaceConfig[strongs]?.enabled ?? true, custom }
           }
         }),
-      resetDivineNames: () => set({ divineNameConfig: {} }),
-      divineNamesModalOpen: false,
-      setDivineNamesModalOpen: (divineNamesModalOpen) => set({ divineNamesModalOpen }),
+      resetQuickReplace: () => set({ quickReplaceConfig: {} }),
+      quickReplaceModalOpen: false,
+      setQuickReplaceModalOpen: (quickReplaceModalOpen) => set({ quickReplaceModalOpen }),
 
       userDataNonce: 0,
       bumpUserData: () => set({ userDataNonce: get().userDataNonce + 1 }),
@@ -222,8 +318,22 @@ export const useAppStore = create<AppState>()(
         set({ primary: id, parallels })
       },
       setParallels: (ids) => set({ parallels: ids, primary: ids[0] ?? get().primary }),
-      selectStrongs: (id) =>
-        set({ selectedStrongs: id, studyTab: id ? 'lexicon' : get().studyTab }),
+      selectStrongs: (id) => {
+        const cur = get().selectedStrongs
+        if (id && id !== cur) {
+          // Navigating to a new entry: remember where we were, clear the forward stack.
+          set({
+            selectedStrongs: id,
+            studyTab: 'lexicon',
+            strongsBack: cur ? [...get().strongsBack, cur] : get().strongsBack,
+            strongsForward: []
+          })
+        } else if (!id) {
+          set({ selectedStrongs: null })
+        } else {
+          set({ selectedStrongs: id, studyTab: 'lexicon' })
+        }
+      },
       setStudyTab: (tab) => set({ studyTab: tab })
     }),
     {
@@ -240,8 +350,8 @@ export const useAppStore = create<AppState>()(
         interlinearStack: s.interlinearStack,
         interlinearParses: s.interlinearParses,
         chronological: s.chronological,
-        divineNames: s.divineNames,
-        divineNameConfig: s.divineNameConfig,
+        quickReplace: s.quickReplace,
+        quickReplaceConfig: s.quickReplaceConfig,
         chatMessages: s.chatMessages
       })
     }

@@ -91,8 +91,10 @@ export default function SearchPanel(): JSX.Element {
           <p className="text-sm text-muted p-2">No results for “{q}”.</p>
         ) : (
           <p className="text-sm text-muted p-2 leading-relaxed">
-            Search the whole {primary}. Try <span className="text-accent">love</span>,{' '}
-            <span className="text-accent">shepherd</span>, or a phrase.
+            Search the whole {primary} — a word or phrase (<span className="text-accent">love</span>
+            , <span className="text-accent">shepherd</span>), a Strong&rsquo;s number (
+            <span className="text-accent">G26</span>, <span className="text-accent">H430</span>), or
+            a Greek/Hebrew word (<span className="font-greek text-accent">ἀγάπη</span>).
           </p>
         )}
       </div>

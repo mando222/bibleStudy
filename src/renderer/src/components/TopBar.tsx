@@ -17,9 +17,9 @@ export default function TopBar(): JSX.Element {
   const toggleTheme = useAppStore((s) => s.toggleTheme)
   const strongsVisible = useAppStore((s) => s.strongsVisible)
   const toggleStrongs = useAppStore((s) => s.toggleStrongs)
-  const divineNames = useAppStore((s) => s.divineNames)
-  const toggleDivineNames = useAppStore((s) => s.toggleDivineNames)
-  const setDivineNamesModalOpen = useAppStore((s) => s.setDivineNamesModalOpen)
+  const quickReplace = useAppStore((s) => s.quickReplace)
+  const toggleQuickReplace = useAppStore((s) => s.toggleQuickReplace)
+  const setQuickReplaceModalOpen = useAppStore((s) => s.setQuickReplaceModalOpen)
   const interlinear = useAppStore((s) => s.interlinear)
   const toggleInterlinear = useAppStore((s) => s.toggleInterlinear)
   const setAboutOpen = useAppStore((s) => s.setAboutOpen)
@@ -117,25 +117,25 @@ export default function TopBar(): JSX.Element {
 
       <div
         className={`flex items-stretch rounded-md border transition-colors whitespace-nowrap ${
-          divineNames ? 'bg-accent-soft border-accent text-accent' : 'border-line text-muted'
+          quickReplace ? 'bg-accent-soft border-accent text-accent' : 'border-line text-muted'
         }`}
       >
         <button
-          onClick={toggleDivineNames}
+          onClick={toggleQuickReplace}
           className={`flex items-center gap-1.5 px-2.5 py-1 text-sm rounded-l-md ${
-            divineNames ? '' : 'hover:bg-elevated'
+            quickReplace ? '' : 'hover:bg-elevated'
           }`}
-          title="Restore the divine names (LORD → Yahweh, God → Elohim). Needs a Strong's-tagged translation (KJV/BSB)."
+          title="Quick Replace: show the original word in place of the English (LORD → Yahweh, love → agape, Christ → Christos). Needs a Strong's-tagged translation (KJV/BSB)."
         >
-          <span className="font-hebrew text-[13px] leading-none">יהוה</span>
-          Divine Names
+          <span className="text-[13px] leading-none">⇄</span>
+          Quick Replace
         </button>
         <button
-          onClick={() => setDivineNamesModalOpen(true)}
+          onClick={() => setQuickReplaceModalOpen(true)}
           className={`px-1.5 flex items-center border-l rounded-r-md ${
-            divineNames ? 'border-accent/40 hover:bg-accent/10' : 'border-line hover:bg-elevated'
+            quickReplace ? 'border-accent/40 hover:bg-accent/10' : 'border-line hover:bg-elevated'
           }`}
-          title="Customize divine names"
+          title="Customize Quick Replace"
         >
           <PenIcon className="w-3.5 h-3.5" />
         </button>

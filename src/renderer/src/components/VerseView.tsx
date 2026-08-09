@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { Verse, Highlight } from '@shared/types'
-import { useAppStore, computeDivineReplacements } from '@/store/useAppStore'
+import { useAppStore, computeQuickReplacements } from '@/store/useAppStore'
 import { highlightVar } from '@/lib/highlights'
 
 interface Props {
@@ -17,13 +17,13 @@ export default function VerseView({ v, highlight, hasNote, onOpenMenu }: Props):
   const selectStrongs = useAppStore((s) => s.selectStrongs)
   const selected = useAppStore((s) => s.selectedStrongs)
   const replacements = useAppStore((s) => s.replacements)
-  const divineNames = useAppStore((s) => s.divineNames)
-  const divineNameConfig = useAppStore((s) => s.divineNameConfig)
+  const quickReplace = useAppStore((s) => s.quickReplace)
+  const quickReplaceConfig = useAppStore((s) => s.quickReplaceConfig)
 
-  // Divine-name replacements are derived from the (persisted) config; manual replacements win.
+  // Quick-Replace renderings are derived from the (persisted) config; manual replacements win.
   const effective = useMemo(
-    () => ({ ...computeDivineReplacements(divineNames, divineNameConfig), ...replacements }),
-    [replacements, divineNames, divineNameConfig]
+    () => ({ ...computeQuickReplacements(quickReplace, quickReplaceConfig), ...replacements }),
+    [replacements, quickReplace, quickReplaceConfig]
   )
   const replActive = Object.keys(effective).length > 0
   const useTokens = (strongsVisible || replActive) && !!v.tokens && v.tokens.length > 0

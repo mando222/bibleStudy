@@ -11,7 +11,9 @@ const APP_INTRO =
   "with multiple translations, Strong's numbers, an interlinear with the original Greek and Hebrew, " +
   'scholarly lexicons, notes and highlighting, search, and a Divine Names toggle. ' +
   'When the user asks how to do something in the app, use the "App guide" context to give the exact ' +
-  'steps, and never invent features or menus that are not in that guide. '
+  'steps, and never invent features or menus that are not in that guide. ' +
+  'When you discuss a specific Greek or Hebrew word, write it in its original script and, when you ' +
+  "know it, its Strong's number (e.g. G26) — the app turns these into clickable lexicon links. "
 
 // Grounded mode (default): answer only from the retrieved context — for careful study.
 const SYSTEM_GROUNDED =

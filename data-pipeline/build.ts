@@ -605,6 +605,19 @@ async function buildSeptuagintEdition(db: DatabaseSync): Promise<number> {
 }
 
 /**
+ * Fold an original-language string for accent/point-insensitive search: decompose, drop Greek
+ * accents + Hebrew points/cantillation, lowercase, and unify final sigma. The readable text keeps
+ * its accents; only the (invisible) FTS index is folded, so a query like "θεος" finds "θεὸς".
+ */
+export function foldOriginal(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[̀-֑ͯ-ׇ]/g, '')
+    .toLowerCase()
+    .replace(/ς/g, 'σ')
+}
+
+/**
  * Make the original-language editions (Masoretic Hebrew, Septuagint Greek) readable + searchable:
  * assemble verse text from their `original_tokens` words and load them into translations/verses/FTS
  * so they appear in the translation picker, work as parallel columns, and are full-text searchable.
@@ -657,8 +670,8 @@ function buildOriginalReadingEditions(db: DatabaseSync): { id: string; verses: n
     const flush = (): void => {
       if (cur && words.length) {
         const text = words.join(' ')
-        insVerse.run(d.id, cur.b, cur.c, cur.v, text)
-        insFts.run(text, d.id, cur.b, cur.c, cur.v)
+        insVerse.run(d.id, cur.b, cur.c, cur.v, text) // readable text keeps its accents/points
+        insFts.run(foldOriginal(text), d.id, cur.b, cur.c, cur.v) // search index is accent-folded
         verses++
       }
     }

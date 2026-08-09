@@ -541,8 +541,42 @@ export function search(q: SearchQuery): SearchResponse {
   const term = q.text.trim()
   if (!term) return { total: 0, hits: [] }
 
+  // A Strong's number (e.g. "G26", "H0430", "g26") → every occurrence, via the concordance.
+  const sm = /^([GgHh])0*(\d{1,5})[a-zA-Z]?$/.exec(term)
+  if (sm) {
+    const { total, hits } = getConcordance(`${sm[1].toUpperCase()}${Number(sm[2])}`, {
+      limit: q.limit ?? 150,
+      offset: q.offset
+    })
+    return {
+      total,
+      hits: hits.map((h) => ({
+        book: h.book,
+        bookName: h.bookName,
+        chapter: h.chapter,
+        verse: h.verse,
+        snippet: h.snippet
+      }))
+    }
+  }
+
+  // Greek or Hebrew script in the query → search the matching original-language edition (Septuagint
+  // / Masoretic) regardless of the current translation, so original-word search "just works". The
+  // query is accent/point-folded to match the folded original-language FTS index.
+  const isGreek = /[Ͱ-Ͽἀ-῿]/.test(term)
+  const isHebrew = /[֐-׿]/.test(term)
+  const translation = isGreek ? 'LXX' : isHebrew ? 'MT' : q.translation
+  const ftsTerm =
+    isGreek || isHebrew
+      ? term
+          .normalize('NFD')
+          .replace(/[̀-֑ͯ-ׇ]/g, '')
+          .toLowerCase()
+          .replace(/ς/g, 'σ')
+      : term
+
   const filters: string[] = ['verses_fts MATCH ?', 'translation_id = ?']
-  const params: string[] = [ftsQuery(term), q.translation]
+  const params: string[] = [ftsQuery(ftsTerm), translation]
   if (q.book) {
     filters.push('book_id = ?')
     params.push(q.book)
