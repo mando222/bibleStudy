@@ -20,6 +20,7 @@ const TRANSLATIONS: Source[] = [
 const ORIGINALS: Source[] = [
   { what: 'Masoretic Hebrew (TAHOT)', detail: 'Amalgamated Hebrew OT', license: 'CC BY 4.0 — STEPBible / Tyndale House', url: 'https://github.com/STEPBible/STEPBible-Data' },
   { what: 'Greek NT editions (TAGNT)', detail: 'Critical / Textus Receptus / Byzantine', license: 'CC BY 4.0 — STEPBible / Tyndale House', url: 'https://github.com/STEPBible/STEPBible-Data' },
+  { what: 'Septuagint (Greek OT)', detail: 'Swete — via Open Greek and Latin / First1KGreek', license: 'CC BY-SA 4.0 — nathans/lxx-swete', url: 'https://github.com/nathans/lxx-swete' },
   { what: "Strong's Greek & Hebrew lexicons", detail: 'Strong (1890/1894), JSON', license: 'CC BY-SA — OpenScriptures', url: 'https://github.com/openscriptures/strongs' },
   { what: "KJV Strong's word tagging", detail: 'kaiserlik/kjv', license: 'Open', url: 'https://github.com/kaiserlik/kjv' },
   { what: 'Verse-text distribution', detail: 'helloao Free Use Bible API', license: 'Open', url: 'https://bible.helloao.org' }

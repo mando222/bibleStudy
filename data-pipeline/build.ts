@@ -86,9 +86,55 @@ const TAHOT_FILES: [string, string][] = [
 
 const EDITIONS: { id: string; name: string; language: string; testament: string; sort: number }[] = [
   { id: 'MT', name: 'Masoretic (WLC)', language: 'hbo', testament: 'OT', sort: 1 },
-  { id: 'NA', name: 'Critical (NA/SBL)', language: 'grc', testament: 'NT', sort: 2 },
-  { id: 'TR', name: 'Textus Receptus', language: 'grc', testament: 'NT', sort: 3 },
-  { id: 'BYZ', name: 'Byzantine', language: 'grc', testament: 'NT', sort: 4 }
+  { id: 'LXX', name: 'Septuagint (Swete)', language: 'grc', testament: 'OT', sort: 2 },
+  { id: 'NA', name: 'Critical (NA/SBL)', language: 'grc', testament: 'NT', sort: 3 },
+  { id: 'TR', name: 'Textus Receptus', language: 'grc', testament: 'NT', sort: 4 },
+  { id: 'BYZ', name: 'Byzantine', language: 'grc', testament: 'NT', sort: 5 }
+]
+
+// Septuagint — Swete's text (public domain), digitised by Open Greek and Latin / First1KGreek
+// (tlg0527) and repackaged by nathans/lxx-swete under CC BY-SA 4.0. One accented Greek word per
+// line, prefixed `1.chapter.verse`. Protocanon books only (mapped to our 66-book canon); LXX-only
+// deuterocanon, the combined Esdras B (Ezra+Neh), and Ecclesiastes (absent upstream) are omitted.
+// Daniel uses the Theodotion recension (the text printed in standard editions).
+const LXX_BASE = 'https://raw.githubusercontent.com/nathans/lxx-swete/master/data'
+const LXX_SWETE_FILES: [string, string][] = [
+  ['Gen', '01.Genesis.txt'],
+  ['Exod', '02.Exodus.txt'],
+  ['Lev', '03.Leviticus.txt'],
+  ['Num', '04.Numeri.txt'],
+  ['Deut', '05.Deuteronomium.txt'],
+  ['Josh', '06.Josue.txt'],
+  ['Judg', '08.Judices.txt'],
+  ['Ruth', '10.Ruth.txt'],
+  ['1Sam', '11.Regnorum_I.txt'],
+  ['2Sam', '12.Regnorum_II.txt'],
+  ['1Kgs', '13.Regnorum_III.txt'],
+  ['2Kgs', '14.Regnorum_IV.txt'],
+  ['1Chr', '15.Paralipomenon_I.txt'],
+  ['2Chr', '16.Paralipomenon_II.txt'],
+  ['Esth', '19.Esther.txt'],
+  ['Ps', '27.Psalmi.txt'],
+  ['Prov', '29.Proverbia.txt'],
+  ['Song', '31.Canticum.txt'],
+  ['Job', '32.Job.txt'],
+  ['Hos', '36.Osee.txt'],
+  ['Amos', '37.Amos.txt'],
+  ['Mic', '38.Michaeas.txt'],
+  ['Joel', '39.Joel.txt'],
+  ['Obad', '40.Abdias.txt'],
+  ['Jonah', '41.Jonas.txt'],
+  ['Nah', '42.Nahum.txt'],
+  ['Hab', '43.Habacuc.txt'],
+  ['Zeph', '44.Sophonias.txt'],
+  ['Hag', '45.Aggaeus.txt'],
+  ['Zech', '46.Zacharias.txt'],
+  ['Mal', '47.Malachias.txt'],
+  ['Isa', '48.Isaias.txt'],
+  ['Jer', '49.Jeremias.txt'],
+  ['Lam', '51.Threni_seu_Lamentationes.txt'],
+  ['Ezek', '53.Ezechiel.txt'],
+  ['Dan', '57.Daniel_Theodotionis_versio.txt']
 ]
 
 // STEPBible book abbreviation (dotted ref) → our book id. Uppercased abbrev matches our USFM
@@ -454,6 +500,91 @@ async function buildHebrewEdition(db: DatabaseSync): Promise<number> {
   return count
 }
 
+// Greek → Latin (SBL-style) transliteration. Deterministic study aid, not accent-perfect.
+const GK: Record<string, string> = {
+  α: 'a', β: 'b', γ: 'g', δ: 'd', ε: 'e', ζ: 'z', η: 'ē', θ: 'th', ι: 'i', κ: 'k',
+  λ: 'l', μ: 'm', ν: 'n', ξ: 'x', ο: 'o', π: 'p', ρ: 'r', σ: 's', ς: 's', τ: 't',
+  υ: 'y', φ: 'ph', χ: 'ch', ψ: 'ps', ω: 'ō'
+}
+function translitGreek(word: string): string | null {
+  // Split into base-letter clusters, each carrying its combining marks (NFD).
+  const clusters: { base: string; marks: string }[] = []
+  for (const ch of word.normalize('NFD')) {
+    if (/[̀-ͯ]/.test(ch)) {
+      if (clusters.length) clusters[clusters.length - 1].marks += ch
+    } else clusters.push({ base: ch, marks: '' })
+  }
+  const lc = (c: string): string => (c || '').toLowerCase()
+  const first = clusters.findIndex((c) => /\p{L}/u.test(c.base))
+  // Rough breathing (U+0314) on the first vowel (or the 2nd of an initial diphthong) → aspiration.
+  const rough =
+    first >= 0 &&
+    (clusters[first]?.marks.includes('̔') || clusters[first + 1]?.marks.includes('̔'))
+  let out = ''
+  for (let i = 0; i < clusters.length; i++) {
+    const b = lc(clusters[i].base)
+    if (!(b in GK)) continue // drop accents-only artefacts and stray punctuation
+    if (b === 'ρ' && i === first && rough) {
+      out += 'rh'
+      continue
+    }
+    if (b === 'γ') {
+      const n = lc(clusters[i + 1]?.base ?? '')
+      if (n === 'γ' || n === 'κ' || n === 'ξ' || n === 'χ') {
+        out += 'n'
+        continue
+      }
+    }
+    if (b === 'υ') {
+      const p = lc(clusters[i - 1]?.base ?? '')
+      if (p === 'α' || p === 'ε' || p === 'η' || p === 'ο') {
+        out += 'u'
+        continue
+      }
+    }
+    out += GK[b]
+  }
+  if (rough && lc(clusters[first]?.base ?? '') !== 'ρ') out = 'h' + out
+  return out || null
+}
+
+/** Build the Septuagint (LXX) Greek OT edition from Swete's text (CC BY-SA, First1KGreek). */
+async function buildSeptuagintEdition(db: DatabaseSync): Promise<number> {
+  const ins = db.prepare(
+    `INSERT OR REPLACE INTO original_tokens (edition, book_id, chapter, verse, position, original, translit, strongs, morph, gloss)
+     VALUES ('LXX',?,?,?,?,?,?,?,?,?)`
+  )
+  const strip = /^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu // leading/trailing punctuation
+  let count = 0
+  for (const [book, file] of LXX_SWETE_FILES) {
+    const path = await downloadCached(`lxx_${file}`, `${LXX_BASE}/${encodeURIComponent(file)}`)
+    const lines = readFileSync(path, 'utf8').split('\n')
+    let curVerse = ''
+    let pos = 0
+    db.exec('BEGIN')
+    for (const raw of lines) {
+      const sp = raw.indexOf(' ')
+      if (sp < 0) continue
+      const m = /^\d+\.(\d+)\.(\d+)$/.exec(raw.slice(0, sp).trim())
+      if (!m) continue
+      const original = raw.slice(sp + 1).trim().replace(strip, '')
+      if (!original) continue
+      const chapter = Number(m[1])
+      const verse = Number(m[2])
+      const vk = `${chapter}.${verse}`
+      if (vk !== curVerse) {
+        curVerse = vk
+        pos = 0
+      }
+      // Strong's / lemma / morph / gloss are filled by the separate Phase-2 lemmatiser.
+      ins.run(book, chapter, verse, pos++, original, translitGreek(original), null, null, null)
+      count++
+    }
+    db.exec('COMMIT')
+  }
+  return count
+}
+
 // ---- build -----------------------------------------------------------------
 
 async function main(): Promise<void> {
@@ -640,13 +771,15 @@ async function main(): Promise<void> {
   const mtCount = await buildHebrewEdition(db)
   process.stdout.write(` ${mtCount} · Greek (TR/Byz/Critical)…`)
   const grcCount = await buildGreekEditions(db)
-  process.stdout.write(` ${grcCount}\n`)
+  process.stdout.write(` ${grcCount} · Septuagint (Swete)…`)
+  const lxxCount = await buildSeptuagintEdition(db)
+  process.stdout.write(` ${lxxCount}\n`)
 
   const insMeta = db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?,?)')
   insMeta.run('schema_version', '1')
   insMeta.run(
     'sources',
-    'helloao Free Use Bible API; openscriptures/strongs (CC-BY-SA); kaiserlik/kjv (KJV+Strong’s); bereanbible.com bsb_tables (BSB interlinear, public domain)'
+    'helloao Free Use Bible API; openscriptures/strongs (CC-BY-SA); kaiserlik/kjv (KJV+Strong’s); bereanbible.com bsb_tables (BSB interlinear, public domain); STEPBible TAHOT/TAGNT (CC-BY); Septuagint: Swete via Open Greek and Latin / First1KGreek, nathans/lxx-swete (CC-BY-SA 4.0)'
   )
 
   // ---- assertions --------------------------------------------------------
@@ -747,6 +880,19 @@ async function main(): Promise<void> {
     db.prepare("SELECT COUNT(*) n FROM original_tokens WHERE edition='NA' AND book_id='1John' AND chapter=5 AND verse=7").get() as { n: number }
   ).n
   if (!(trComma > naComma)) errors.push(`TR 1John 5:7 (${trComma}) should have more words than NA (${naComma})`)
+
+  // Septuagint (Swete): Gen 1:1 opens ἐν ἀρχῇ (transliterated en archē) and is a full OT edition.
+  const lxxGen = db
+    .prepare(
+      "SELECT original, translit FROM original_tokens WHERE edition='LXX' AND book_id='Gen' AND chapter=1 AND verse=1 ORDER BY position LIMIT 2"
+    )
+    .all() as { original: string; translit: string }[]
+  if (!/^ε[νἐ]/iu.test(lxxGen[0]?.original ?? '') || !/^αρχ/iu.test((lxxGen[1]?.original ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '')))
+    errors.push(`LXX Gen 1:1 should open ἐν ἀρχῇ, got ${JSON.stringify(lxxGen)}`)
+  const lxxBooks = (
+    db.prepare("SELECT COUNT(DISTINCT book_id) n FROM original_tokens WHERE edition='LXX'").get() as { n: number }
+  ).n
+  if (lxxBooks < 35) errors.push(`LXX should cover ≥35 OT books, got ${lxxBooks}`)
 
   db.close()
 
