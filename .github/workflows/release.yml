@@ -15,8 +15,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14 # Apple Silicon
-          - os: macos-13 # Intel
+          - os: macos-14 # Apple Silicon (macOS CI bills 10×; Intel/macos-13 dropped to stay cheap)
           - os: windows-latest
           - os: ubuntu-latest
     runs-on: ${{ matrix.os }}
