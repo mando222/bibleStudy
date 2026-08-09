@@ -1,6 +1,15 @@
 import { useAppStore } from '@/store/useAppStore'
 import { BOOK_BY_ID } from '@shared/books'
-import { BookIcon, SunIcon, MoonIcon, HashIcon, ColumnsIcon, InterlinearIcon, InfoIcon } from './icons'
+import {
+  BookIcon,
+  SunIcon,
+  MoonIcon,
+  HashIcon,
+  ColumnsIcon,
+  InterlinearIcon,
+  InfoIcon,
+  SparkleIcon
+} from './icons'
 
 export default function TopBar(): JSX.Element {
   const theme = useAppStore((s) => s.theme)
@@ -10,6 +19,7 @@ export default function TopBar(): JSX.Element {
   const interlinear = useAppStore((s) => s.interlinear)
   const toggleInterlinear = useAppStore((s) => s.toggleInterlinear)
   const setAboutOpen = useAppStore((s) => s.setAboutOpen)
+  const setAssistantOpen = useAppStore((s) => s.setAssistantOpen)
   const book = useAppStore((s) => s.book)
   const chapter = useAppStore((s) => s.chapter)
   const translations = useAppStore((s) => s.translations)
@@ -112,6 +122,15 @@ export default function TopBar(): JSX.Element {
       >
         <InterlinearIcon className="w-4 h-4" />
         Interlinear
+      </button>
+
+      <button
+        onClick={() => setAssistantOpen(true)}
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-sm border border-accent/40 text-accent hover:bg-accent-soft transition-colors whitespace-nowrap"
+        title="Ask the AI study assistant"
+      >
+        <SparkleIcon className="w-4 h-4" />
+        Assistant
       </button>
 
       <button

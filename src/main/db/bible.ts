@@ -394,6 +394,36 @@ export function search(q: SearchQuery): SearchResponse {
   return { total, hits }
 }
 
+/** OR-retrieval over verses for the AI assistant: any of the keywords, ranked. */
+export function retrieveByKeywords(
+  translation: string,
+  keywords: string[],
+  limit = 10
+): SearchHit[] {
+  if (keywords.length === 0) return []
+  const d = required()
+  const q = keywords.map((k) => `"${k.replace(/"/g, '')}"`).join(' OR ')
+  const rows = d
+    .prepare(
+      `SELECT book_id, chapter, verse, snippet(verses_fts, 0, '', '', '…', 20) AS snip
+       FROM verses_fts WHERE verses_fts MATCH ? AND translation_id = ? ORDER BY rank LIMIT ?`
+    )
+    .all(q, translation, limit) as Record<string, unknown>[]
+  const names = new Map(
+    (d.prepare('SELECT id, name FROM books').all() as { id: string; name: string }[]).map((b) => [
+      b.id,
+      b.name
+    ])
+  )
+  return rows.map((r) => ({
+    book: r.book_id as string,
+    bookName: names.get(r.book_id as string) ?? (r.book_id as string),
+    chapter: r.chapter as number,
+    verse: r.verse as number,
+    snippet: r.snip as string
+  }))
+}
+
 /** Turn a user query into a safe FTS5 MATCH expression (prefix match on each term). */
 function ftsQuery(input: string): string {
   const terms = input

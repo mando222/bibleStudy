@@ -1,6 +1,7 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
 import { registerIpc } from './ipc'
+import { registerAiIpc } from './ai/ipc'
 import { openBibleDb } from './db/bible'
 import { openUserDb } from './db/user'
 
@@ -38,6 +39,7 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   registerIpc()
+  registerAiIpc()
   openBibleDb() // open the bundled DB if present; renderer shows a hint otherwise
   openUserDb() // create/open the writable user DB (notes + highlights)
   createWindow()

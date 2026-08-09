@@ -135,6 +135,69 @@ export interface VerseVariant {
   items: VariantItem[]
 }
 
+// ---- Local AI assistant + RAG ----
+
+export interface AiConfig {
+  baseUrl: string
+  chatModel: string
+  embedModel: string
+}
+export interface AiStatus {
+  available: boolean
+  models: string[]
+  config: AiConfig
+}
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
+export interface ChatCitation {
+  book: string
+  bookName: string
+  chapter: number
+  verse: number
+  text: string
+  source?: string // document name when the citation is from a user doc
+}
+export interface ChatResult {
+  text: string
+  citations: ChatCitation[]
+}
+export interface AiTokenEvent {
+  token?: string
+  done?: boolean
+  error?: string
+  citations?: ChatCitation[]
+}
+export interface AiDoc {
+  id: string
+  name: string
+  chunks: number
+  active: boolean
+  addedAt: number
+}
+export interface AiIndexStatus {
+  bibleIndexed: number
+  bibleTotal: number
+  building: boolean
+}
+
+export interface AiApi {
+  status(): Promise<AiStatus>
+  setConfig(patch: Partial<AiConfig>): Promise<AiConfig>
+  chat(messages: ChatMessage[], grounding: { translation: string } | null): Promise<ChatResult>
+  onToken(cb: (e: AiTokenEvent) => void): () => void
+
+  listDocuments(): Promise<AiDoc[]>
+  importDocument(): Promise<AiDoc | null>
+  setDocumentActive(id: string, active: boolean): Promise<void>
+  deleteDocument(id: string): Promise<void>
+
+  indexStatus(): Promise<AiIndexStatus>
+  buildBibleIndex(translation: string): Promise<void>
+  onIndexProgress(cb: (s: AiIndexStatus) => void): () => void
+}
+
 // ---- User data (notes + highlighting), stored in a separate user.sqlite ----
 
 export type HighlightColor = 'yellow' | 'green' | 'blue' | 'pink' | 'orange'

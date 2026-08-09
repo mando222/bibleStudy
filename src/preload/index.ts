@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { BibleApi } from '../shared/types'
+import type { AiApi, BibleApi } from '../shared/types'
 
 const api: BibleApi = {
   listTranslations: () => ipcRenderer.invoke('bible:listTranslations'),
@@ -25,15 +25,41 @@ const api: BibleApi = {
   deleteImportedTranslation: (id) => ipcRenderer.invoke('user:deleteImportedTranslation', id)
 }
 
+const ai: AiApi = {
+  status: () => ipcRenderer.invoke('ai:status'),
+  setConfig: (patch) => ipcRenderer.invoke('ai:setConfig', patch),
+  chat: (messages, grounding) => ipcRenderer.invoke('ai:chat', messages, grounding),
+  onToken: (cb) => {
+    const listener = (_e: unknown, ev: Parameters<typeof cb>[0]): void => cb(ev)
+    ipcRenderer.on('ai:token', listener)
+    return () => ipcRenderer.removeListener('ai:token', listener)
+  },
+  listDocuments: () => ipcRenderer.invoke('ai:listDocuments'),
+  importDocument: () => ipcRenderer.invoke('ai:importDocument'),
+  setDocumentActive: (id, active) => ipcRenderer.invoke('ai:setDocumentActive', id, active),
+  deleteDocument: (id) => ipcRenderer.invoke('ai:deleteDocument', id),
+  indexStatus: () => ipcRenderer.invoke('ai:indexStatus'),
+  buildBibleIndex: (translation) => ipcRenderer.invoke('ai:buildBibleIndex', translation),
+  onIndexProgress: (cb) => {
+    const listener = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
+    ipcRenderer.on('ai:indexProgress', listener)
+    return () => ipcRenderer.removeListener('ai:indexProgress', listener)
+  }
+}
+
 if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('api', api)
+    contextBridge.exposeInMainWorld('ai', ai)
   } catch (error) {
     console.error(error)
   }
 } else {
   // @ts-ignore (fallback when contextIsolation is disabled)
   window.api = api
+  // @ts-ignore
+  window.ai = ai
 }
 
 export type PreloadApi = BibleApi
+export type PreloadAi = AiApi

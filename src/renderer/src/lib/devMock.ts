@@ -4,8 +4,11 @@
  * http://localhost:5173. Never active in the packaged app.
  */
 import type {
+  AiApi,
+  AiTokenEvent,
   BibleApi,
   ChapterContent,
+  ChatCitation,
   ConcordanceHit,
   Edition,
   Highlight,
@@ -140,4 +143,45 @@ export async function installDevMock(): Promise<void> {
   }
 
   ;(window as unknown as { api: BibleApi }).api = mock
+
+  // Simulated assistant so the chat UI previews in the browser (real one runs on Ollama in-app).
+  const tokenListeners = new Set<(e: AiTokenEvent) => void>()
+  const emit = (e: AiTokenEvent): void => tokenListeners.forEach((cb) => cb(e))
+  const cfg = { baseUrl: 'http://localhost:11434', chatModel: 'llama3.1:latest', embedModel: 'nomic-embed-text' }
+  const mockCites = (): ChatCitation[] =>
+    (data.search?.hits ?? []).slice(0, 4).map((h) => ({
+      book: h.book,
+      bookName: h.bookName,
+      chapter: h.chapter,
+      verse: h.verse,
+      text: h.snippet.replace(/\{\{|\}\}/g, '')
+    }))
+  const ai: AiApi = {
+    status: async () => ({ available: true, models: ['llama3.1:latest', 'qwen3:1.7b'], config: cfg }),
+    setConfig: async (patch) => Object.assign(cfg, patch),
+    chat: async (messages, grounding) => {
+      const cites = grounding ? mockCites() : []
+      emit({ citations: cites })
+      const refs = cites.map((c) => `${c.bookName} ${c.chapter}:${c.verse}`).join(', ')
+      const text = `This is a preview reply — the real assistant runs on your local Ollama inside the desktop app. Grounding in the cited passages${refs ? ` (${refs})` : ''}, it would answer your question here, streaming word by word and citing the verses it used.`
+      for (const w of text.split(/(\s+)/)) {
+        await new Promise((r) => setTimeout(r, 18))
+        emit({ token: w })
+      }
+      emit({ done: true })
+      return { text, citations: cites }
+    },
+    onToken: (cb) => {
+      tokenListeners.add(cb)
+      return () => tokenListeners.delete(cb)
+    },
+    listDocuments: async () => [],
+    importDocument: async () => null,
+    setDocumentActive: async () => undefined,
+    deleteDocument: async () => undefined,
+    indexStatus: async () => ({ bibleIndexed: 0, bibleTotal: 0, building: false }),
+    buildBibleIndex: async () => undefined,
+    onIndexProgress: () => () => undefined
+  }
+  ;(window as unknown as { ai: AiApi }).ai = ai
 }

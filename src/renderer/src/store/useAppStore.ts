@@ -17,6 +17,10 @@ interface AppState {
   aboutOpen: boolean
   setAboutOpen: (v: boolean) => void
 
+  // AI assistant drawer
+  assistantOpen: boolean
+  setAssistantOpen: (v: boolean) => void
+
   // Reading selection
   primary: string // primary translation id
   parallels: string[] // additional translation ids shown side-by-side (incl. primary at [0])
@@ -69,6 +73,9 @@ export const useAppStore = create<AppState>()(
 
       aboutOpen: false,
       setAboutOpen: (aboutOpen) => set({ aboutOpen }),
+
+      assistantOpen: false,
+      setAssistantOpen: (assistantOpen) => set({ assistantOpen }),
 
       primary: 'KJV',
       parallels: ['KJV'],
