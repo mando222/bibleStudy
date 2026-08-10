@@ -31,6 +31,33 @@ we start it.
 
 ---
 
+## ✅ Shipped (v0.1.2)
+
+- **Map time slider + kingdoms overlay** — a shared year slider filters places (dimmed fallback when
+  a place has no derived date) and Timeline events; a hand-authored, deliberately-approximate
+  empires overlay (Egypt → Rome, CC0) changes with the year. Place year-windows + event end-years are
+  derived at build time from the Theographic event/person dates.
+- **Cross-references** — Treasury of Scripture Knowledge (public domain, via OpenBible.info CC-BY),
+  ~345k links, as a new **Cross-refs** study tab keyed to the selected verse.
+- **Learn tab (Greek & Hebrew)** — alphabet + pronunciation charts/quiz; **frequency-ranked
+  vocabulary flashcards with SM-2 spaced repetition** (from the tagged NT/OT); multiple-choice
+  recognition drills; and an original, inductive **"read real Greek/Hebrew early" grammar course**
+  (12 lessons each) — every lesson's *reading* is a real verse rendered live from the tagged
+  Scripture with tap-to-reveal (Greek → John 3:16, Hebrew → the Shema & Genesis 1:1). Lessons are our
+  own content; the text is public-domain / CC-BY from the bundled data. SRS + progress persist in
+  `user.sqlite`.
+- **Notebook** — free-form Markdown notes saved to a local folder (default or user-chosen), editable
+  by hand and by the assistant ("Ask AI to edit" → a proposal you Apply/Insert; no autonomous writes).
+- **Assistant improvements** — the system prompt is now editable Markdown files in
+  `src/main/ai/prompts/` (with an optional `userData/system-prompt.md` override, no rebuild); the
+  assistant is auto-aware of your **active passage / selected place / person**.
+- **Reading history + bookmarks** — app-wide recent-chapters + named bookmarks (TopBar popover).
+- **Export** — notes & highlights to a Markdown file.
+- **Family view** — a person's verses are grouped by book for readability.
+- Attribution updated (About + `docs/attribution.md`); `user.sqlite` migrated to schema v2.
+
+---
+
 ## ⏸️ Deferred (carried over — do when we choose to)
 
 - **LXX full morphological tagging (84% → ~99%).** The open Koine analyzer (odyCy/spaCy) is
@@ -39,8 +66,6 @@ we start it.
   label as machine-generated; keep distinct from scholar tags.)*
 - **LXX source gaps** — Ecclesiastes (absent in First1KGreek Swete) and Ezra/Nehemiah (the combined
   "Esdras B" needs a chapter-split). Source from another clean edition.
-- **Cross-references** — none yet. The **Treasury of Scripture Knowledge is public domain** — a great
-  clean source; wire refs as clickable `ScriptureRef`s.
 - **Footnotes / translation notes** — clickable popovers where the data exists.
 - **Morphology → plain English** — a popover that turns codes like `V-IAI-3S` into "verb, imperfect
   active indicative, 3rd person singular."
@@ -80,7 +105,6 @@ dictionaries, word-study, maps), see the **Logos parity — gap analysis** secti
 home for those, grouped by how license-clean each is.
 
 ### Study & reading
-- Bookmarks + reading history (data model exists; tables/UI not built yet).
 - "Compare this verse in all translations" one-click action.
 - Reading plans (daily / topical / chronological passage-level) with progress.
 - More public-domain translations (ASV, Geneva 1599, Darby, Douay-Rheims, Brenton LXX English).

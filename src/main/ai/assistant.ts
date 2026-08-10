@@ -4,34 +4,8 @@ import { chatTurn, embed } from './provider'
 import { retrieveDocs } from './documents'
 import { retrieveGuide } from './appGuide'
 import { hasBibleIndex, searchBible } from './vectors'
+import { buildSystemPrompt } from './prompts'
 import type { ChatMessage, ChatCitation } from '../../shared/types'
-
-const APP_INTRO =
-  'You are the careful study assistant built into Open Bible Study — a local, offline desktop app ' +
-  "with multiple translations, Strong's numbers, an interlinear with the original Greek and Hebrew, " +
-  'scholarly lexicons, notes and highlighting, search, and a Divine Names toggle. ' +
-  'When the user asks how to do something in the app, use the "App guide" context to give the exact ' +
-  'steps, and never invent features or menus that are not in that guide. ' +
-  'When you discuss a specific Greek or Hebrew word, write it in its original script and, when you ' +
-  "know it, its Strong's number (e.g. G26) — the app turns these into clickable lexicon links. "
-
-// Grounded mode (default): answer only from the retrieved context — for careful study.
-const SYSTEM_GROUNDED =
-  APP_INTRO +
-  'Ground every factual and scriptural claim ONLY in the provided Scripture context and the ' +
-  "user's active documents — do not rely on memory for quotations or references. Quote verses only " +
-  'if they appear in the context, and cite them inline as (Book Chapter:Verse). ' +
-  'If the context does not contain the answer, say so plainly (e.g. "The provided passages don\'t ' +
-  'address that") instead of guessing, and never invent or paraphrase verses, references, or ' +
-  'numbers. Prefer "I\'m not certain" over a confident guess. Be concise, warm, and accurate.'
-
-// General mode (grounding off): answer from your own knowledge, but stay careful with references.
-const SYSTEM_GENERAL =
-  APP_INTRO +
-  'Answer helpfully from your own knowledge as a knowledgeable Bible-study aid, and use any ' +
-  'provided context when it is relevant. When you cite Scripture, use the form (Book Chapter:Verse) ' +
-  'and get references right; if you are unsure of a quotation or reference, say so rather than ' +
-  'inventing it. Be concise, warm, and accurate.'
 
 const STOP = new Set(
   (
@@ -129,6 +103,7 @@ export async function* answer(
   messages: ChatMessage[],
   grounding: { translation: string } | null,
   extraContext: ChatCitation[] = [],
+  activeContext?: string,
   signal?: AbortSignal
 ): AsyncGenerator<{ token?: string; citations?: ChatCitation[] }> {
   const priorTurns = messages.slice(0, -1).filter((m) => m.role !== 'system')
@@ -170,16 +145,21 @@ export async function* answer(
   const citations = assembleContext([...extraContext, ...guideCites, ...docCites, ...bibleCites])
   yield { citations }
 
-  const ctx = citations.length
-    ? 'Context passages:\n' +
-      citations
-        .map((c) =>
-          c.source ? `[${c.source}] ${c.text}` : `(${c.bookName} ${c.chapter}:${c.verse}) ${c.text}`
-        )
-        .join('\n')
-    : ''
-  const userPrompt = ctx ? `${ctx}\n\nQuestion: ${lastUser}` : lastUser
-  const system = grounding ? SYSTEM_GROUNDED : SYSTEM_GENERAL
+  const blocks: string[] = []
+  if (activeContext?.trim()) blocks.push(`Reader's current context:\n${activeContext.trim()}`)
+  if (citations.length)
+    blocks.push(
+      'Context passages:\n' +
+        citations
+          .map((c) =>
+            c.source
+              ? `[${c.source}] ${c.text}`
+              : `(${c.bookName} ${c.chapter}:${c.verse}) ${c.text}`
+          )
+          .join('\n')
+    )
+  const userPrompt = blocks.length ? `${blocks.join('\n\n')}\n\nQuestion: ${lastUser}` : lastUser
+  const system = buildSystemPrompt({ grounded: !!grounding })
 
   for await (const tok of chatTurn({
     conversationId,

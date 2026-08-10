@@ -13,6 +13,30 @@ export default function NotesPanel(): JSX.Element {
 
   const [editing, setEditing] = useState<number | null>(null)
   const [text, setText] = useState('')
+  const [exportMsg, setExportMsg] = useState<string | null>(null)
+
+  const exportAll = async (): Promise<void> => {
+    setExportMsg(null)
+    try {
+      const path = await window.api.exportMarkdown()
+      if (path) setExportMsg(`Saved to ${path}`)
+    } catch (e) {
+      setExportMsg(e instanceof Error ? e.message : 'Export failed.')
+    }
+  }
+
+  const ExportBar = (
+    <div className="flex items-center justify-between pb-2 mb-1 border-b border-line/60">
+      <span className="text-[11px] uppercase tracking-wider text-faint">Notes</span>
+      <button
+        onClick={exportAll}
+        title="Export all notes & highlights to a Markdown file"
+        className="text-[11px] text-muted hover:text-accent"
+      >
+        Export all…
+      </button>
+    </div>
+  )
 
   const startEdit = (id: number, body: string): void => {
     setEditing(id)
@@ -32,17 +56,23 @@ export default function NotesPanel(): JSX.Element {
 
   if (notes.length === 0) {
     return (
-      <div className="mt-10 flex flex-col items-center text-center text-muted">
-        <PenIcon className="w-8 h-8 text-faint mb-3" />
-        <p className="text-sm max-w-[16rem] leading-relaxed">
-          No notes in {bookName} {chapter}. Click a verse number in the text to add one.
-        </p>
+      <div>
+        {ExportBar}
+        {exportMsg && <div className="text-[11px] text-muted mb-2">{exportMsg}</div>}
+        <div className="mt-8 flex flex-col items-center text-center text-muted">
+          <PenIcon className="w-8 h-8 text-faint mb-3" />
+          <p className="text-sm max-w-[16rem] leading-relaxed">
+            No notes in {bookName} {chapter}. Click a verse number in the text to add one.
+          </p>
+        </div>
       </div>
     )
   }
 
   return (
     <div className="space-y-2">
+      {ExportBar}
+      {exportMsg && <div className="text-[11px] text-muted">{exportMsg}</div>}
       <div className="text-[11px] uppercase tracking-wider text-faint">
         {bookName} {chapter} · {notes.length} note{notes.length > 1 ? 's' : ''}
       </div>

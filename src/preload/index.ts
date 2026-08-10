@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AiApi, BibleApi } from '../shared/types'
+import type { AiApi, BibleApi, NotebookApi } from '../shared/types'
 
 const api: BibleApi = {
   version: () => ipcRenderer.invoke('app:version'),
@@ -14,6 +14,13 @@ const api: BibleApi = {
   getPlaceVerses: (id) => ipcRenderer.invoke('bible:getPlaceVerses', id),
   getEvents: () => ipcRenderer.invoke('bible:getEvents'),
   getMapLand: () => ipcRenderer.invoke('bible:getMapLand'),
+  getMapRegions: () => ipcRenderer.invoke('bible:getMapRegions'),
+  getCrossReferences: (book, chapter, verse) =>
+    ipcRenderer.invoke('bible:getCrossReferences', book, chapter, verse),
+  getVocab: (language, limit, offset) =>
+    ipcRenderer.invoke('bible:getVocab', language, limit, offset),
+  getGrammarLessons: () => ipcRenderer.invoke('bible:getGrammarLessons'),
+  getGrammarLesson: (id) => ipcRenderer.invoke('bible:getGrammarLesson', id),
   getLexiconEntries: (strongs) => ipcRenderer.invoke('bible:getLexiconEntries', strongs),
   getLexiconByWord: (word) => ipcRenderer.invoke('bible:getLexiconByWord', word),
   getConcordance: (strongs, opts) => ipcRenderer.invoke('bible:getConcordance', strongs, opts),
@@ -33,7 +40,24 @@ const api: BibleApi = {
   deleteNote: (id) => ipcRenderer.invoke('user:deleteNote', id),
 
   importTranslation: () => ipcRenderer.invoke('user:importTranslation'),
-  deleteImportedTranslation: (id) => ipcRenderer.invoke('user:deleteImportedTranslation', id)
+  deleteImportedTranslation: (id) => ipcRenderer.invoke('user:deleteImportedTranslation', id),
+
+  listBookmarks: () => ipcRenderer.invoke('user:listBookmarks'),
+  addBookmark: (input) => ipcRenderer.invoke('user:addBookmark', input),
+  deleteBookmark: (id) => ipcRenderer.invoke('user:deleteBookmark', id),
+  addHistory: (book, chapter, verse) =>
+    ipcRenderer.invoke('user:addHistory', book, chapter, verse),
+  listHistory: (limit) => ipcRenderer.invoke('user:listHistory', limit),
+
+  listDueCards: (language, limit) => ipcRenderer.invoke('user:listDueCards', language, limit),
+  reviewCard: (strongs, language, grade) =>
+    ipcRenderer.invoke('user:reviewCard', strongs, language, grade),
+  srsStats: (language) => ipcRenderer.invoke('user:srsStats', language),
+  getLearnProgress: (module) => ipcRenderer.invoke('user:getLearnProgress', module),
+  setLearnProgress: (module, key, value) =>
+    ipcRenderer.invoke('user:setLearnProgress', module, key, value),
+
+  exportMarkdown: () => ipcRenderer.invoke('user:exportMarkdown')
 }
 
 const ai: AiApi = {
@@ -45,9 +69,11 @@ const ai: AiApi = {
     ipcRenderer.on('ai:setupProgress', listener)
     return () => ipcRenderer.removeListener('ai:setupProgress', listener)
   },
-  chat: (conversationId, messages, grounding, extraContext) =>
-    ipcRenderer.invoke('ai:chat', conversationId, messages, grounding, extraContext),
+  chat: (conversationId, messages, grounding, extraContext, activeContext) =>
+    ipcRenderer.invoke('ai:chat', conversationId, messages, grounding, extraContext, activeContext),
   stop: (conversationId) => ipcRenderer.invoke('ai:stop', conversationId),
+  complete: (messages, grounding, activeContext) =>
+    ipcRenderer.invoke('ai:complete', messages, grounding, activeContext),
   onToken: (cb) => {
     const listener = (_e: unknown, ev: Parameters<typeof cb>[0]): void => cb(ev)
     ipcRenderer.on('ai:token', listener)
@@ -66,10 +92,22 @@ const ai: AiApi = {
   }
 }
 
+const notebook: NotebookApi = {
+  list: () => ipcRenderer.invoke('notebook:list'),
+  read: (name) => ipcRenderer.invoke('notebook:read', name),
+  write: (name, content) => ipcRenderer.invoke('notebook:write', name, content),
+  rename: (oldName, newName) => ipcRenderer.invoke('notebook:rename', oldName, newName),
+  delete: (name) => ipcRenderer.invoke('notebook:delete', name),
+  getFolder: () => ipcRenderer.invoke('notebook:getFolder'),
+  chooseFolder: () => ipcRenderer.invoke('notebook:chooseFolder'),
+  openWindow: () => ipcRenderer.invoke('notebook:openWindow')
+}
+
 if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('api', api)
     contextBridge.exposeInMainWorld('ai', ai)
+    contextBridge.exposeInMainWorld('notebook', notebook)
   } catch (error) {
     console.error(error)
   }
@@ -78,7 +116,10 @@ if (process.contextIsolated) {
   window.api = api
   // @ts-ignore
   window.ai = ai
+  // @ts-ignore
+  window.notebook = notebook
 }
 
 export type PreloadApi = BibleApi
 export type PreloadAi = AiApi
+export type PreloadNotebook = NotebookApi

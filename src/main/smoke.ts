@@ -5,7 +5,10 @@ import {
   listEditions,
   getInterlinear,
   getLexiconEntries,
-  getChapterApparatus
+  getChapterApparatus,
+  getMapRegions,
+  getVocab,
+  getGrammarLessons
 } from './db/bible'
 import { getPeople, getPerson, getPlaces, getEvents } from './db/graph'
 import { aiDb } from './ai/vectors'
@@ -76,6 +79,15 @@ export async function runSmokeTest(): Promise<void> {
       }
     ],
     ['Maps: geolocated places', () => { if (getPlaces().length < 500) throw new Error('few places') }],
+    [
+      'Maps: place year-windows derived',
+      () => {
+        if (!getPlaces().some((p) => p.startYear != null)) throw new Error('no place year-windows')
+      }
+    ],
+    ['Maps: kingdoms overlay present', () => { if (getMapRegions().length < 200) throw new Error('no regions geojson') }],
+    ['Learn: vocabulary built', () => { if (getVocab('greek', 10).length < 5) throw new Error('no greek vocab') }],
+    ['Learn: grammar lessons built', () => { if (!getGrammarLessons().length) throw new Error('no grammar lessons') }],
     [
       'Timelines: events carry verse references',
       () => {

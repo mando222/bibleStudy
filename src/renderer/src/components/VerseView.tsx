@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import type { Verse, Highlight } from '@shared/types'
 import { useAppStore, computeQuickReplacements } from '@/store/useAppStore'
+import { buildWordStrongs, normalizeWord } from '@shared/wordLookup'
 import { highlightVar } from '@/lib/highlights'
 
 interface Props {
@@ -27,6 +28,9 @@ export default function VerseView({ v, highlight, hasNote, onOpenMenu }: Props):
   )
   const replActive = Object.keys(effective).length > 0
   const useTokens = (strongsVisible || replActive) && !!v.tokens && v.tokens.length > 0
+  // Clean-text mode (Strong's numbers hidden): keep the exact verse text but let tagged words be
+  // clicked to open the lexicon, by matching each word back to its token's Strong's number.
+  const wordStrongs = useMemo(() => buildWordStrongs(v.tokens), [v.tokens])
 
   const bg = highlight
     ? {
@@ -91,6 +95,26 @@ export default function VerseView({ v, highlight, hasNote, onOpenMenu }: Props):
               </span>
             )
           })
+        ) : wordStrongs.size > 0 ? (
+          <span>
+            {v.text.split(/(\s+)/).map((seg, i) => {
+              if (!/\S/.test(seg)) return seg // whitespace verbatim
+              const strongs = wordStrongs.get(normalizeWord(seg))
+              return strongs ? (
+                <span
+                  key={i}
+                  onClick={() => selectStrongs(strongs)}
+                  className={`cursor-pointer rounded-sm transition-colors ${
+                    selected === strongs ? 'bg-accent-soft text-accent' : 'hover:bg-accent-soft/60'
+                  }`}
+                >
+                  {seg}
+                </span>
+              ) : (
+                <span key={i}>{seg}</span>
+              )
+            })}{' '}
+          </span>
         ) : (
           <span>{v.text} </span>
         )}

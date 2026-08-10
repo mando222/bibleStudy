@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AiDoc, AiIndexStatus, AiSetupProgress, AiStatus, ChatCitation } from '@shared/types'
 import { useAppStore } from '@/store/useAppStore'
+import { BOOK_BY_ID } from '@shared/books'
 import { SparkleIcon, SendIcon, FileIcon } from './icons'
 import LinkedScripture from './LinkedScripture'
 
@@ -19,6 +20,25 @@ export default function ChatDrawer(): JSX.Element {
   const clearPendingContext = useAppStore((s) => s.clearPendingContext)
   const savedChat = useAppStore((s) => s.chatMessages)
   const persistChat = useAppStore((s) => s.setChatMessages)
+  // Live "what am I looking at" context, so the assistant can resolve "this verse" / "here".
+  const activity = useAppStore((s) => s.activity)
+  const book = useAppStore((s) => s.book)
+  const chapter = useAppStore((s) => s.chapter)
+  const activeVerse = useAppStore((s) => s.activeVerse)
+  const activePlace = useAppStore((s) => s.activePlace)
+  const activePerson = useAppStore((s) => s.activePerson)
+  const activeEvent = useAppStore((s) => s.activeEvent)
+
+  const buildActiveContext = (): string | undefined => {
+    const parts: string[] = []
+    const bookName = BOOK_BY_ID[book]?.name ?? book
+    parts.push(`Open passage: ${bookName} ${chapter}${activeVerse ? `:${activeVerse}` : ''}`)
+    if (activity === 'maps' && activePlace) parts.push(`Selected place: ${activePlace.name}`)
+    if (activity === 'genealogies' && activePerson)
+      parts.push(`Selected person: ${activePerson.name}`)
+    if (activity === 'timelines' && activeEvent) parts.push(`Selected event: ${activeEvent.name}`)
+    return parts.join('. ') || undefined
+  }
 
   const [status, setStatus] = useState<AiStatus | null>(null)
   const [messages, setMessages] = useState<Msg[]>(() => savedChat)
@@ -160,7 +180,13 @@ export default function ChatDrawer(): JSX.Element {
     setMessages([...messages.slice(0, idx + 1), { role: 'assistant', content: '' }])
     setBusy(true)
     try {
-      await window.ai.chat(convId, history, ground ? { translation: primary } : null)
+      await window.ai.chat(
+        convId,
+        history,
+        ground ? { translation: primary } : null,
+        [],
+        buildActiveContext()
+      )
     } catch (e) {
       setBusy(false)
       setMessages((prev) => {
@@ -196,7 +222,13 @@ export default function ChatDrawer(): JSX.Element {
       : []
     clearPendingContext()
     try {
-      await window.ai.chat(convId, history, ground ? { translation: primary } : null, extra)
+      await window.ai.chat(
+        convId,
+        history,
+        ground ? { translation: primary } : null,
+        extra,
+        buildActiveContext()
+      )
     } catch (e) {
       setBusy(false)
       setMessages((prev) => {

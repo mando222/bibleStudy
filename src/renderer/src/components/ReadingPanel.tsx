@@ -153,6 +153,7 @@ function Column({ translation, index, canRemove, book, chapter, registerRef, onS
   // Floating "Ask the assistant" button shown when the reader selects text.
   const [sel, setSel] = useState<{ x: number; y: number; text: string; v1: number; v2: number } | null>(null)
   const askAssistantAbout = useAppStore((s) => s.askAssistantAbout)
+  const setActiveVerse = useAppStore((s) => s.setActiveVerse)
   const scrollToVerse = useAppStore((s) => s.scrollToVerse)
   const clearScroll = useAppStore((s) => s.clearScroll)
   const rtl = data?.direction === 'rtl'
@@ -212,6 +213,7 @@ function Column({ translation, index, canRemove, book, chapter, registerRef, onS
     const el = containerRef.current
     if (!el) return
     const r = el.getBoundingClientRect()
+    if (index === 0) setActiveVerse(verse) // track the current verse for cross-refs + the assistant
     setMenu({ verse, x: e.clientX - r.left + el.scrollLeft, y: e.clientY - r.top + el.scrollTop })
   }
 

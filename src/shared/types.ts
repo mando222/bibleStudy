@@ -237,10 +237,17 @@ export interface AiApi {
     conversationId: string,
     messages: ChatMessage[],
     grounding: { translation: string } | null,
-    extraContext?: ChatCitation[]
+    extraContext?: ChatCitation[],
+    activeContext?: string
   ): Promise<ChatResult>
   stop(conversationId: string): Promise<void>
   onToken(cb: (e: AiTokenEvent) => void): () => void
+  /** One-shot, non-streaming completion (used by the Notebook AI-edit flow). */
+  complete(
+    messages: ChatMessage[],
+    grounding: { translation: string } | null,
+    activeContext?: string
+  ): Promise<{ text: string; error?: string }>
 
   listDocuments(): Promise<AiDoc[]>
   importDocument(): Promise<AiDoc | null>
@@ -329,14 +336,112 @@ export interface PlaceItem {
   lon: number
   featureType: string | null
   verseCount: number
+  startYear: number | null // earliest year this place appears active (derived; null = no signal)
+  endYear: number | null
 }
 export interface EventItem {
   id: number
   title: string
   startYear: number | null
+  endYear: number | null // derived from the source event duration (null = point event)
   participants: PersonRef[]
   places: PersonRef[]
   verses: string[]
+}
+
+// ---- Time-aware map regions (feat 1): a hand-authored, approximate kingdoms overlay ----
+export interface MapRegion {
+  name: string
+  validFrom: number // signed year, negative = BC
+  validTo: number
+}
+
+// ---- Cross-references (feat 6): Treasury of Scripture Knowledge ----
+export interface CrossRef {
+  ref: string // "Book.ch.v" of the start verse
+  toVerseEnd: number | null // for a ranged target (Book.ch.vStart–vEnd), else null
+  votes: number
+}
+
+// ---- Learn: vocabulary + grammar (feat 4) ----
+export interface VocabItem {
+  strongs: string
+  language: 'greek' | 'hebrew'
+  lemma: string
+  translit: string | null
+  gloss: string | null
+  frequency: number
+  testament: 'OT' | 'NT'
+}
+export interface GrammarExercise {
+  prompt: string
+  answer: string
+}
+/** A reading exercise: a real verse reference rendered live from the tagged Greek NT. */
+export interface GrammarReading {
+  ref: string // "Book.ch.v"
+  note?: string
+}
+export interface GrammarLesson {
+  id: number
+  course: string
+  chapterNo: number
+  title: string
+  bodyMd: string
+  vocab: { lemma: string; gloss: string }[]
+  readings: GrammarReading[]
+  exercises: GrammarExercise[]
+}
+
+// ---- Notebook (feat 3): free-form Markdown notes saved to a local folder ----
+export interface NotebookFile {
+  name: string
+  modified: number
+}
+export interface NotebookApi {
+  list(): Promise<NotebookFile[]>
+  read(name: string): Promise<string>
+  write(name: string, content: string): Promise<NotebookFile>
+  rename(oldName: string, newName: string): Promise<void>
+  delete(name: string): Promise<void>
+  getFolder(): Promise<string>
+  chooseFolder(): Promise<string>
+  /** Open the notebook in its own movable window (same app). */
+  openWindow(): Promise<void>
+}
+
+// ---- Bookmarks, history, spaced-repetition (v2 user data) ----
+export interface Bookmark {
+  id: number
+  name: string
+  book: string
+  chapter: number
+  verse: number
+  note: string | null
+  createdAt: number
+}
+export interface HistoryEntry {
+  id: number
+  book: string
+  chapter: number
+  verse: number | null
+  visitedAt: number
+}
+export interface SrsCard {
+  strongs: string
+  language: string
+  ease: number
+  intervalDays: number
+  dueAt: number
+  reps: number
+  lapses: number
+  lastGrade: number | null
+  updatedAt: number
+}
+export interface SrsStats {
+  total: number
+  due: number
+  learned: number
 }
 
 /** The full API surface exposed on `window.api` via contextBridge. */
@@ -353,6 +458,11 @@ export interface BibleApi {
   getPlaceVerses(id: number): Promise<string[]>
   getEvents(): Promise<EventItem[]>
   getMapLand(): Promise<string>
+  getMapRegions(): Promise<string>
+  getCrossReferences(book: string, chapter: number, verse: number): Promise<CrossRef[]>
+  getVocab(language: 'greek' | 'hebrew', limit?: number, offset?: number): Promise<VocabItem[]>
+  getGrammarLessons(): Promise<GrammarLesson[]>
+  getGrammarLesson(id: number): Promise<GrammarLesson | null>
   getLexiconEntries(strongs: string): Promise<LexiconGroup[]>
   getLexiconByWord(word: string): Promise<string | null>
   getConcordance(strongs: string, opts?: ConcordanceOptions): Promise<ConcordanceResponse>
@@ -377,4 +487,27 @@ export interface BibleApi {
 
   importTranslation(): Promise<ImportedTranslation | null>
   deleteImportedTranslation(id: string): Promise<void>
+
+  // Bookmarks & reading history
+  listBookmarks(): Promise<Bookmark[]>
+  addBookmark(input: {
+    name: string
+    book: string
+    chapter: number
+    verse?: number
+    note?: string
+  }): Promise<Bookmark>
+  deleteBookmark(id: number): Promise<void>
+  addHistory(book: string, chapter: number, verse?: number): Promise<void>
+  listHistory(limit?: number): Promise<HistoryEntry[]>
+
+  // Learn: spaced repetition + progress
+  listDueCards(language: string, limit?: number): Promise<SrsCard[]>
+  reviewCard(strongs: string, language: string, grade: number): Promise<SrsCard>
+  srsStats(language: string): Promise<SrsStats>
+  getLearnProgress(module: string): Promise<Record<string, string>>
+  setLearnProgress(module: string, key: string, value: string): Promise<void>
+
+  // Export notes & highlights to a Markdown file (returns the saved path, or null if cancelled)
+  exportMarkdown(): Promise<string | null>
 }

@@ -21,6 +21,7 @@ export default function GenealogiesView(): JSX.Element {
   const [mode, setMode] = useState<'family' | 'tree'>('family')
   const focusPersonId = useAppStore((s) => s.focusPersonId)
   const clearFocus = useAppStore((s) => s.clearFocus)
+  const setActivePerson = useAppStore((s) => s.setActivePerson)
 
   // Arriving from another view (e.g. a Timeline participant) focuses that person.
   useEffect(() => {
@@ -46,6 +47,11 @@ export default function GenealogiesView(): JSX.Element {
     window.api.getPerson(id).then(setPerson).catch(() => setPerson(null))
     window.api.getAncestry(id).then(setAncestry).catch(() => setAncestry([]))
   }, [id])
+
+  // Expose the selected person to the assistant as live context.
+  useEffect(() => {
+    setActivePerson(person ? { id: person.id, name: person.name } : null)
+  }, [person, setActivePerson])
 
   return (
     <div className="h-full flex bg-bg">
@@ -150,7 +156,7 @@ export default function GenealogiesView(): JSX.Element {
               <div className="text-[11px] uppercase tracking-wider text-faint mb-2">
                 Referenced in {person.verses.length} verse{person.verses.length === 1 ? '' : 's'}
               </div>
-              <VerseRefs refs={person.verses} />
+              <VerseRefs refs={person.verses} groupByBook />
             </div>
           </div>
         ) : (

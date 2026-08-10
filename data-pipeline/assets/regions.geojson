@@ -1,0 +1,78 @@
+{
+  "type": "FeatureCollection",
+  "note": "Hand-authored, deliberately APPROXIMATE kingdom/empire extents for the map time slider. Coarse polygons, coordinates [lon,lat]. Authored for Open Bible Study; released CC0 / public domain. Not a scholarly boundary source.",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "Egypt", "valid_from": -2000, "valid_to": -500 },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[29.0, 24.0], [34.2, 24.0], [34.2, 31.6], [31.2, 31.6], [30.0, 29.5], [29.0, 26.0], [29.0, 24.0]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Kingdom of Israel (United)", "valid_from": -1050, "valid_to": -930 },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[34.2, 30.6], [35.9, 30.6], [35.9, 33.3], [34.9, 33.3], [34.2, 31.6], [34.2, 30.6]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Israel (Northern Kingdom)", "valid_from": -930, "valid_to": -722 },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[34.9, 31.9], [35.9, 31.9], [35.9, 33.3], [34.9, 33.3], [34.9, 31.9]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Judah", "valid_from": -930, "valid_to": -586 },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[34.7, 30.7], [35.6, 30.7], [35.6, 31.9], [34.7, 31.9], [34.7, 30.7]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Assyrian Empire", "valid_from": -900, "valid_to": -609 },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[39.5, 33.8], [46.5, 33.8], [46.5, 37.6], [42.0, 37.6], [39.5, 35.5], [39.5, 33.8]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Babylonian Empire", "valid_from": -626, "valid_to": -539 },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[43.0, 30.4], [48.2, 30.4], [48.2, 34.2], [45.0, 34.5], [43.0, 33.0], [43.0, 30.4]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Persian Empire", "valid_from": -539, "valid_to": -331 },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[44.0, 28.5], [52.0, 28.5], [52.0, 39.5], [47.0, 39.5], [44.0, 36.0], [44.0, 28.5]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Hellenistic (Seleucid)", "valid_from": -312, "valid_to": -63 },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[35.0, 32.8], [45.5, 32.8], [45.5, 37.4], [39.0, 37.4], [35.0, 35.5], [35.0, 32.8]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Roman Empire (East)", "valid_from": -63, "valid_to": 135 },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[33.0, 29.8], [40.5, 29.8], [40.5, 37.2], [36.0, 37.2], [33.0, 34.5], [33.0, 29.8]]]
+      }
+    }
+  ]
+}

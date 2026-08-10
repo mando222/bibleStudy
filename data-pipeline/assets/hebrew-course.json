@@ -1,0 +1,194 @@
+[
+  {
+    "chapter_no": 1,
+    "title": "Reading right to left",
+    "body_md": "Hebrew is read from right to left. Its alphabet has 22 letters and originally wrote only consonants; the small dots and dashes (the vowel points) were added much later to preserve the pronunciation. When you read, your eye starts at the right edge of each word and each line.\n\nOur first word is the very first word of the Bible: בְּרֵאשִׁית, \"in the beginning.\" Open the reading, and remember to move right-to-left. Tap each word to see its meaning.",
+    "vocab": [
+      { "lemma": "בְּרֵאשִׁית", "gloss": "in the beginning" },
+      { "lemma": "אֱלֹהִים", "gloss": "God" },
+      { "lemma": "שָׁמַיִם", "gloss": "heavens, sky" },
+      { "lemma": "אֶרֶץ", "gloss": "earth, land" }
+    ],
+    "readings": [{ "ref": "Gen.1.1", "note": "Read right to left. The first word (rightmost) is בְּרֵאשִׁית." }],
+    "exercises": [
+      { "prompt": "Which direction do you read Hebrew?", "answer": "right to left" },
+      { "prompt": "What does בְּרֵאשִׁית mean?", "answer": "in the beginning" }
+    ]
+  },
+  {
+    "chapter_no": 2,
+    "title": "God created",
+    "body_md": "Hebrew often puts the verb before its subject. In Genesis 1:1 the order is literally \"created God\" — בָּרָא אֱלֹהִים — which we render \"God created.\"\n\nLearn the subject and its verb together: אֱלֹהִים (God) and בָּרָא (he created). The name אֱלֹהִים is plural in form but takes a singular verb when it means the one true God.",
+    "vocab": [
+      { "lemma": "בָּרָא", "gloss": "he created" },
+      { "lemma": "עָשָׂה", "gloss": "he made, did" },
+      { "lemma": "אֱלֹהִים", "gloss": "God" },
+      { "lemma": "אוֹר", "gloss": "light" }
+    ],
+    "readings": [{ "ref": "Gen.1.1", "note": "בָּרָא אֱלֹהִים — literally 'created God', i.e. 'God created'." }],
+    "exercises": [
+      { "prompt": "Translate: בָּרָא אֱלֹהִים", "answer": "God created" },
+      { "prompt": "In Genesis 1:1, which usually comes first — the verb or the subject?", "answer": "the verb" }
+    ]
+  },
+  {
+    "chapter_no": 3,
+    "title": "\"The\" and \"and\": prefixed letters",
+    "body_md": "Hebrew attaches some of its smallest, most common words to the front of the next word instead of writing them separately:\n\n• הַ (with a following doubling) = \"the\": הַשָּׁמַיִם, \"the heavens\"\n• וְ = \"and\": וְאֵת, \"and (object)\"\n\nSo a single written word can carry \"and-the-…\" all at once. Learn to peel these prefixes off the front (the right side) of a word.",
+    "vocab": [
+      { "lemma": "הַ", "gloss": "the" },
+      { "lemma": "וְ", "gloss": "and" },
+      { "lemma": "טוֹב", "gloss": "good" },
+      { "lemma": "יוֹם", "gloss": "day" }
+    ],
+    "readings": [{ "ref": "Gen.1.1", "note": "Find הַשָּׁמַיִם ('the heavens') and וְאֵת הָאָרֶץ ('and the earth')." }],
+    "exercises": [
+      { "prompt": "What does the prefix הַ mean?", "answer": "the" },
+      { "prompt": "What does the prefix וְ mean?", "answer": "and" }
+    ]
+  },
+  {
+    "chapter_no": 4,
+    "title": "אֵת — the object marker",
+    "body_md": "Hebrew has a small word, אֵת, that marks a definite direct object. It is not translated into English — it simply points to the word that receives the action.\n\nIn Genesis 1:1, אֵת appears before \"the heavens\" and again (as וְאֵת) before \"the earth,\" telling you exactly what God created.",
+    "vocab": [
+      { "lemma": "אֵת", "gloss": "(untranslated object marker)" },
+      { "lemma": "כִּי", "gloss": "that, because, for" },
+      { "lemma": "לֹא", "gloss": "not" },
+      { "lemma": "כֹּל", "gloss": "all, every" }
+    ],
+    "readings": [{ "ref": "Gen.1.1", "note": "אֵת marks the objects: אֵת הַשָּׁמַיִם … וְאֵת הָאָרֶץ." }],
+    "exercises": [
+      { "prompt": "What does אֵת do in a sentence?", "answer": "marks the definite direct object (untranslated)" },
+      { "prompt": "Is אֵת translated into English?", "answer": "no" }
+    ]
+  },
+  {
+    "chapter_no": 5,
+    "title": "Nouns: gender and number",
+    "body_md": "Every Hebrew noun is masculine or feminine. Plurals usually add an ending:\n\n• masculine plural: ־ִים (as in שָׁמַיִם, a plural-shaped word for \"heavens\")\n• feminine plural: ־וֹת\n\nRecognizing these endings tells you whether a word is one or many, which the article and verbs will agree with.",
+    "vocab": [
+      { "lemma": "מַיִם", "gloss": "water(s)" },
+      { "lemma": "שָׁנָה", "gloss": "year" },
+      { "lemma": "אִישׁ", "gloss": "man" },
+      { "lemma": "אִשָּׁה", "gloss": "woman, wife" }
+    ],
+    "readings": [{ "ref": "Gen.1.1", "note": "שָׁמַיִם carries the ־ִים ending; treat it as 'heavens'." }],
+    "exercises": [
+      { "prompt": "What ending commonly marks a masculine plural?", "answer": "־ִים (-im)" },
+      { "prompt": "What ending commonly marks a feminine plural?", "answer": "־וֹת (-ot)" }
+    ]
+  },
+  {
+    "chapter_no": 6,
+    "title": "Prefixed prepositions: בְּ, לְ, מִן",
+    "body_md": "Like \"the\" and \"and,\" the most common prepositions attach to the front of a word:\n\n• בְּ = \"in, by, with\": בְּרֵאשִׁית, \"in the beginning\"\n• לְ = \"to, for\"\n• מִן (often prefixed as מִ־) = \"from\"\n\nSo בְּרֵאשִׁית is really בְּ + רֵאשִׁית, \"in + beginning.\"",
+    "vocab": [
+      { "lemma": "בְּ", "gloss": "in, by, with" },
+      { "lemma": "לְ", "gloss": "to, for" },
+      { "lemma": "מִן", "gloss": "from" },
+      { "lemma": "עַל", "gloss": "on, over, about" }
+    ],
+    "readings": [{ "ref": "Gen.1.1", "note": "בְּרֵאשִׁית = בְּ ('in') + רֵאשִׁית ('beginning')." }],
+    "exercises": [
+      { "prompt": "Break down בְּרֵאשִׁית", "answer": "בְּ (in) + רֵאשִׁית (beginning) = 'in the beginning'" },
+      { "prompt": "What does the prefix לְ mean?", "answer": "to, for" }
+    ]
+  },
+  {
+    "chapter_no": 7,
+    "title": "And he said: the narrative past",
+    "body_md": "Hebrew tells stories with a special chained form: a prefixed וַ (\"and\") joined to a verb pushes the action into past narrative. So וַיֹּאמֶר means \"and he said\" — the engine of Old Testament storytelling.\n\nThe underlying verb here is אָמַר, \"to say.\" Watch for the וַ + verb pattern: it means \"and then he/they …\".",
+    "vocab": [
+      { "lemma": "אָמַר", "gloss": "he said" },
+      { "lemma": "וַיֹּאמֶר", "gloss": "and he said" },
+      { "lemma": "רָאָה", "gloss": "he saw" },
+      { "lemma": "הָיָה", "gloss": "he was, became" }
+    ],
+    "readings": [{ "ref": "Gen.1.3", "note": "וַיֹּאמֶר אֱלֹהִים — 'and God said'. Find the וַ + verb pattern." }],
+    "exercises": [
+      { "prompt": "Translate: וַיֹּאמֶר אֱלֹהִים", "answer": "and God said" },
+      { "prompt": "What does the prefixed וַ on a verb signal in narrative?", "answer": "past narrative — 'and then he/they …'" }
+    ]
+  },
+  {
+    "chapter_no": 8,
+    "title": "Let there be light",
+    "body_md": "Some verb forms express a wish or command. יְהִי means \"let there be\" (from the verb \"to be,\" הָיָה). Paired with אוֹר, \"light,\" you get one of the most famous lines in Scripture: יְהִי אוֹר, \"let there be light.\"",
+    "vocab": [
+      { "lemma": "יְהִי", "gloss": "let there be" },
+      { "lemma": "אוֹר", "gloss": "light" },
+      { "lemma": "חֹשֶׁךְ", "gloss": "darkness" },
+      { "lemma": "קָרָא", "gloss": "he called, cried out" }
+    ],
+    "readings": [{ "ref": "Gen.1.3", "note": "יְהִי אוֹר — 'let there be light'." }],
+    "exercises": [
+      { "prompt": "Translate: יְהִי אוֹר", "answer": "let there be light" },
+      { "prompt": "What does אוֹר mean?", "answer": "light" }
+    ]
+  },
+  {
+    "chapter_no": 9,
+    "title": "Pronoun suffixes: my, your, our",
+    "body_md": "Instead of separate words for \"my\" or \"our,\" Hebrew attaches a small ending to the noun. For example, ־ֵנוּ means \"our\": אֱלֹהֵינוּ = \"our God\" (אֱלֹהֵי + נוּ), and ־ִי means \"my.\"\n\nThese suffixes are everywhere in prayers and psalms, where people speak of \"my God,\" \"our God,\" \"his people.\"",
+    "vocab": [
+      { "lemma": "אֱלֹהֵינוּ", "gloss": "our God" },
+      { "lemma": "שֵׁם", "gloss": "name" },
+      { "lemma": "יָד", "gloss": "hand" },
+      { "lemma": "עַם", "gloss": "people" }
+    ],
+    "readings": [{ "ref": "Deut.6.4", "note": "Find אֱלֹהֵינוּ, 'our God' — the noun 'God' with the 'our' suffix." }],
+    "exercises": [
+      { "prompt": "Translate: אֱלֹהֵינוּ", "answer": "our God" },
+      { "prompt": "What does the ending ־ֵנוּ mean?", "answer": "our" }
+    ]
+  },
+  {
+    "chapter_no": 10,
+    "title": "The Shema: the LORD is one",
+    "body_md": "You can now read Israel's central confession, the Shema (Deuteronomy 6:4). It begins with an imperative, שְׁמַע, \"Hear!\", addressed to יִשְׂרָאֵל, \"Israel,\" and declares יְהוָה אֶחָד — \"the LORD is one.\"\n\nיְהוָה is the personal name of God (often read \"the LORD\"); אֶחָד means \"one.\" Take the reading slowly, right to left.",
+    "vocab": [
+      { "lemma": "שְׁמַע", "gloss": "hear! (command)" },
+      { "lemma": "יִשְׂרָאֵל", "gloss": "Israel" },
+      { "lemma": "אֶחָד", "gloss": "one" },
+      { "lemma": "יְהוָה", "gloss": "the LORD (God's name)" }
+    ],
+    "readings": [{ "ref": "Deut.6.4", "note": "שְׁמַע יִשְׂרָאֵל … יְהוָה אֶחָד — 'Hear, O Israel … the LORD is one.'" }],
+    "exercises": [
+      { "prompt": "Translate: יְהוָה אֶחָד", "answer": "the LORD is one" },
+      { "prompt": "What does שְׁמַע mean?", "answer": "Hear! (a command)" }
+    ]
+  },
+  {
+    "chapter_no": 11,
+    "title": "\"Of\": the construct chain",
+    "body_md": "Hebrew has no separate word for \"of.\" Instead it binds two nouns together in a construct chain, where the first noun is \"in construct\" to the second: \"the-X-of Y.\"\n\nPossession also uses suffixes you have met: רֹעִי is \"my shepherd\" (רֹעֶה, shepherd, + my). So Psalm 23:1 says יְהוָה רֹעִי — \"the LORD is my shepherd.\"",
+    "vocab": [
+      { "lemma": "רֹעֶה", "gloss": "shepherd" },
+      { "lemma": "בֵּן", "gloss": "son" },
+      { "lemma": "בַּיִת", "gloss": "house" },
+      { "lemma": "מֶלֶךְ", "gloss": "king" }
+    ],
+    "readings": [{ "ref": "Ps.23.1", "note": "יְהוָה רֹעִי — 'the LORD is my shepherd' (רֹעֶה + 'my')." }],
+    "exercises": [
+      { "prompt": "Translate: יְהוָה רֹעִי", "answer": "the LORD is my shepherd" },
+      { "prompt": "How does Hebrew express 'of' between two nouns?", "answer": "with a construct chain (no separate word for 'of')" }
+    ]
+  },
+  {
+    "chapter_no": 12,
+    "title": "Putting it together: Genesis 1:1",
+    "body_md": "You now know enough to read the Bible's opening verse and see every piece at work:\n\n• a prefixed preposition: בְּרֵאשִׁית (\"in the beginning\")\n• verb before subject: בָּרָא אֱלֹהִים (\"God created\")\n• the object marker: אֵת … וְאֵת\n• the article and \"and\": הַשָּׁמַיִם, וְאֵת הָאָרֶץ\n\nRead it whole, right to left, tapping each word. This is the goal: reading the real Hebrew text.",
+    "vocab": [
+      { "lemma": "בְּרֵאשִׁית", "gloss": "in the beginning" },
+      { "lemma": "בָּרָא", "gloss": "he created" },
+      { "lemma": "הַשָּׁמַיִם", "gloss": "the heavens" },
+      { "lemma": "הָאָרֶץ", "gloss": "the earth" }
+    ],
+    "readings": [{ "ref": "Gen.1.1", "note": "Read the whole verse: 'In the beginning God created the heavens and the earth.'" }],
+    "exercises": [
+      { "prompt": "Translate the sense of Genesis 1:1", "answer": "In the beginning God created the heavens and the earth" },
+      { "prompt": "What marks the two objects 'the heavens' and 'the earth'?", "answer": "the object marker אֵת (and וְאֵת)" }
+    ]
+  }
+]

@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { join, basename } from 'node:path'
 import { app } from 'electron'
 import { BOOKS, BOOK_BY_ID } from '../../shared/books'
+import { schedule, newCard } from './srs'
 import type {
   ChapterRef,
   ChapterContent,
@@ -11,13 +12,17 @@ import type {
   ImportedTranslation,
   Note,
   NoteInput,
-  Translation
+  Translation,
+  Bookmark,
+  HistoryEntry,
+  SrsCard,
+  SrsStats
 } from '../../shared/types'
 
 let db: DatabaseSync | null = null
 
 // Bump when the user schema changes, and add exactly one migration step per bump below.
-const USER_SCHEMA_VERSION = 1
+const USER_SCHEMA_VERSION = 2
 
 /**
  * Evolve an existing user.sqlite in place across app updates, so notes/highlights/imports are
@@ -32,8 +37,49 @@ function migrate(d: DatabaseSync): void {
   let v = row ? Number(row.value) : 0
   // steps[n] upgrades a v=n database to v=n+1 (non-destructively). v1 is the baseline (no-op).
   const steps: (() => void)[] = [
-    () => {} // 0 -> 1: baseline tables already created above
-    // 1 -> 2 example: () => d.exec('ALTER TABLE notes ADD COLUMN tags TEXT')
+    () => {}, // 0 -> 1: baseline tables already created above
+    // 1 -> 2: spaced-repetition cards, learn progress, bookmarks, reading history.
+    () =>
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS srs_cards (
+          strongs       TEXT PRIMARY KEY,
+          language      TEXT NOT NULL,
+          ease          REAL NOT NULL DEFAULT 2.5,
+          interval_days INTEGER NOT NULL DEFAULT 0,
+          due_at        INTEGER NOT NULL DEFAULT 0,
+          reps          INTEGER NOT NULL DEFAULT 0,
+          lapses        INTEGER NOT NULL DEFAULT 0,
+          last_grade    INTEGER,
+          updated_at    INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_srs_due ON srs_cards (language, due_at);
+
+        CREATE TABLE IF NOT EXISTS learn_progress (
+          module     TEXT NOT NULL,
+          key        TEXT NOT NULL,
+          value      TEXT NOT NULL,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (module, key)
+        );
+
+        CREATE TABLE IF NOT EXISTS bookmarks (
+          id         INTEGER PRIMARY KEY AUTOINCREMENT,
+          name       TEXT NOT NULL,
+          book       TEXT NOT NULL,
+          chapter    INTEGER NOT NULL,
+          verse      INTEGER NOT NULL DEFAULT 1,
+          note       TEXT,
+          created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS reading_history (
+          id         INTEGER PRIMARY KEY AUTOINCREMENT,
+          book       TEXT NOT NULL,
+          chapter    INTEGER NOT NULL,
+          verse      INTEGER,
+          visited_at INTEGER NOT NULL
+        );
+      `)
   ]
   while (v < USER_SCHEMA_VERSION) {
     steps[v]?.()
@@ -200,6 +246,25 @@ export function deleteNote(id: number): void {
   required().prepare('DELETE FROM notes WHERE id = ?').run(id)
 }
 
+/** Every note, ordered canonically — for the Markdown export. */
+export function listAllNotes(): Note[] {
+  return (
+    required().prepare('SELECT * FROM notes ORDER BY book, chapter, verse, id').all() as Record<
+      string,
+      unknown
+    >[]
+  ).map(mapNote)
+}
+
+/** Every highlight, ordered canonically — for the Markdown export. */
+export function listAllHighlights(): Highlight[] {
+  return (
+    required()
+      .prepare('SELECT * FROM highlights ORDER BY book, chapter, verse, id')
+      .all() as Record<string, unknown>[]
+  ).map(mapHighlight)
+}
+
 // ---- Imported translations (user-owned NKJV/NASB etc. from MySword/e-Sword) ----
 
 const ENTITIES: Record<string, string> = {
@@ -350,4 +415,177 @@ export function deleteImported(id: string): void {
   const d = required()
   d.prepare('DELETE FROM imported_verses WHERE translation_id = ?').run(id)
   d.prepare('DELETE FROM imported_translations WHERE id = ?').run(id)
+}
+
+// ---- Bookmarks & reading history (v2) ----
+
+function mapBookmark(r: Record<string, unknown>): Bookmark {
+  return {
+    id: r.id as number,
+    name: r.name as string,
+    book: r.book as string,
+    chapter: r.chapter as number,
+    verse: r.verse as number,
+    note: (r.note as string) ?? null,
+    createdAt: r.created_at as number
+  }
+}
+
+export function listBookmarks(): Bookmark[] {
+  return (
+    required()
+      .prepare('SELECT * FROM bookmarks ORDER BY created_at DESC')
+      .all() as Record<string, unknown>[]
+  ).map(mapBookmark)
+}
+
+export function addBookmark(input: {
+  name: string
+  book: string
+  chapter: number
+  verse?: number
+  note?: string
+}): Bookmark {
+  const now = Date.now()
+  const info = required()
+    .prepare('INSERT INTO bookmarks (name, book, chapter, verse, note, created_at) VALUES (?,?,?,?,?,?)')
+    .run(input.name, input.book, input.chapter, input.verse ?? 1, input.note ?? null, now)
+  return {
+    id: Number(info.lastInsertRowid),
+    name: input.name,
+    book: input.book,
+    chapter: input.chapter,
+    verse: input.verse ?? 1,
+    note: input.note ?? null,
+    createdAt: now
+  }
+}
+
+export function deleteBookmark(id: number): void {
+  required().prepare('DELETE FROM bookmarks WHERE id = ?').run(id)
+}
+
+/** Record a visited chapter, skipping a duplicate of the most recent entry; keep the last 200. */
+export function addHistory(book: string, chapter: number, verse?: number): void {
+  const d = required()
+  const last = d
+    .prepare('SELECT book, chapter FROM reading_history ORDER BY id DESC LIMIT 1')
+    .get() as { book: string; chapter: number } | undefined
+  if (last && last.book === book && last.chapter === chapter) return
+  d.prepare('INSERT INTO reading_history (book, chapter, verse, visited_at) VALUES (?,?,?,?)').run(
+    book,
+    chapter,
+    verse ?? null,
+    Date.now()
+  )
+  d.exec(
+    'DELETE FROM reading_history WHERE id NOT IN (SELECT id FROM reading_history ORDER BY id DESC LIMIT 200)'
+  )
+}
+
+export function listHistory(limit = 50): HistoryEntry[] {
+  return (
+    required()
+      .prepare('SELECT * FROM reading_history ORDER BY id DESC LIMIT ?')
+      .all(limit) as Record<string, unknown>[]
+  ).map((r) => ({
+    id: r.id as number,
+    book: r.book as string,
+    chapter: r.chapter as number,
+    verse: (r.verse as number) ?? null,
+    visitedAt: r.visited_at as number
+  }))
+}
+
+// ---- Learn: spaced repetition + progress (v2) ----
+
+function mapCard(r: Record<string, unknown>): SrsCard {
+  return {
+    strongs: r.strongs as string,
+    language: r.language as string,
+    ease: r.ease as number,
+    intervalDays: r.interval_days as number,
+    dueAt: r.due_at as number,
+    reps: r.reps as number,
+    lapses: r.lapses as number,
+    lastGrade: (r.last_grade as number) ?? null,
+    updatedAt: r.updated_at as number
+  }
+}
+
+export function getCard(strongs: string): SrsCard | null {
+  const r = required().prepare('SELECT * FROM srs_cards WHERE strongs = ?').get(strongs) as
+    | Record<string, unknown>
+    | undefined
+  return r ? mapCard(r) : null
+}
+
+/** Apply an SM-2 review to a card (creating it if new) and persist the result. */
+export function reviewCard(strongs: string, language: string, grade: number): SrsCard {
+  const next = schedule(getCard(strongs) ?? newCard(strongs, language), grade, Date.now())
+  required()
+    .prepare(
+      `INSERT INTO srs_cards (strongs, language, ease, interval_days, due_at, reps, lapses, last_grade, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(strongs) DO UPDATE SET
+         language=excluded.language, ease=excluded.ease, interval_days=excluded.interval_days,
+         due_at=excluded.due_at, reps=excluded.reps, lapses=excluded.lapses,
+         last_grade=excluded.last_grade, updated_at=excluded.updated_at`
+    )
+    .run(
+      next.strongs,
+      next.language,
+      next.ease,
+      next.intervalDays,
+      next.dueAt,
+      next.reps,
+      next.lapses,
+      next.lastGrade,
+      next.updatedAt
+    )
+  return next
+}
+
+export function listDueCards(language: string, limit = 100): SrsCard[] {
+  return (
+    required()
+      .prepare('SELECT * FROM srs_cards WHERE language = ? AND due_at <= ? ORDER BY due_at LIMIT ?')
+      .all(language, Date.now(), limit) as Record<string, unknown>[]
+  ).map(mapCard)
+}
+
+export function srsStats(language: string): SrsStats {
+  const d = required()
+  const total = (
+    d.prepare('SELECT COUNT(*) AS n FROM srs_cards WHERE language = ?').get(language) as { n: number }
+  ).n
+  const due = (
+    d
+      .prepare('SELECT COUNT(*) AS n FROM srs_cards WHERE language = ? AND due_at <= ?')
+      .get(language, Date.now()) as { n: number }
+  ).n
+  const learned = (
+    d.prepare('SELECT COUNT(*) AS n FROM srs_cards WHERE language = ? AND reps > 0').get(language) as {
+      n: number
+    }
+  ).n
+  return { total, due, learned }
+}
+
+export function getLearnProgress(module: string): Record<string, string> {
+  const rows = required()
+    .prepare('SELECT key, value FROM learn_progress WHERE module = ?')
+    .all(module) as { key: string; value: string }[]
+  const out: Record<string, string> = {}
+  for (const r of rows) out[r.key] = r.value
+  return out
+}
+
+export function setLearnProgress(module: string, key: string, value: string): void {
+  required()
+    .prepare(
+      `INSERT INTO learn_progress (module, key, value, updated_at) VALUES (?,?,?,?)
+       ON CONFLICT(module, key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`
+    )
+    .run(module, key, value, Date.now())
 }

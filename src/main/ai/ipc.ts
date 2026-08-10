@@ -30,7 +30,8 @@ export function registerAiIpc(): void {
       conversationId: string,
       messages: ChatMessage[],
       grounding: { translation: string } | null,
-      extraContext: ChatCitation[] = []
+      extraContext: ChatCitation[] = [],
+      activeContext?: string
     ) => {
       const send = (ev: unknown): void => {
         if (!e.sender.isDestroyed()) e.sender.send('ai:token', ev)
@@ -45,6 +46,7 @@ export function registerAiIpc(): void {
           messages,
           grounding,
           extraContext,
+          activeContext,
           controller.signal
         )) {
           if (part.citations) {
@@ -72,6 +74,30 @@ export function registerAiIpc(): void {
   ipcMain.handle('ai:stop', (_e, conversationId: string) => {
     chatControllers.get(conversationId)?.abort()
   })
+
+  // One-shot completion (no token streaming) — used by the Notebook's "ask AI to edit" so it
+  // never interferes with the streaming chat transcript. Returns the full text.
+  ipcMain.handle(
+    'ai:complete',
+    async (
+      _e,
+      messages: ChatMessage[],
+      grounding: { translation: string } | null,
+      activeContext?: string
+    ) => {
+      const controller = new AbortController()
+      const convId = `nb_${Date.now().toString(36)}`
+      let text = ''
+      try {
+        for await (const part of answer(convId, messages, grounding, [], activeContext, controller.signal)) {
+          if (part.token) text += part.token
+        }
+      } catch (err) {
+        return { text, error: err instanceof Error ? err.message : String(err) }
+      }
+      return { text }
+    }
+  )
 
   // ---- Documents (RAG) ----
   ipcMain.handle('ai:listDocuments', () => listDocuments())

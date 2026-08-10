@@ -176,19 +176,64 @@ CREATE TABLE places (
   feature_type TEXT,
   comment      TEXT,
   verse_count  INTEGER NOT NULL DEFAULT 0,
-  verses       TEXT NOT NULL DEFAULT '[]'
+  verses       TEXT NOT NULL DEFAULT '[]',
+  start_year   INTEGER,              -- earliest year the place appears active (derived; null = unknown)
+  end_year     INTEGER               -- latest year the place appears active (derived)
 );
 
 CREATE TABLE events (
   id           INTEGER PRIMARY KEY, -- Theographic eventID
   title        TEXT NOT NULL,
   start_year   INTEGER,
+  end_year     INTEGER,             -- derived from the source event duration (null = point event)
   sort_key     REAL,
   participants TEXT NOT NULL DEFAULT '[]', -- JSON array of personID
   place_ids    TEXT NOT NULL DEFAULT '[]', -- JSON array of placeID
   verses       TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX idx_events_sort ON events (sort_key);
+
+-- Cross-references (Treasury of Scripture Knowledge, public domain, via OpenBible.info). A "from"
+-- verse links to a ranked list of related "to" verses (which may be a small range), keyed to our
+-- "Book" ids so each row links straight into the reader.
+CREATE TABLE cross_references (
+  from_book     TEXT NOT NULL,
+  from_chapter  INTEGER NOT NULL,
+  from_verse    INTEGER NOT NULL,
+  to_book       TEXT NOT NULL,
+  to_chapter    INTEGER NOT NULL,
+  to_verse_start INTEGER NOT NULL,
+  to_verse_end  INTEGER,            -- null unless the target is a range
+  votes         INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_xref_from ON cross_references (from_book, from_chapter, from_verse);
+
+-- Frequency-ranked vocabulary for the Learn tab, derived from the tagged original-language text.
+CREATE TABLE vocab (
+  strongs   TEXT PRIMARY KEY,       -- 'G26' / 'H430'
+  language  TEXT NOT NULL,          -- 'greek' | 'hebrew'
+  lemma     TEXT NOT NULL,
+  translit  TEXT,
+  gloss     TEXT,
+  frequency INTEGER NOT NULL,       -- number of occurrences in the tagged text
+  testament TEXT NOT NULL           -- 'OT' | 'NT'
+);
+CREATE INDEX idx_vocab_lang ON vocab (language, frequency);
+
+-- Interactive grammar lessons — original, inductive "read real Greek/Hebrew early" courses (our own
+-- wording; readings are references into the tagged Greek NT / Hebrew OT, rendered live by the
+-- interlinear). vocab_json / readings_json / exercises_json are JSON arrays used by Learn > Grammar.
+CREATE TABLE grammar_lessons (
+  id             INTEGER PRIMARY KEY,
+  course         TEXT NOT NULL,     -- 'koine' | 'hebrew'
+  chapter_no     INTEGER NOT NULL,
+  title          TEXT NOT NULL,
+  body_md        TEXT NOT NULL,
+  vocab_json     TEXT NOT NULL DEFAULT '[]',
+  readings_json  TEXT NOT NULL DEFAULT '[]', -- [{ ref: "John.1.1", note }] rendered from original_tokens
+  exercises_json TEXT NOT NULL DEFAULT '[]',
+  sort           INTEGER NOT NULL DEFAULT 0
+);
 
 -- Full-text search over verse text (standalone contentless-style table).
 CREATE VIRTUAL TABLE verses_fts USING fts5 (

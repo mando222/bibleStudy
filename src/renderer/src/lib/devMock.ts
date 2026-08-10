@@ -63,6 +63,11 @@ export async function installDevMock(): Promise<void> {
     getPlaceVerses: async () => [],
     getEvents: async () => [],
     getMapLand: async () => '',
+    getMapRegions: async () => '',
+    getCrossReferences: async () => [],
+    getVocab: async () => [],
+    getGrammarLessons: async () => [],
+    getGrammarLesson: async () => null,
     getLexiconByWord: async (word) => (/θε/.test(word) ? 'G2316' : null),
     getLexiconEntries: async (strongs) => {
       const greek = !strongs.toUpperCase().startsWith('H')
@@ -218,7 +223,36 @@ export async function installDevMock(): Promise<void> {
       if (i >= 0) notes.splice(i, 1)
     },
     importTranslation: async () => null, // file import only works in the Electron app
-    deleteImportedTranslation: async () => undefined
+    deleteImportedTranslation: async () => undefined,
+    listBookmarks: async () => [],
+    addBookmark: async (input) => ({
+      id: 1,
+      name: input.name,
+      book: input.book,
+      chapter: input.chapter,
+      verse: input.verse ?? 1,
+      note: input.note ?? null,
+      createdAt: Date.now()
+    }),
+    deleteBookmark: async () => undefined,
+    addHistory: async () => undefined,
+    listHistory: async () => [],
+    listDueCards: async () => [],
+    reviewCard: async (strongs, language, grade) => ({
+      strongs,
+      language,
+      ease: 2.5,
+      intervalDays: 1,
+      dueAt: Date.now() + 86_400_000,
+      reps: 1,
+      lapses: 0,
+      lastGrade: grade,
+      updatedAt: Date.now()
+    }),
+    srsStats: async () => ({ total: 0, due: 0, learned: 0 }),
+    getLearnProgress: async () => ({}),
+    setLearnProgress: async () => undefined,
+    exportMarkdown: async () => null
   }
 
   ;(window as unknown as { api: BibleApi }).api = mock
@@ -308,6 +342,11 @@ export async function installDevMock(): Promise<void> {
       return { text, citations: cites }
     },
     stop: async () => undefined,
+    complete: async (_messages, _grounding, activeContext) => ({
+      text: `(Preview) The desktop assistant would revise your note here${
+        activeContext ? `, aware you're reading ${activeContext}` : ''
+      }.`
+    }),
     onToken: (cb) => {
       tokenListeners.add(cb)
       return () => tokenListeners.delete(cb)

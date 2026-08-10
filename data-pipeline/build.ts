@@ -869,6 +869,46 @@ async function buildTheographic(
   const placeIdByRec = new Map(places.map((p) => [p.id, p.fields.placeID as number]))
   const first = (a: unknown): string | undefined => (a as string[] | undefined)?.[0]
 
+  // Parse a Theographic duration like "930Y", "7D", "3M" into whole years (0 for < 1 year).
+  const durationYears = (d: unknown): number => {
+    const m = /(\d+)\s*([YMD])/i.exec(String(d ?? ''))
+    if (!m) return 0
+    const n = Number(m[1])
+    const unit = m[2].toUpperCase()
+    return unit === 'Y' ? n : unit === 'M' ? Math.floor(n / 12) : 0
+  }
+
+  // Per-record year signals used to derive place active-windows + event end-years.
+  const birthByRec = new Map<string, number | null>(people.map((p) => [p.id, num(p.fields.birthYear)]))
+  const deathByRec = new Map<string, number | null>(people.map((p) => [p.id, num(p.fields.deathYear)]))
+  const eventStartByRec = new Map<string, number | null>()
+  const eventEndByRec = new Map<string, number | null>()
+  for (const ev of events) {
+    const start = num(ev.fields.startDate)
+    eventStartByRec.set(ev.id, start)
+    const ranged = !!ev.fields.rangeFlag
+    eventEndByRec.set(ev.id, start != null && ranged ? start + durationYears(ev.fields.duration) : start)
+  }
+  // Derive a place's [start,end] active-window from associated events + people born/died there.
+  const placeWindow = (f: Record<string, unknown>): { start: number | null; end: number | null } => {
+    const ys: number[] = []
+    for (const r of (f.eventsHere as string[]) || []) {
+      const s = eventStartByRec.get(r)
+      const e = eventEndByRec.get(r)
+      if (s != null) ys.push(s)
+      if (e != null) ys.push(e)
+    }
+    for (const r of (f.peopleBorn as string[]) || []) {
+      const b = birthByRec.get(r)
+      if (b != null) ys.push(b)
+    }
+    for (const r of (f.peopleDied as string[]) || []) {
+      const d = deathByRec.get(r)
+      if (d != null) ys.push(d)
+    }
+    return ys.length ? { start: Math.min(...ys), end: Math.max(...ys) } : { start: null, end: null }
+  }
+
   // People + relationships
   const insP = db.prepare(
     `INSERT OR REPLACE INTO people (id,name,gender,birth_year,death_year,father_id,mother_id,slug,summary,verse_count,verses)
@@ -906,10 +946,10 @@ async function buildTheographic(
   }
   db.exec('COMMIT')
 
-  // Places
+  // Places (with a derived active year-window)
   const insPl = db.prepare(
-    `INSERT OR REPLACE INTO places (id,name,lat,lon,feature_type,comment,verse_count,verses)
-     VALUES (?,?,?,?,?,?,?,?)`
+    `INSERT OR REPLACE INTO places (id,name,lat,lon,feature_type,comment,verse_count,verses,start_year,end_year)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`
   )
   db.exec('BEGIN')
   for (const pl of places) {
@@ -917,6 +957,7 @@ async function buildTheographic(
     const id = f.placeID as number | undefined
     if (id == null) continue
     const vs = resolveVerses(f.verses)
+    const win = placeWindow(f)
     insPl.run(
       id,
       (f.kjvName as string) || (f.esvName as string) || (f.placeLookup as string) || `Place ${id}`,
@@ -925,15 +966,17 @@ async function buildTheographic(
       (f.featureType as string) || null,
       ((f.comment as string) || '').slice(0, 200) || null,
       vs.length,
-      JSON.stringify(vs)
+      JSON.stringify(vs),
+      win.start,
+      win.end
     )
   }
   db.exec('COMMIT')
 
-  // Events
+  // Events (with a derived end-year for ranged events)
   const insE = db.prepare(
-    `INSERT OR REPLACE INTO events (id,title,start_year,sort_key,participants,place_ids,verses)
-     VALUES (?,?,?,?,?,?,?)`
+    `INSERT OR REPLACE INTO events (id,title,start_year,end_year,sort_key,participants,place_ids,verses)
+     VALUES (?,?,?,?,?,?,?,?)`
   )
   db.exec('BEGIN')
   for (const ev of events) {
@@ -950,6 +993,7 @@ async function buildTheographic(
       id,
       (f.title as string) || `Event ${id}`,
       num(f.startDate),
+      eventEndByRec.get(ev.id) ?? null,
       flt(f.sortKey) ?? num(f.startDate) ?? 0,
       JSON.stringify(parts),
       JSON.stringify(plcs),
@@ -970,6 +1014,157 @@ async function buildMapLand(db: DatabaseSync): Promise<number> {
   const text = readFileSync(path, 'utf8')
   db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('land_geojson', ?)").run(text)
   return text.length
+}
+
+/** Hand-authored, approximate kingdoms/regions overlay (checked-in source, MIT/CC0), stored in meta. */
+function buildMapRegions(db: DatabaseSync): number {
+  const path = join(HERE, 'assets', 'regions.geojson')
+  if (!existsSync(path)) return 0
+  const text = readFileSync(path, 'utf8')
+  db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('regions_geojson', ?)").run(text)
+  return text.length
+}
+
+/** Cross-references (Treasury of Scripture Knowledge via OpenBible.info, CC-BY). Best-effort. */
+async function buildCrossReferences(db: DatabaseSync): Promise<number> {
+  const validBooks = new Set(BOOKS.map((b) => b.id))
+  const parseRef = (s: string): { book: string; ch: number; v: number } | null => {
+    const m = /^([^.]+)\.(\d+)\.(\d+)$/.exec(s.trim())
+    return m && validBooks.has(m[1]) ? { book: m[1], ch: Number(m[2]), v: Number(m[3]) } : null
+  }
+  let path: string
+  try {
+    path = await downloadCached(
+      'cross_references.txt',
+      'https://raw.githubusercontent.com/scrollmapper/bible_databases/master/sources/extras/cross_references.txt'
+    )
+  } catch (e) {
+    console.warn(`  cross-references skipped (download failed): ${(e as Error).message}`)
+    return 0
+  }
+  const ins = db.prepare(
+    `INSERT INTO cross_references (from_book,from_chapter,from_verse,to_book,to_chapter,to_verse_start,to_verse_end,votes)
+     VALUES (?,?,?,?,?,?,?,?)`
+  )
+  const lines = readFileSync(path, 'utf8').split('\n')
+  let n = 0
+  db.exec('BEGIN')
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i]
+    if (!line) continue
+    const [fromRef, toRef, votesStr] = line.split('\t')
+    if (!fromRef || !toRef) continue
+    const from = parseRef(fromRef)
+    if (!from) continue
+    const [toStart, toEnd] = toRef.split('-')
+    const ts = parseRef(toStart)
+    if (!ts) continue
+    let endV: number | null = null
+    if (toEnd) {
+      const te = parseRef(toEnd)
+      if (te && te.book === ts.book && te.ch === ts.ch) endV = te.v
+    }
+    ins.run(from.book, from.ch, from.v, ts.book, ts.ch, ts.v, endV, Number(votesStr) || 0)
+    n++
+  }
+  db.exec('COMMIT')
+  return n
+}
+
+/** Frequency-ranked vocabulary for the Learn tab, from the tagged Greek NT (NA) + Hebrew OT (MT). */
+function buildVocab(db: DatabaseSync): number {
+  const clean = (g: string | null): string | null => {
+    if (!g) return null
+    return (
+      g
+        .replace(/<[^>]+>/g, '')
+        .split(/[;,]/)[0]
+        .replace(/^\s*\d+[).]\s*/, '')
+        .trim()
+        .slice(0, 60) || null
+    )
+  }
+  const rows = db
+    .prepare(
+      `SELECT ot.strongs AS strongs, COUNT(*) AS freq, sl.lemma AS lemma, sl.translit AS translit,
+              sl.kjv_def AS kjv, sl.definition AS def
+       FROM original_tokens ot LEFT JOIN strongs_lexicon sl ON sl.id = ot.strongs
+       WHERE ot.edition IN ('NA','MT') AND ot.strongs IS NOT NULL AND ot.strongs != ''
+       GROUP BY ot.strongs`
+    )
+    .all() as {
+    strongs: string
+    freq: number
+    lemma: string | null
+    translit: string | null
+    kjv: string | null
+    def: string | null
+  }[]
+  const ins = db.prepare(
+    `INSERT OR REPLACE INTO vocab (strongs,language,lemma,translit,gloss,frequency,testament)
+     VALUES (?,?,?,?,?,?,?)`
+  )
+  let n = 0
+  db.exec('BEGIN')
+  for (const r of rows) {
+    if (!/^[GH]\d+$/.test(r.strongs)) continue // skip compound/irregular tags
+    const greek = r.strongs.startsWith('G')
+    ins.run(
+      r.strongs,
+      greek ? 'greek' : 'hebrew',
+      r.lemma || r.strongs,
+      r.translit,
+      clean(r.kjv) ?? clean(r.def),
+      r.freq,
+      greek ? 'NT' : 'OT'
+    )
+    n++
+  }
+  db.exec('COMMIT')
+  return n
+}
+
+/** Original "read real Greek/Hebrew early" courses (our own text; readings reference the tagged text). */
+function buildGrammar(db: DatabaseSync): number {
+  type Lesson = {
+    chapter_no: number
+    title: string
+    body_md: string
+    vocab?: { lemma: string; gloss: string }[]
+    readings?: { ref: string; note?: string }[]
+    exercises?: { prompt: string; answer: string }[]
+  }
+  const courses: { course: string; file: string }[] = [
+    { course: 'koine', file: 'greek-course.json' },
+    { course: 'hebrew', file: 'hebrew-course.json' }
+  ]
+  const ins = db.prepare(
+    `INSERT OR REPLACE INTO grammar_lessons (id,course,chapter_no,title,body_md,vocab_json,readings_json,exercises_json,sort)
+     VALUES (?,?,?,?,?,?,?,?,?)`
+  )
+  let id = 0
+  db.exec('BEGIN')
+  for (const c of courses) {
+    const path = join(HERE, 'assets', c.file)
+    if (!existsSync(path)) continue
+    const lessons = JSON.parse(readFileSync(path, 'utf8')) as Lesson[]
+    for (const l of lessons) {
+      id++
+      ins.run(
+        id,
+        c.course,
+        l.chapter_no,
+        l.title,
+        l.body_md,
+        JSON.stringify(l.vocab ?? []),
+        JSON.stringify(l.readings ?? []),
+        JSON.stringify(l.exercises ?? []),
+        id
+      )
+    }
+  }
+  db.exec('COMMIT')
+  return id
 }
 
 // ---- build -----------------------------------------------------------------
@@ -1206,11 +1401,27 @@ async function main(): Promise<void> {
   const landBytes = await buildMapLand(db)
   process.stdout.write(` ${Math.round(landBytes / 1024)} KB\n`)
 
+  process.stdout.write('• Map regions (hand-authored kingdoms overlay)…')
+  const regionBytes = buildMapRegions(db)
+  process.stdout.write(` ${Math.round(regionBytes / 1024)} KB\n`)
+
+  process.stdout.write('• Cross-references (Treasury of Scripture Knowledge, OpenBible CC-BY)…')
+  const xrefCount = await buildCrossReferences(db)
+  process.stdout.write(` ${xrefCount} links\n`)
+
+  process.stdout.write('• Vocabulary (frequency-ranked, from tagged NA + MT)…')
+  const vocabCount = buildVocab(db)
+  process.stdout.write(` ${vocabCount} words\n`)
+
+  process.stdout.write('• Greek grammar course (read-early lessons, original)…')
+  const grammarCount = buildGrammar(db)
+  process.stdout.write(` ${grammarCount} lessons\n`)
+
   const insMeta = db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?,?)')
   insMeta.run('schema_version', '1')
   insMeta.run(
     'sources',
-    'helloao Free Use Bible API; openscriptures/strongs (CC-BY-SA); kaiserlik/kjv (KJV+Strong’s); bereanbible.com bsb_tables (BSB interlinear, public domain); STEPBible TAHOT/TAGNT + lexicons TBESH/TBESG/TFLSJ (CC-BY); Septuagint: Swete via Open Greek and Latin / First1KGreek, nathans/lxx-swete (CC-BY-SA 4.0); Theographic Bible Metadata (people/places/events, CC-BY-SA 4.0); Natural Earth land (public domain)'
+    'helloao Free Use Bible API; openscriptures/strongs (CC-BY-SA); kaiserlik/kjv (KJV+Strong’s); bereanbible.com bsb_tables (BSB interlinear, public domain); STEPBible TAHOT/TAGNT + lexicons TBESH/TBESG/TFLSJ (CC-BY); Septuagint: Swete via Open Greek and Latin / First1KGreek, nathans/lxx-swete (CC-BY-SA 4.0); Theographic Bible Metadata (people/places/events, CC-BY-SA 4.0); Natural Earth land (public domain); Treasury of Scripture Knowledge cross-references via OpenBible.info (CC-BY); hand-authored kingdoms overlay (this project, CC0); Greek grammar course authored for this project, readings rendered from the tagged Greek NT (Nestle 1904 PD / STEPBible CC-BY)'
   )
 
   // ---- assertions --------------------------------------------------------
@@ -1392,6 +1603,32 @@ async function main(): Promise<void> {
   const mosesVerses = moses ? (JSON.parse(moses.verses) as string[]) : []
   if (mosesVerses.length < 100 || !/^[A-Za-z0-9]+\.\d+\.\d+$/.test(mosesVerses[0] ?? ''))
     errors.push(`Moses verse refs unexpected: ${mosesVerses.length}, first=${mosesVerses[0]}`)
+
+  // v0.1.2: derived place windows, vocabulary, and grammar are present.
+  const placeWin = (
+    db.prepare('SELECT COUNT(*) n FROM places WHERE start_year IS NOT NULL').get() as { n: number }
+  ).n
+  if (placeWin < 50) errors.push(`places with a derived year-window too few: ${placeWin}`)
+  const vocabN = (db.prepare('SELECT COUNT(*) n FROM vocab').get() as { n: number }).n
+  if (vocabN < 3000) errors.push(`vocab too few: ${vocabN} (expected thousands)`)
+  const greekVocab = (
+    db.prepare("SELECT COUNT(*) n FROM vocab WHERE language='greek'").get() as { n: number }
+  ).n
+  if (greekVocab < 1000) errors.push(`greek vocab too few: ${greekVocab}`)
+  // Cross-references are best-effort (network); assert format only when present.
+  const xrefN = (db.prepare('SELECT COUNT(*) n FROM cross_references').get() as { n: number }).n
+  if (xrefN > 0) {
+    const jn316 = (
+      db
+        .prepare(
+          "SELECT COUNT(*) n FROM cross_references WHERE from_book='John' AND from_chapter=3 AND from_verse=16"
+        )
+        .get() as { n: number }
+    ).n
+    if (jn316 < 1) errors.push('cross_references present but John 3:16 has none')
+  } else {
+    console.warn('  note: cross_references empty (TSK download skipped)')
+  }
 
   db.close()
 

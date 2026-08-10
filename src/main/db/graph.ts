@@ -96,12 +96,11 @@ export function getAncestry(id: number): PersonRef[] {
   return chain.reverse() // earliest ancestor first
 }
 
-/** Geolocated places for the map. */
+/** Geolocated places for the map. (SELECT * so derived start_year/end_year are read when present.) */
 export function getPlaces(): PlaceItem[] {
   const rows = db()
     .prepare(
-      `SELECT id, name, lat, lon, feature_type, verse_count FROM places
-       WHERE lat IS NOT NULL AND lon IS NOT NULL ORDER BY verse_count DESC`
+      `SELECT * FROM places WHERE lat IS NOT NULL AND lon IS NOT NULL ORDER BY verse_count DESC`
     )
     .all() as Record<string, unknown>[]
   return rows.map((r) => ({
@@ -110,7 +109,9 @@ export function getPlaces(): PlaceItem[] {
     lat: r.lat as number,
     lon: r.lon as number,
     featureType: (r.feature_type as string) ?? null,
-    verseCount: r.verse_count as number
+    verseCount: r.verse_count as number,
+    startYear: (r.start_year as number) ?? null,
+    endYear: (r.end_year as number) ?? null
   }))
 }
 
@@ -137,6 +138,7 @@ export function getEvents(): EventItem[] {
     id: r.id as number,
     title: r.title as string,
     startYear: (r.start_year as number) ?? null,
+    endYear: (r.end_year as number) ?? null,
     participants: refs(r.participants, nameOf),
     places: refs(r.place_ids, placeOf),
     verses: JSON.parse((r.verses as string) || '[]') as string[]

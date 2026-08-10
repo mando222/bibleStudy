@@ -1,5 +1,6 @@
 import { useAppStore } from '@/store/useAppStore'
 import { BOOK_BY_ID } from '@shared/books'
+import HistoryPanel from './HistoryPanel'
 import {
   BookIcon,
   SunIcon,
@@ -8,6 +9,7 @@ import {
   InterlinearIcon,
   InfoIcon,
   SparkleIcon,
+  NotebookIcon,
   PenIcon
 } from './icons'
 
@@ -23,6 +25,7 @@ export default function TopBar(): JSX.Element {
   const toggleInterlinear = useAppStore((s) => s.toggleInterlinear)
   const setAboutOpen = useAppStore((s) => s.setAboutOpen)
   const setAssistantOpen = useAppStore((s) => s.setAssistantOpen)
+  const setNotebookOpen = useAppStore((s) => s.setNotebookOpen)
   const book = useAppStore((s) => s.book)
   const chapter = useAppStore((s) => s.chapter)
 
@@ -105,6 +108,16 @@ export default function TopBar(): JSX.Element {
         <SparkleIcon className="w-4 h-4" />
         Assistant
       </button>
+
+      <button
+        onClick={() => setNotebookOpen(true)}
+        className="p-2 rounded-md hover:bg-elevated text-muted"
+        title="Notebook — free-form notes saved to a local folder"
+      >
+        <NotebookIcon className="w-4 h-4" />
+      </button>
+
+      <HistoryPanel />
 
       <button
         onClick={toggleTheme}

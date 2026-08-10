@@ -22,7 +22,10 @@ import type {
   LexiconGroup,
   LexiconEntry,
   LexBrowseOptions,
-  LexBrowseResult
+  LexBrowseResult,
+  CrossRef,
+  VocabItem,
+  GrammarLesson
 } from '../../shared/types'
 
 let db: DatabaseSync | null = null
@@ -170,6 +173,85 @@ export function getMapLand(): string {
     | { value: string }
     | undefined
   return r?.value ?? ''
+}
+
+/** True if a table exists — lets new-in-0.1.2 queries no-op gracefully before a db:build. */
+function hasTable(name: string): boolean {
+  return !!required()
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(name)
+}
+
+/** Hand-authored, approximate kingdoms/regions overlay (GeoJSON string) for the map time slider. */
+export function getMapRegions(): string {
+  const r = required().prepare("SELECT value FROM meta WHERE key = 'regions_geojson'").get() as
+    | { value: string }
+    | undefined
+  return r?.value ?? ''
+}
+
+/** Treasury of Scripture Knowledge cross-references for a verse, most-voted first. */
+export function getCrossReferences(book: string, chapter: number, verse: number): CrossRef[] {
+  if (!hasTable('cross_references')) return []
+  const rows = required()
+    .prepare(
+      `SELECT to_book, to_chapter, to_verse_start, to_verse_end, votes FROM cross_references
+       WHERE from_book = ? AND from_chapter = ? AND from_verse = ? ORDER BY votes DESC LIMIT 60`
+    )
+    .all(book, chapter, verse) as Record<string, unknown>[]
+  return rows.map((r) => ({
+    ref: `${r.to_book}.${r.to_chapter}.${r.to_verse_start}`,
+    toVerseEnd: (r.to_verse_end as number) ?? null,
+    votes: r.votes as number
+  }))
+}
+
+/** Frequency-ranked vocabulary (from the tagged original-language text) for the Learn flashcards. */
+export function getVocab(language: 'greek' | 'hebrew', limit = 50, offset = 0): VocabItem[] {
+  if (!hasTable('vocab')) return []
+  const rows = required()
+    .prepare('SELECT * FROM vocab WHERE language = ? ORDER BY frequency DESC LIMIT ? OFFSET ?')
+    .all(language, limit, offset) as Record<string, unknown>[]
+  return rows.map((r) => ({
+    strongs: r.strongs as string,
+    language: r.language as 'greek' | 'hebrew',
+    lemma: r.lemma as string,
+    translit: (r.translit as string) ?? null,
+    gloss: (r.gloss as string) ?? null,
+    frequency: r.frequency as number,
+    testament: r.testament as 'OT' | 'NT'
+  }))
+}
+
+function mapLesson(r: Record<string, unknown>): GrammarLesson {
+  return {
+    id: r.id as number,
+    course: r.course as string,
+    chapterNo: r.chapter_no as number,
+    title: r.title as string,
+    bodyMd: (r.body_md as string) ?? '',
+    vocab: JSON.parse((r.vocab_json as string) || '[]'),
+    readings: JSON.parse((r.readings_json as string) || '[]'),
+    exercises: JSON.parse((r.exercises_json as string) || '[]')
+  }
+}
+
+/** All interactive grammar lessons (our original read-early Greek & Hebrew courses), in order. */
+export function getGrammarLessons(): GrammarLesson[] {
+  if (!hasTable('grammar_lessons')) return []
+  return (
+    required()
+      .prepare('SELECT * FROM grammar_lessons ORDER BY sort, chapter_no')
+      .all() as Record<string, unknown>[]
+  ).map(mapLesson)
+}
+
+export function getGrammarLesson(id: number): GrammarLesson | null {
+  if (!hasTable('grammar_lessons')) return null
+  const r = required().prepare('SELECT * FROM grammar_lessons WHERE id = ?').get(id) as
+    | Record<string, unknown>
+    | undefined
+  return r ? mapLesson(r) : null
 }
 
 /** Browse the Strong's lexicon by hand: filter by language, search by number/translit/lemma/gloss. */

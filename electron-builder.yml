@@ -12,9 +12,12 @@ files:
   - package.json
 
 # The bundled Bible database ships as a resource; resolveDbPath() looks in process.resourcesPath.
+# The app icon ships too, so the runtime window/dock/taskbar icon can be set (esp. on Linux).
 extraResources:
   - from: resources/bible.sqlite
     to: bible.sqlite
+  - from: build/icon.png
+    to: icon.png
 
 # Native binaries (llama.cpp N-API + the sqlite-vec loadable extension) can't live inside the asar.
 asarUnpack:

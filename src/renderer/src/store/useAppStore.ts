@@ -3,9 +3,19 @@ import { persist } from 'zustand/middleware'
 import type { Translation, ChatCitation } from '@shared/types'
 
 export type Theme = 'light' | 'dark'
-export type StudyTab = 'lexicon' | 'notes' | 'search' | 'apparatus'
+export type StudyTab = 'lexicon' | 'notes' | 'search' | 'apparatus' | 'crossrefs'
 /** Far-right workspace tabs. 'bible' is the reader; the rest are their own full-window views. */
-export type Activity = 'bible' | 'genealogies' | 'timelines' | 'maps' | 'words'
+export type Activity = 'bible' | 'genealogies' | 'timelines' | 'maps' | 'words' | 'learn'
+
+/** Which sub-module of the Learn (Greek & Hebrew) activity is showing. */
+export type LearnModule = 'alphabet' | 'flashcards' | 'drills' | 'grammar'
+export type LearnLanguage = 'greek' | 'hebrew'
+
+/** A named entity the reader is currently looking at, fed to the assistant as live context. */
+export interface ActiveRef {
+  id: number
+  name: string
+}
 
 /** One turn in the assistant transcript (persisted so a conversation survives a restart). */
 export interface ChatMsg {
@@ -163,6 +173,38 @@ interface AppState {
   chatMessages: ChatMsg[]
   setChatMessages: (m: ChatMsg[]) => void
 
+  // Active-context slice (transient): what the reader is currently looking at, so the assistant
+  // can be aware of the open passage / selected place / person without the user re-typing it.
+  activeVerse: number | null
+  setActiveVerse: (v: number | null) => void
+  activePerson: ActiveRef | null
+  setActivePerson: (p: ActiveRef | null) => void
+  activePlace: ActiveRef | null
+  setActivePlace: (p: ActiveRef | null) => void
+  activeEvent: ActiveRef | null
+  setActiveEvent: (e: ActiveRef | null) => void
+
+  // Maps: year for the (approximate) kingdoms overlay + the overlay toggle. Cities are never
+  // filtered by year — their per-place date coverage is too sparse to be reliable.
+  mapYear: number
+  setMapYear: (y: number) => void
+  mapShowRegions: boolean
+  setMapShowRegions: (v: boolean) => void
+
+  // Notebook drawer (free-form Markdown notes saved to a local folder).
+  notebookOpen: boolean
+  setNotebookOpen: (v: boolean) => void
+  activeNotebookFile: string | null
+  setActiveNotebookFile: (name: string | null) => void
+
+  // Learn (Greek & Hebrew) activity state.
+  learnModule: LearnModule
+  setLearnModule: (m: LearnModule) => void
+  learnLanguage: LearnLanguage
+  setLearnLanguage: (l: LearnLanguage) => void
+  learnLessonIdx: number
+  setLearnLessonIdx: (i: number) => void
+
   // Reading selection
   primary: string // primary translation id
   parallels: string[] // additional translation ids shown side-by-side (incl. primary at [0])
@@ -246,6 +288,32 @@ export const useAppStore = create<AppState>()(
       clearPendingContext: () => set({ pendingContext: null }),
       chatMessages: [],
       setChatMessages: (chatMessages) => set({ chatMessages }),
+
+      activeVerse: null,
+      setActiveVerse: (activeVerse) => set({ activeVerse }),
+      activePerson: null,
+      setActivePerson: (activePerson) => set({ activePerson }),
+      activePlace: null,
+      setActivePlace: (activePlace) => set({ activePlace }),
+      activeEvent: null,
+      setActiveEvent: (activeEvent) => set({ activeEvent }),
+
+      mapYear: -1000,
+      setMapYear: (mapYear) => set({ mapYear }),
+      mapShowRegions: false,
+      setMapShowRegions: (mapShowRegions) => set({ mapShowRegions }),
+
+      notebookOpen: false,
+      setNotebookOpen: (notebookOpen) => set({ notebookOpen }),
+      activeNotebookFile: null,
+      setActiveNotebookFile: (activeNotebookFile) => set({ activeNotebookFile }),
+
+      learnModule: 'alphabet',
+      setLearnModule: (learnModule) => set({ learnModule }),
+      learnLanguage: 'greek',
+      setLearnLanguage: (learnLanguage) => set({ learnLanguage }),
+      learnLessonIdx: 0,
+      setLearnLessonIdx: (learnLessonIdx) => set({ learnLessonIdx }),
 
       primary: 'KJV',
       parallels: ['KJV'],
@@ -373,7 +441,12 @@ export const useAppStore = create<AppState>()(
         chronological: s.chronological,
         quickReplace: s.quickReplace,
         quickReplaceConfig: s.quickReplaceConfig,
-        chatMessages: s.chatMessages
+        chatMessages: s.chatMessages,
+        mapYear: s.mapYear,
+        mapShowRegions: s.mapShowRegions,
+        activeNotebookFile: s.activeNotebookFile,
+        learnModule: s.learnModule,
+        learnLanguage: s.learnLanguage
       })
     }
   )

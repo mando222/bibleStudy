@@ -35,9 +35,15 @@ jobs:
           if git rev-parse "v$VERSION" >/dev/null 2>&1; then
             echo "is_new=false" >> "$GITHUB_OUTPUT"
             echo "::notice::v$VERSION already released — no new release."
-          else
-            echo "is_new=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::v$VERSION is new — building + releasing."
+            exit 0
+          fi
+          echo "is_new=true" >> "$GITHUB_OUTPUT"
+          echo "::notice::v$VERSION is new — building + releasing."
+          # A real release (a version bump pushed to main) MUST ship a human-readable changelog
+          # entry — its contents become the Release notes. See docs/RELEASING.md.
+          if [ "${{ github.event_name }}" = "push" ] && ! grep -qE "^## \[$VERSION\]" CHANGELOG.md; then
+            echo "::error::No CHANGELOG.md entry for v$VERSION. Add a '## [$VERSION] - YYYY-MM-DD' section (see docs/RELEASING.md) before pushing the version bump."
+            exit 1
           fi
 
   # Fast correctness gate: types + unit tests. Blocks the build if it fails.
@@ -107,30 +113,40 @@ jobs:
     if: needs.check.outputs.is_new == 'true'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: Download all installers
         uses: actions/download-artifact@v4
         with:
           path: installers
+      - name: Build release notes from CHANGELOG.md
+        shell: bash
+        run: |
+          VERSION="${{ needs.check.outputs.version }}"
+          # Extract this version's section (the lines between "## [VERSION]" and the next "## [").
+          awk -v ver="$VERSION" '
+            $0 ~ ("^## \\[" ver "\\]") { f=1; next }
+            /^## \[/ { f=0 }
+            f { print }
+          ' CHANGELOG.md > RELEASE_BODY.md
+          cat >> RELEASE_BODY.md <<'EOF'
+
+          ### Download
+          | Platform | File |
+          |---|---|
+          | macOS (Apple Silicon) | `*-mac-arm64.dmg` |
+          | Windows | `*-setup.exe` |
+          | Linux | `*.AppImage` or `*.deb` |
+
+          First launch shows a one-time "unidentified developer" prompt (the app isn't code-signed) — see the [install guide](https://github.com/mando222/bibleStudy/blob/main/docs/INSTALL.md) for the one-click fix per OS. Your notes and settings carry over across updates.
+          EOF
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.check.outputs.version }}
           name: v${{ needs.check.outputs.version }}
-          generate_release_notes: true # GitHub's auto "What's Changed" is appended below
+          generate_release_notes: true # GitHub's auto "What's Changed" is appended below the changelog
           append_body: true
-          body: |
-            **Open Bible Study v${{ needs.check.outputs.version }}** — free, offline Bible study for macOS, Windows, and Linux.
-
-            ### Download
-            | Platform | File |
-            |---|---|
-            | macOS (Apple Silicon) | `*-mac-arm64.dmg` |
-            | Windows | `*-setup.exe` |
-            | Linux | `*.AppImage` or `*.deb` |
-
-            First launch shows a one-time "unidentified developer" prompt (the app isn't code-signed) — see the [install guide](https://github.com/mando222/bibleStudy/blob/main/docs/INSTALL.md) for the one-click fix per OS. Your notes and settings carry over across updates.
-
-            ---
+          body_path: RELEASE_BODY.md
           files: |
             installers/**/*.dmg
             installers/**/*.exe

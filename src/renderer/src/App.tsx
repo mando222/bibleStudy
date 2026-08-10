@@ -8,20 +8,29 @@ import StudyPanel from '@/components/StudyPanel'
 import AboutModal from '@/components/AboutModal'
 import QuickReplaceModal from '@/components/QuickReplaceModal'
 import ChatDrawer from '@/components/ChatDrawer'
+import NotebookDrawer from '@/components/NotebookDrawer'
 import ActivityRail from '@/components/ActivityRail'
 import WordsView from '@/components/WordsView'
 import GenealogiesView from '@/components/GenealogiesView'
 import TimelinesView from '@/components/TimelinesView'
 import MapsView from '@/components/MapsView'
+import LearnView from '@/components/LearnView'
 
 export default function App(): JSX.Element {
   const theme = useAppStore((s) => s.theme)
   const setTranslations = useAppStore((s) => s.setTranslations)
   const activity = useAppStore((s) => s.activity)
+  const book = useAppStore((s) => s.book)
+  const chapter = useAppStore((s) => s.chapter)
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
   }, [theme])
+
+  // Record each chapter the reader visits, for the History & bookmarks menu.
+  useEffect(() => {
+    window.api?.addHistory(book, chapter).catch(() => undefined)
+  }, [book, chapter])
 
   // Load the available translations once, and repair any stale/invalid selection.
   useEffect(() => {
@@ -48,11 +57,13 @@ export default function App(): JSX.Element {
           {activity === 'genealogies' && <GenealogiesView />}
           {activity === 'timelines' && <TimelinesView />}
           {activity === 'maps' && <MapsView />}
+          {activity === 'learn' && <LearnView />}
         </div>
       </div>
       <AboutModal />
       <QuickReplaceModal />
       <ChatDrawer />
+      <NotebookDrawer />
     </div>
   )
 }

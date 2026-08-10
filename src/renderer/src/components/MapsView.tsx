@@ -1,23 +1,103 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PlaceItem } from '@shared/types'
+import { isArealFeature } from '@shared/mapFeatures'
 import { useAppStore } from '@/store/useAppStore'
 import { SearchIcon } from './icons'
 import VerseRefs from './VerseRefs'
 
-// Equirectangular projection over the biblical world (a first offline map; a Natural Earth basemap
-// can be layered under this later).
+// Equirectangular projection over the biblical world, corrected for latitude: a degree of longitude
+// is shorter than a degree of latitude by cos(φ), so we compress the horizontal scale by cos(midφ).
+// Without this the map is stretched ~19% too wide at these latitudes and coastlines/cities look off.
+// Land basemap and place markers share these functions, so they stay perfectly aligned.
 const LON0 = 24
 const LON1 = 52
 const LAT0 = 24
 const LAT1 = 42
 const W = 800
-const H = ((LAT1 - LAT0) / (LON1 - LON0)) * W
+const MIDLAT = (((LAT0 + LAT1) / 2) * Math.PI) / 180
+const H = (((LAT1 - LAT0) / (LON1 - LON0)) * W) / Math.cos(MIDLAT)
 const x = (lon: number): number => ((lon - LON0) / (LON1 - LON0)) * W
 const y = (lat: number): number => (1 - (lat - LAT0) / (LAT1 - LAT0)) * H
+const yr = (v: number): string => (v < 0 ? `${-v} BC` : `${v} AD`)
+// Range spanned by the kingdoms-overlay slider (approx. Abraham → the apostolic age).
+const YEAR_MIN = -2100
+const YEAR_MAX = 100
+
+// Areal/linear features (region, river, valley, route) aren't single points, so they're hidden by
+// default and shown as clearly-approximate hollow markers. Classification lives in shared/mapFeatures
+// (unit-tested) so a new/unhandled feature type surfaces instead of silently plotting as a point.
+const isAreal = (p: PlaceItem): boolean => isArealFeature(p.featureType)
 
 interface Geo {
-  features?: { geometry?: { type: string; coordinates: unknown } }[]
+  features?: {
+    geometry?: { type: string; coordinates: unknown }
+    properties?: Record<string, unknown>
+  }[]
 }
+
+/** A projected kingdom/region polygon with its valid year-range and a rough label point. */
+interface RegionShape {
+  name: string
+  from: number
+  to: number
+  d: string
+  cx: number
+  cy: number
+}
+
+/** Project the hand-authored regions GeoJSON into per-feature paths + label points. */
+function regionShapes(geo: Geo): RegionShape[] {
+  const out: RegionShape[] = []
+  const projRing = (r: number[][]): string | null => {
+    let a = Infinity
+    let b = -Infinity
+    let c = Infinity
+    let e = -Infinity
+    for (const [lo, la] of r) {
+      if (lo < a) a = lo
+      if (lo > b) b = lo
+      if (la < c) c = la
+      if (la > e) e = la
+    }
+    if (b < LON0 - 8 || a > LON1 + 8 || e < LAT0 - 8 || c > LAT1 + 8) return null
+    let d = ''
+    for (let i = 0; i < r.length; i++) {
+      const [lo, la] = r[i]
+      d += (i ? 'L' : 'M') + x(lo).toFixed(1) + ',' + y(la).toFixed(1)
+    }
+    return d + 'Z'
+  }
+  for (const f of geo.features ?? []) {
+    const g = f.geometry
+    if (!g) continue
+    const props = f.properties ?? {}
+    const from = Number(props.valid_from)
+    const to = Number(props.valid_to)
+    if (!Number.isFinite(from) || !Number.isFinite(to)) continue
+    const rings: number[][][] = []
+    if (g.type === 'Polygon') rings.push(...(g.coordinates as number[][][]))
+    else if (g.type === 'MultiPolygon')
+      for (const poly of g.coordinates as number[][][][]) rings.push(...poly)
+    let d = ''
+    let sx = 0
+    let sy = 0
+    let n = 0
+    for (const ring of rings) {
+      const pr = projRing(ring)
+      if (!pr) continue
+      d += pr
+      for (const [lo, la] of ring) {
+        sx += x(lo)
+        sy += y(la)
+        n++
+      }
+    }
+    if (!d || !n) continue
+    out.push({ name: String(props.name ?? ''), from, to, d, cx: sx / n, cy: sy / n })
+  }
+  return out
+}
+
 /** Project Natural Earth land rings that touch our view into SVG path strings. */
 function landPaths(geo: Geo): string[] {
   const out: string[] = []
@@ -72,11 +152,20 @@ export default function MapsView(): JSX.Element {
   const [sel, setSel] = useState<PlaceItem | null>(null)
   const [verses, setVerses] = useState<string[]>([])
   const [land, setLand] = useState<string[]>([])
+  const [regions, setRegions] = useState<RegionShape[]>([])
   const [view, setView] = useState<View>({ scale: 1, tx: 0, ty: 0 })
   const [ftype, setFtype] = useState('all')
+  const [showAreal, setShowAreal] = useState(false) // show regions/rivers (as approximate markers)
   const svgRef = useRef<SVGSVGElement | null>(null)
   const drag = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null)
   const focusPlaceId = useAppStore((s) => s.focusPlaceId)
+  const setActivePlace = useAppStore((s) => s.setActivePlace)
+  // The year slider drives ONLY the (clearly approximate) kingdoms overlay — city positions are
+  // exact and never filtered by year, since per-city date coverage is too sparse to be reliable.
+  const year = useAppStore((s) => s.mapYear)
+  const setYear = useAppStore((s) => s.setMapYear)
+  const showRegions = useAppStore((s) => s.mapShowRegions)
+  const setShowRegions = useAppStore((s) => s.setMapShowRegions)
 
   useEffect(() => {
     window.api
@@ -85,6 +174,14 @@ export default function MapsView(): JSX.Element {
         if (t) setLand(landPaths(JSON.parse(t) as Geo))
       })
       .catch(() => setLand([]))
+  }, [])
+  useEffect(() => {
+    window.api
+      .getMapRegions()
+      .then((t) => {
+        if (t) setRegions(regionShapes(JSON.parse(t) as Geo))
+      })
+      .catch(() => setRegions([]))
   }, [])
   const clearFocus = useAppStore((s) => s.clearFocus)
 
@@ -105,12 +202,13 @@ export default function MapsView(): JSX.Element {
     }
   }, [focusPlaceId, places, clearFocus])
   useEffect(() => {
+    setActivePlace(sel ? { id: sel.id, name: sel.name } : null)
     if (!sel) return setVerses([])
     window.api
       .getPlaceVerses(sel.id)
       .then(setVerses)
       .catch(() => setVerses([]))
-  }, [sel])
+  }, [sel, setActivePlace])
 
   const types = useMemo(
     () => [
@@ -129,6 +227,7 @@ export default function MapsView(): JSX.Element {
   const inBox = (p: PlaceItem): boolean =>
     p.lon >= LON0 && p.lon <= LON1 && p.lat >= LAT0 && p.lat <= LAT1
   const plotted = filtered.filter(inBox)
+  const activeRegions = showRegions ? regions.filter((r) => year >= r.from && year <= r.to) : []
 
   // Pan & zoom
   const ptr = (e: { clientX: number; clientY: number }): { px: number; py: number } => {
@@ -192,6 +291,54 @@ export default function MapsView(): JSX.Element {
               </option>
             ))}
           </select>
+
+          <label className="mt-2 flex items-center gap-1.5 text-xs text-muted cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showAreal}
+              onChange={(e) => setShowAreal(e.target.checked)}
+              className="accent-accent"
+            />
+            Regions &amp; rivers (approx.)
+          </label>
+
+          {/* Optional, clearly-approximate kingdoms overlay. The year slider drives ONLY this layer;
+              city markers are always shown at their exact coordinates, never filtered by year. */}
+          {regions.length > 0 && (
+            <div className="mt-3 border-t border-line/60 pt-2.5">
+              <label className="flex items-center gap-1.5 text-xs text-muted cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showRegions}
+                  onChange={(e) => setShowRegions(e.target.checked)}
+                  className="accent-accent"
+                />
+                Show kingdoms overlay
+              </label>
+              {showRegions && (
+                <div className="mt-2">
+                  <div className="flex items-center justify-between text-xs text-muted mb-1">
+                    <span>Year</span>
+                    <span className="tabular-nums text-ink">{yr(year)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={YEAR_MIN}
+                    max={YEAR_MAX}
+                    step={10}
+                    value={year}
+                    onChange={(e) => setYear(Number(e.target.value))}
+                    className="w-full accent-accent"
+                  />
+                  <p className="mt-1 text-[10px] text-faint leading-snug">
+                    {activeRegions.length
+                      ? `Approximate extent of ${activeRegions.map((r) => r.name).join(', ')}.`
+                      : 'Approximate empire extents — drag to a year with a known kingdom.'}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex-1 overflow-y-auto">
           {filtered.slice(0, 500).map((p) => (
@@ -234,28 +381,71 @@ export default function MapsView(): JSX.Element {
                   strokeWidth={0.5 / s}
                 />
               ))}
+              {activeRegions.map((r, i) => (
+                <path
+                  key={`r${i}`}
+                  d={r.d}
+                  className="fill-amber-400/15 stroke-amber-500/60 pointer-events-none"
+                  strokeWidth={0.9 / s}
+                />
+              ))}
               {gridLon.map((l) => (
                 <line key={`x${l}`} x1={x(l)} y1={0} x2={x(l)} y2={H} className="stroke-line/30" strokeWidth={0.5 / s} />
               ))}
               {gridLat.map((l) => (
                 <line key={`y${l}`} x1={0} y1={y(l)} x2={W} y2={y(l)} className="stroke-line/30" strokeWidth={0.5 / s} />
               ))}
-              {plotted.map((p) => (
-                <circle
-                  key={p.id}
-                  cx={x(p.lon)}
-                  cy={y(p.lat)}
-                  r={(sel?.id === p.id ? 5 : 2.4) / s}
-                  onClick={() => setSel(p)}
-                  className={
-                    sel?.id === p.id
-                      ? 'fill-accent cursor-pointer'
-                      : 'fill-accent/45 hover:fill-accent cursor-pointer'
-                  }
+              {activeRegions.map((r, i) => (
+                <text
+                  key={`rl${i}`}
+                  x={r.cx}
+                  y={r.cy}
+                  style={{ fontSize: 11 / s }}
+                  textAnchor="middle"
+                  className="fill-amber-700/80 dark:fill-amber-400/80 pointer-events-none select-none"
                 >
-                  <title>{p.name}</title>
-                </circle>
+                  {r.name}
+                </text>
               ))}
+              {plotted.map((p) => {
+                const selected = sel?.id === p.id
+                const areal = isAreal(p)
+                // Hide areal features (regions/rivers/valleys) by default — they aren't points.
+                // Show them only when toggled on, when the user filtered to a type, or when selected.
+                if (areal && ftype === 'all' && !showAreal && !selected) return null
+                return areal ? (
+                  <circle
+                    key={p.id}
+                    cx={x(p.lon)}
+                    cy={y(p.lat)}
+                    r={(selected ? 5 : 3.2) / s}
+                    onClick={() => setSel(p)}
+                    strokeWidth={1.3 / s}
+                    className={
+                      selected
+                        ? 'fill-accent/10 stroke-accent cursor-pointer'
+                        : 'fill-none stroke-accent/50 hover:stroke-accent cursor-pointer'
+                    }
+                  >
+                    <title>{p.name} (approx. area)</title>
+                  </circle>
+                ) : (
+                  <circle
+                    key={p.id}
+                    cx={x(p.lon)}
+                    cy={y(p.lat)}
+                    r={(selected ? 5 : 2.4) / s}
+                    onClick={() => setSel(p)}
+                    className={
+                      selected
+                        ? 'fill-accent cursor-pointer'
+                        : 'fill-accent/45 hover:fill-accent cursor-pointer'
+                    }
+                  >
+                    <title>{p.name}</title>
+                  </circle>
+                )
+              })}
               {sel && inBox(sel) && (
                 <text
                   x={x(sel.lon) + 7 / s}
@@ -286,7 +476,8 @@ export default function MapsView(): JSX.Element {
             ))}
           </div>
           <div className="absolute bottom-6 left-6 text-[11px] text-faint bg-panel/70 rounded px-1.5 py-0.5">
-            {plotted.length} places · drag to pan · scroll to zoom
+            {plotted.filter((p) => !(isAreal(p) && ftype === 'all' && !showAreal)).length} places ·
+            drag to pan · scroll to zoom
           </div>
         </div>
         <div className="shrink-0 border-t border-line p-4 min-h-[6rem]">
@@ -298,6 +489,12 @@ export default function MapsView(): JSX.Element {
                   {sel.lat.toFixed(2)}°, {sel.lon.toFixed(2)}° · {sel.featureType ?? 'place'}
                 </span>
               </div>
+              {isAreal(sel) && (
+                <div className="mt-1 text-[11px] text-faint">
+                  {sel.featureType === 'Water' ? 'A river or body of water' : 'A region or area'} — the
+                  marker is only an approximate point, not a precise location.
+                </div>
+              )}
               <div className="mt-2">
                 {verses.length ? (
                   <VerseRefs refs={verses} limit={40} />

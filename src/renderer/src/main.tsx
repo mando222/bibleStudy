@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import NotebookWindow from './components/NotebookWindow'
 import './styles/globals.css'
 
 async function boot(): Promise<void> {
@@ -10,9 +11,13 @@ async function boot(): Promise<void> {
     await installDevMock()
   }
 
+  // A second BrowserWindow can load this same renderer in "notebook-only" mode (see main process).
+  const detached = new URLSearchParams(window.location.search).get('window')
+  const Root = detached === 'notebook' ? NotebookWindow : App
+
   ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     <React.StrictMode>
-      <App />
+      <Root />
     </React.StrictMode>
   )
 }

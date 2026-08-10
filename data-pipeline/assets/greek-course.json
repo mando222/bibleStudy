@@ -1,0 +1,220 @@
+[
+  {
+    "chapter_no": 1,
+    "title": "The article and the Word",
+    "body_md": "Greek marks \"the\" with a little word called the article, which changes shape to match its noun. The most common forms are ὁ (masculine), ἡ (feminine), and τό (neuter). There is no separate word for \"a/an\" — a noun with no article is simply indefinite.\n\nOur very first noun is λόγος, \"word,\" which is masculine, so it takes ὁ: ὁ λόγος = \"the word.\" Learn to spot the article — it is everywhere, and it tells you a noun is coming and often what role it plays.\n\nOpen the reading below and tap each word to reveal its meaning. You are already reading the New Testament.",
+    "vocab": [
+      { "lemma": "ὁ, ἡ, τό", "gloss": "the" },
+      { "lemma": "λόγος", "gloss": "word" },
+      { "lemma": "θεός", "gloss": "God" },
+      { "lemma": "ἀρχή", "gloss": "beginning" }
+    ],
+    "readings": [{ "ref": "John.1.1", "note": "Find ὁ λόγος, 'the Word.' Notice the article ὁ before it." }],
+    "exercises": [
+      { "prompt": "What does ὁ λόγος mean?", "answer": "the word" },
+      { "prompt": "Which article goes with the masculine noun θεός?", "answer": "ὁ" }
+    ]
+  },
+  {
+    "chapter_no": 2,
+    "title": "Saying \"is\" and \"was\" (εἰμί)",
+    "body_md": "The verb \"to be\" is the most common verb of all. You need just two forms to start reading:\n\nἐστιν — \"is\" (present)\nἦν — \"was\" (past)\n\nGreek often drops the pronoun, because the verb ending already shows the person. And in a sentence like \"God is light,\" the linking verb ἐστιν simply joins the subject (in the nominative case) to what is said about it.",
+    "vocab": [
+      { "lemma": "εἰμί", "gloss": "I am" },
+      { "lemma": "ἐστίν", "gloss": "he/she/it is" },
+      { "lemma": "ἦν", "gloss": "he/she/it was" },
+      { "lemma": "φῶς", "gloss": "light" }
+    ],
+    "readings": [
+      { "ref": "John.1.1", "note": "ἦν appears three times — 'was.' The Word 'was' in the beginning." },
+      { "ref": "1John.1.5", "note": "ὁ θεὸς φῶς ἐστιν — 'God is light.' ἐστιν links God to light." }
+    ],
+    "exercises": [
+      { "prompt": "Translate: ἐστιν", "answer": "he/she/it is" },
+      { "prompt": "Translate: ὁ θεὸς φῶς ἐστιν", "answer": "God is light" }
+    ]
+  },
+  {
+    "chapter_no": 3,
+    "title": "Who does what: subject and object",
+    "body_md": "Greek shows a word's job by its ending (its case), not by word order. Two cases carry most of the load early on:\n\n• the nominative marks the subject (the doer): ὁ λόγος\n• the accusative marks the direct object (the receiver): τὸν λόγον\n\nNotice the article changes too: ὁ (subject) → τόν (object). Because endings carry the meaning, Greek can put words in an order that would surprise an English reader — watch the endings, not the position.",
+    "vocab": [
+      { "lemma": "κόσμος", "gloss": "world" },
+      { "lemma": "τόν", "gloss": "the (masc. object)" },
+      { "lemma": "οὐ, οὐκ", "gloss": "not" },
+      { "lemma": "ἐγένετο", "gloss": "came to be, happened" }
+    ],
+    "readings": [
+      { "ref": "John.1.10", "note": "ὁ κόσμος (subject) and τὸν κόσμον / αὐτόν (object) — the same idea in two cases." }
+    ],
+    "exercises": [
+      { "prompt": "Is ὁ λόγος the subject or the object form?", "answer": "the subject (nominative)" },
+      { "prompt": "How does 'the' change from subject to object for a masculine noun?", "answer": "ὁ becomes τόν" }
+    ]
+  },
+  {
+    "chapter_no": 4,
+    "title": "Joining ideas: καί, δέ, γάρ",
+    "body_md": "Little connecting words hold Greek sentences together, and they are extremely frequent:\n\nκαί — \"and, also, even\"\nδέ — \"but, and\" (a gentle 'next'; it comes second in its clause)\nγάρ — \"for, because\" (also comes second)\n\nSpotting these instantly lets you see where one thought ends and the next begins.",
+    "vocab": [
+      { "lemma": "καί", "gloss": "and, also, even" },
+      { "lemma": "δέ", "gloss": "but, and" },
+      { "lemma": "γάρ", "gloss": "for, because" },
+      { "lemma": "πρός", "gloss": "with, toward" }
+    ],
+    "readings": [
+      { "ref": "John.1.1", "note": "Three clauses joined by καί. The Word was with God, and the Word was God." }
+    ],
+    "exercises": [
+      { "prompt": "What does καί mean?", "answer": "and (also, even)" },
+      { "prompt": "Where in its clause does δέ usually stand?", "answer": "second (postpositive)" }
+    ]
+  },
+  {
+    "chapter_no": 5,
+    "title": "Present verbs: actions now",
+    "body_md": "A present-tense verb describes ongoing or general action. The endings show who is acting, so a single word can be a whole sentence: λέγει = \"he says.\"\n\nStart with a few very common verbs and their 3rd-person form (-ει, 'he/she/it …'):\nλέγει (says), ἔχει (has), γινώσκει (knows), ἀγαπᾷ (loves).",
+    "vocab": [
+      { "lemma": "λέγω", "gloss": "I say, speak" },
+      { "lemma": "ἔχω", "gloss": "I have" },
+      { "lemma": "γινώσκω", "gloss": "I know" },
+      { "lemma": "ἀγαπάω", "gloss": "I love" }
+    ],
+    "readings": [
+      { "ref": "John.14.6", "note": "λέγει αὐτῷ ὁ Ἰησοῦς — 'Jesus says to him.' Find the verb λέγει." }
+    ],
+    "exercises": [
+      { "prompt": "Translate: λέγει", "answer": "he/she says" },
+      { "prompt": "What ending marks 'he/she/it' on a present verb here?", "answer": "-ει" }
+    ]
+  },
+  {
+    "chapter_no": 6,
+    "title": "First-declension nouns: ἀγάπη and ζωή",
+    "body_md": "Many feminine nouns end in -η in the nominative and take the article ἡ: ἡ ἀγάπη (love), ἡ ζωή (life). In a \"X is Y\" sentence the linking verb may be left unwritten or placed anywhere — the nominative endings tell you what is being equated.",
+    "vocab": [
+      { "lemma": "ἀγάπη", "gloss": "love" },
+      { "lemma": "ζωή", "gloss": "life" },
+      { "lemma": "ἡ", "gloss": "the (feminine)" },
+      { "lemma": "ἐν", "gloss": "in" }
+    ],
+    "readings": [
+      { "ref": "1John.4.8", "note": "ὁ θεὸς ἀγάπη ἐστίν — 'God is love.'" },
+      { "ref": "John.1.4", "note": "ἐν αὐτῷ ζωὴ ἦν — 'in him was life.'" }
+    ],
+    "exercises": [
+      { "prompt": "Translate: ὁ θεὸς ἀγάπη ἐστίν", "answer": "God is love" },
+      { "prompt": "Which article goes with the feminine noun ζωή?", "answer": "ἡ" }
+    ]
+  },
+  {
+    "chapter_no": 7,
+    "title": "Prepositions and their cases",
+    "body_md": "A preposition governs a noun in a particular case, and that pairing is part of the meaning. Three of the most common:\n\nἐν + dative — \"in\": ἐν ἀρχῇ (in the beginning)\nεἰς + accusative — \"into, to\"\nἐκ + genitive — \"out of, from\"\n\nLearn each preposition together with the case it takes.",
+    "vocab": [
+      { "lemma": "ἐν", "gloss": "in (+ dative)" },
+      { "lemma": "εἰς", "gloss": "into, to (+ accusative)" },
+      { "lemma": "ἐκ", "gloss": "out of (+ genitive)" },
+      { "lemma": "ἀρχή", "gloss": "beginning" }
+    ],
+    "readings": [
+      { "ref": "John.1.1", "note": "ἐν ἀρχῇ — 'in the beginning.' ἐν takes the dative ἀρχῇ." }
+    ],
+    "exercises": [
+      { "prompt": "Translate: ἐν ἀρχῇ", "answer": "in the beginning" },
+      { "prompt": "What case does εἰς take?", "answer": "the accusative" }
+    ]
+  },
+  {
+    "chapter_no": 8,
+    "title": "Pronouns: αὐτός, ἐγώ, σύ",
+    "body_md": "Pronouns stand in for nouns and, like nouns, change by case. The workhorse is αὐτός (\"he/it,\" and in other cases \"him, his, to him\"): αὐτῷ = \"to/for him,\" αὐτόν = \"him.\"\n\nThe first- and second-person pronouns are ἐγώ (\"I\") and σύ (\"you\"). They are often added for emphasis, since the verb ending already names the person.",
+    "vocab": [
+      { "lemma": "αὐτός", "gloss": "he, it; (of) him" },
+      { "lemma": "ἐγώ", "gloss": "I" },
+      { "lemma": "σύ", "gloss": "you (singular)" },
+      { "lemma": "οὗτος", "gloss": "this, this one" }
+    ],
+    "readings": [
+      { "ref": "John.1.4", "note": "ἐν αὐτῷ — 'in him.' αὐτῷ is the dative of αὐτός." },
+      { "ref": "John.14.6", "note": "ἐγώ εἰμι — 'I am.' Here ἐγώ is added for emphasis." }
+    ],
+    "exercises": [
+      { "prompt": "Translate: ἐν αὐτῷ", "answer": "in him" },
+      { "prompt": "Translate: ἐγώ εἰμι", "answer": "I am" }
+    ]
+  },
+  {
+    "chapter_no": 9,
+    "title": "Adjectives that agree",
+    "body_md": "An adjective matches its noun in gender, number, and case. When an adjective sits between the article and the noun (or repeats the article), it is describing that noun: τὸν υἱὸν τὸν μονογενῆ = \"the only son.\"\n\nAgreement is your friend: matching endings link words that belong together, even when other words come between them.",
+    "vocab": [
+      { "lemma": "μονογενής", "gloss": "only, one-of-a-kind" },
+      { "lemma": "υἱός", "gloss": "son" },
+      { "lemma": "ἅγιος", "gloss": "holy" },
+      { "lemma": "αἰώνιος", "gloss": "eternal" }
+    ],
+    "readings": [
+      { "ref": "John.3.16", "note": "τὸν υἱὸν τὸν μονογενῆ — 'the only Son.' The adjective agrees with υἱόν." }
+    ],
+    "exercises": [
+      { "prompt": "In gender, number, and case, what must an adjective match?", "answer": "its noun" },
+      { "prompt": "Translate: τὸν υἱόν", "answer": "the son (as object)" }
+    ]
+  },
+  {
+    "chapter_no": 10,
+    "title": "The imperfect: the continuing past",
+    "body_md": "The imperfect tense describes past action seen as ongoing or repeated — \"was doing, kept doing.\" You have already met one imperfect many times: ἦν, \"was.\"\n\nMost imperfects add an ε- at the front (the augment) and use past endings, e.g. ἠγάπα, \"he was loving / used to love.\" For now, simply recognize ἦν and the augmented shape as signals of past time.",
+    "vocab": [
+      { "lemma": "ἦν", "gloss": "he/she/it was" },
+      { "lemma": "ἦσαν", "gloss": "they were" },
+      { "lemma": "ἔλεγεν", "gloss": "he was saying" },
+      { "lemma": "ἠγάπα", "gloss": "he was loving" }
+    ],
+    "readings": [
+      { "ref": "John.1.1", "note": "ἦν — 'was.' The imperfect frames the Word as already existing." },
+      { "ref": "John.1.4", "note": "ζωὴ ἦν — 'life was' (in him). Again the ongoing past." }
+    ],
+    "exercises": [
+      { "prompt": "Translate: ἦν", "answer": "he/she/it was" },
+      { "prompt": "What does the imperfect tense stress about a past action?", "answer": "that it was ongoing or repeated" }
+    ]
+  },
+  {
+    "chapter_no": 11,
+    "title": "The aorist: a past event as a whole",
+    "body_md": "The aorist tense reports a past action simply, as a single event: \"it happened.\" A very common aorist is ἐγένετο, \"came to be, happened, became.\"\n\nContrast it with the imperfect ἦν (\"was, ongoing\"): in John 1:14 the Word ἐγένετο flesh — a decisive event, not a state.",
+    "vocab": [
+      { "lemma": "ἐγένετο", "gloss": "came to be, became" },
+      { "lemma": "σάρξ", "gloss": "flesh" },
+      { "lemma": "εἶπεν", "gloss": "he said" },
+      { "lemma": "ἦλθεν", "gloss": "he came, went" }
+    ],
+    "readings": [
+      { "ref": "John.1.14", "note": "ὁ λόγος σὰρξ ἐγένετο — 'the Word became flesh.' A single, decisive event (aorist)." }
+    ],
+    "exercises": [
+      { "prompt": "Translate: ὁ λόγος σὰρξ ἐγένετο", "answer": "the Word became flesh" },
+      { "prompt": "How does the aorist view a past action, compared with the imperfect?", "answer": "as a single whole event, not as ongoing" }
+    ]
+  },
+  {
+    "chapter_no": 12,
+    "title": "Putting it together: reading John 3:16",
+    "body_md": "You now know enough to read one of the best-loved verses in the New Testament. Watch for what you have learned:\n\n• the article and agreement: τὸν υἱὸν τὸν μονογενῆ\n• a verb of action: ἠγάπησεν (he loved — an aorist of ἀγαπάω)\n• the adjective αἰώνιον agreeing with ζωήν (eternal life)\n• the little connectors and pronouns tying it together\n\nTake it slowly, tap each word, and let the endings guide you. This is the goal of everything so far: reading the real text.",
+    "vocab": [
+      { "lemma": "ἠγάπησεν", "gloss": "he loved" },
+      { "lemma": " οὕτως", "gloss": "so, in this way" },
+      { "lemma": "πιστεύω", "gloss": "I believe, trust" },
+      { "lemma": "ζωή αἰώνιος", "gloss": "eternal life" }
+    ],
+    "readings": [
+      { "ref": "John.3.16", "note": "Read it whole. οὕτως ('so') … ἠγάπησεν ('loved') … ζωὴν αἰώνιον ('eternal life')." }
+    ],
+    "exercises": [
+      { "prompt": "ἠγάπησεν is a past-event (aorist) form of which verb?", "answer": "ἀγαπάω (I love)" },
+      { "prompt": "Translate: ζωὴν αἰώνιον", "answer": "eternal life (as object)" }
+    ]
+  }
+]

@@ -1,12 +1,13 @@
 import { useAppStore, type Activity } from '@/store/useAppStore'
-import { BookIcon, GenealogyIcon, TimelineIcon, MapPinIcon, WordsIcon } from './icons'
+import { BookIcon, GenealogyIcon, TimelineIcon, MapPinIcon, WordsIcon, LearnIcon } from './icons'
 
 const TABS: { id: Activity; label: string; title: string; Icon: typeof BookIcon }[] = [
   { id: 'bible', label: 'Bible', title: 'Bible', Icon: BookIcon },
   { id: 'genealogies', label: 'Family', title: 'Genealogies', Icon: GenealogyIcon },
   { id: 'timelines', label: 'Timeline', title: 'Timelines', Icon: TimelineIcon },
   { id: 'maps', label: 'Maps', title: 'Maps', Icon: MapPinIcon },
-  { id: 'words', label: 'Words', title: 'Word study', Icon: WordsIcon }
+  { id: 'words', label: 'Words', title: 'Word study', Icon: WordsIcon },
+  { id: 'learn', label: 'Learn', title: 'Learn Greek & Hebrew', Icon: LearnIcon }
 ]
 
 /** Far-right vertical rail that switches the whole workspace between activities. */

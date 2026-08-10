@@ -24,6 +24,7 @@ export default function TimelinesView(): JSX.Element {
         <p className="text-sm text-muted mb-6">
           {events.length} biblical events in order — each linked to the passage that records it.
         </p>
+
         <div className="relative border-l-2 border-line ml-2 pl-6 space-y-5">
           {events.map((e) => (
             <div key={e.id} className="relative">

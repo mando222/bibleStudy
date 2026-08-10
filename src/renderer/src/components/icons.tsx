@@ -50,6 +50,38 @@ export const ChevronRight = (p: P) => (
     <path d="m9 6 6 6-6 6" />
   </svg>
 )
+export const ClockIcon = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3 2" />
+  </svg>
+)
+export const BookmarkIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M6 3h12v18l-6-4-6 4z" />
+  </svg>
+)
+export const NotebookIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M6 3h11a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6z" />
+    <path d="M6 3v18" />
+    <path d="M9 8h6M9 12h6" />
+  </svg>
+)
+export const LinkIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M9 15l6-6" />
+    <path d="M10.5 6.5 12 5a3.5 3.5 0 0 1 5 5l-1.5 1.5" />
+    <path d="M13.5 17.5 12 19a3.5 3.5 0 0 1-5-5l1.5-1.5" />
+  </svg>
+)
+export const LearnIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M3 7l9-4 9 4-9 4-9-4z" />
+    <path d="M7 9.5V15c0 1.1 2.2 2.5 5 2.5s5-1.4 5-2.5V9.5" />
+    <path d="M21 7v5" />
+  </svg>
+)
 export const GenealogyIcon = (p: P) => (
   <svg {...base(p)}>
     <circle cx="12" cy="5" r="2.2" />
