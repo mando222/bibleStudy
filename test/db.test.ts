@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { KNOWN_FEATURE_TYPES } from '../src/shared/mapFeatures'
-import { buildWordStrongs } from '../src/shared/wordLookup'
 
 // Load node:sqlite at runtime — Vite's static resolver doesn't yet know this new builtin.
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite')
@@ -151,13 +150,66 @@ suite('bible.sqlite integrity', () => {
       expect(KNOWN_FEATURE_TYPES.has(r.ft as string), `unhandled feature type: ${r.ft}`).toBe(true)
   })
 
-  it('clean-text reading can look up a tagged word by form (KJV John 1:1 → G3056)', () => {
-    // Guards the regression where words were only clickable while the Strong's numbers were shown.
-    const rows = all(
-      "SELECT surface, strongs FROM verse_tokens WHERE translation_id='KJV' AND book_id='John' AND chapter=1 AND verse=1"
-    )
-    const map = buildWordStrongs(rows as unknown as Parameters<typeof buildWordStrongs>[0])
-    expect(map.get('word')).toBe('G3056')
-    expect(map.get('beginning')).toBe('G746')
+  it('tagged tokens reconstruct their verse text EXACTLY (no truncation, no tagger markup)', () => {
+    // The reader renders from verse_tokens, so any drift here becomes wrong Scripture on screen.
+    // Regression: kaiserlik/kjv truncates ~3k verse tails and prepends Psalm superscriptions;
+    // bereanbible's table carries "[the]" / "{}" / ". . ." alignment markup.
+    for (const id of ['KJV', 'BSB']) {
+      const bad = all(
+        `SELECT t.book_id b, t.chapter c, t.verse v, group_concat(t.surface || t.trailer, '') got, ve.text want
+           FROM verse_tokens t
+           JOIN verses ve ON ve.translation_id = t.translation_id AND ve.book_id = t.book_id
+                         AND ve.chapter = t.chapter AND ve.verse = t.verse
+          WHERE t.translation_id = ?
+          GROUP BY t.book_id, t.chapter, t.verse
+         HAVING got != want
+          LIMIT 3`,
+        id
+      )
+      const detail = bad.map((r) => `${r.b} ${r.c}:${r.v}\n  got:  ${r.got}\n  want: ${r.want}`).join('\n')
+      expect(bad.length, `${id} tokens do not reconstruct verses.text:\n${detail}`).toBe(0)
+    }
+  })
+
+  it('previously-truncated verses are whole and still tagged (Acts 3:1, Ps 7:1)', () => {
+    const rebuilt = (b: string, c: number, v: number): string =>
+      String(
+        one(
+          "SELECT group_concat(surface || trailer, '') t FROM verse_tokens WHERE translation_id='KJV' AND book_id=? AND chapter=? AND verse=?",
+          b,
+          c,
+          v
+        ).t ?? ''
+      )
+    expect(rebuilt('Acts', 3, 1)).toMatch(/being the ninth hour\.$/)
+    expect(rebuilt('Ps', 7, 1)).not.toContain('Shiggaion') // superscription is not verse text
+    expect(rebuilt('Ps', 7, 1)).toMatch(/and deliver me:$/)
+    // Alignment survived the re-tiling: John 1:1 still tags the right words.
+    expect(
+      one(
+        "SELECT strongs FROM verse_tokens WHERE translation_id='KJV' AND book_id='John' AND chapter=1 AND verse=1 AND surface='Word'"
+      ).strongs
+    ).toBe('G3056')
+  })
+
+  it('verse text carries no source typography or stray whitespace', () => {
+    // The KJV source puts a pilcrow inside verse content to mark paragraph starts; this reader
+    // flows verses inline, so ~3k verses used to begin with a stray "¶ ".
+    expect(n("SELECT COUNT(*) n FROM verses WHERE text LIKE '%¶%'"), 'pilcrow markers').toBe(0)
+    expect(n("SELECT COUNT(*) n FROM verses WHERE text != trim(text)"), 'untrimmed verse text').toBe(0)
+    expect(n("SELECT COUNT(*) n FROM verses WHERE text LIKE '%  %'"), 'double spaces').toBe(0)
+    expect(n("SELECT COUNT(*) n FROM verses WHERE trim(text) = ''"), 'empty verses').toBe(0)
+  })
+
+  it('tagger artifacts no longer reach the reader', () => {
+    // Only artifacts the TAGGERS introduce — brackets that are genuinely part of the KJV text
+    // (e.g. the supplied "[but]" in 1 John 2:23) are legitimate and must survive.
+    expect(n("SELECT COUNT(*) n FROM verse_tokens WHERE surface LIKE '%[[%'"), 'Psalm superscription markup').toBe(0)
+    expect(n("SELECT COUNT(*) n FROM verse_tokens WHERE surface LIKE '%[fn%'"), 'footnote markers').toBe(0)
+    expect(n("SELECT COUNT(*) n FROM verse_tokens WHERE surface LIKE '%. . .%'"), 'BSB placeholder tokens').toBe(0)
+    expect(
+      n("SELECT COUNT(*) n FROM verse_tokens WHERE translation_id='BSB' AND surface GLOB '*[{}]*'"),
+      'BSB alignment braces'
+    ).toBe(0)
   })
 })

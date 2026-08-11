@@ -28,14 +28,21 @@ export default function LearnDrills({ language }: { language: LearnLanguage }): 
     const withGloss = pool.filter((v) => v.gloss)
     if (withGloss.length < 4) return null
     const target = withGloss[Math.floor(Math.random() * withGloss.length)]
-    const distractors = shuffle(withGloss.filter((v) => v.strongs !== target.strongs))
-      .slice(0, 3)
-      .map((v) => v.gloss as string)
-    return {
-      target,
-      options: shuffle([target.gloss as string, ...distractors]),
-      answer: target.gloss as string
+    const answer = target.gloss as string
+    // Distinct by MEANING, not just by Strong's number: different lemmas often share a gloss
+    // ("and", "to"), which used to put the correct answer on screen twice — both marked right,
+    // and both rendered under the same React key.
+    const seen = new Set([answer])
+    const distractors: string[] = []
+    for (const v of shuffle(withGloss)) {
+      const g = v.gloss as string
+      if (v.strongs === target.strongs || seen.has(g)) continue
+      seen.add(g)
+      distractors.push(g)
+      if (distractors.length === 3) break
     }
+    if (distractors.length < 3) return null
+    return { target, options: shuffle([answer, ...distractors]), answer }
   }
 
   useEffect(() => {

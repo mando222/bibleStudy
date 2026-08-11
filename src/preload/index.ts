@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AiApi, BibleApi, NotebookApi } from '../shared/types'
+import type { AiApi, BibleApi, NotebookApi, UpdatesApi } from '../shared/types'
 
 const api: BibleApi = {
   version: () => ipcRenderer.invoke('app:version'),
@@ -52,6 +52,7 @@ const api: BibleApi = {
   listDueCards: (language, limit) => ipcRenderer.invoke('user:listDueCards', language, limit),
   reviewCard: (strongs, language, grade) =>
     ipcRenderer.invoke('user:reviewCard', strongs, language, grade),
+  seenCards: (language) => ipcRenderer.invoke('user:seenCards', language),
   srsStats: (language) => ipcRenderer.invoke('user:srsStats', language),
   getLearnProgress: (module) => ipcRenderer.invoke('user:getLearnProgress', module),
   setLearnProgress: (module, key, value) =>
@@ -103,11 +104,20 @@ const notebook: NotebookApi = {
   openWindow: () => ipcRenderer.invoke('notebook:openWindow')
 }
 
+const updates: UpdatesApi = {
+  check: (force) => ipcRenderer.invoke('updates:check', force),
+  getPrefs: () => ipcRenderer.invoke('updates:getPrefs'),
+  setPrefs: (patch) => ipcRenderer.invoke('updates:setPrefs', patch),
+  dismiss: (version) => ipcRenderer.invoke('updates:dismiss', version),
+  openDownload: (url) => ipcRenderer.invoke('updates:openDownload', url)
+}
+
 if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('api', api)
     contextBridge.exposeInMainWorld('ai', ai)
     contextBridge.exposeInMainWorld('notebook', notebook)
+    contextBridge.exposeInMainWorld('updates', updates)
   } catch (error) {
     console.error(error)
   }
@@ -118,8 +128,11 @@ if (process.contextIsolated) {
   window.ai = ai
   // @ts-ignore
   window.notebook = notebook
+  // @ts-ignore
+  window.updates = updates
 }
 
 export type PreloadApi = BibleApi
 export type PreloadAi = AiApi
 export type PreloadNotebook = NotebookApi
+export type PreloadUpdates = UpdatesApi

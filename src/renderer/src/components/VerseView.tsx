@@ -1,7 +1,6 @@
 import { useMemo } from 'react'
 import type { Verse, Highlight } from '@shared/types'
 import { useAppStore, computeQuickReplacements } from '@/store/useAppStore'
-import { buildWordStrongs, normalizeWord } from '@shared/wordLookup'
 import { highlightVar } from '@/lib/highlights'
 
 interface Props {
@@ -11,8 +10,12 @@ interface Props {
   onOpenMenu: (verse: number, e: React.MouseEvent) => void
 }
 
-/** Renders one verse inline. Uses word tokens when Strong's is on OR a word-replace is
- *  active; otherwise plain (clean) text. Applies "agape" replacements per Strong's number. */
+/**
+ * Renders one verse inline. Tagged translations (KJV/BSB) render from their word tokens, which the
+ * build guarantees reconstruct `v.text` exactly — so every word is clickable and correctly keyed to
+ * its OWN Strong's number, whether or not the numbers are shown. Untagged translations render their
+ * plain text. Applies "agape" replacements per Strong's number.
+ */
 export default function VerseView({ v, highlight, hasNote, onOpenMenu }: Props): JSX.Element {
   const strongsVisible = useAppStore((s) => s.strongsVisible)
   const selectStrongs = useAppStore((s) => s.selectStrongs)
@@ -26,11 +29,7 @@ export default function VerseView({ v, highlight, hasNote, onOpenMenu }: Props):
     () => ({ ...computeQuickReplacements(quickReplace, quickReplaceConfig), ...replacements }),
     [replacements, quickReplace, quickReplaceConfig]
   )
-  const replActive = Object.keys(effective).length > 0
-  const useTokens = (strongsVisible || replActive) && !!v.tokens && v.tokens.length > 0
-  // Clean-text mode (Strong's numbers hidden): keep the exact verse text but let tagged words be
-  // clicked to open the lexicon, by matching each word back to its token's Strong's number.
-  const wordStrongs = useMemo(() => buildWordStrongs(v.tokens), [v.tokens])
+  const useTokens = !!v.tokens && v.tokens.length > 0
 
   const bg = highlight
     ? {
@@ -95,29 +94,11 @@ export default function VerseView({ v, highlight, hasNote, onOpenMenu }: Props):
               </span>
             )
           })
-        ) : wordStrongs.size > 0 ? (
-          <span>
-            {v.text.split(/(\s+)/).map((seg, i) => {
-              if (!/\S/.test(seg)) return seg // whitespace verbatim
-              const strongs = wordStrongs.get(normalizeWord(seg))
-              return strongs ? (
-                <span
-                  key={i}
-                  onClick={() => selectStrongs(strongs)}
-                  className={`cursor-pointer rounded-sm transition-colors ${
-                    selected === strongs ? 'bg-accent-soft text-accent' : 'hover:bg-accent-soft/60'
-                  }`}
-                >
-                  {seg}
-                </span>
-              ) : (
-                <span key={i}>{seg}</span>
-              )
-            })}{' '}
-          </span>
         ) : (
-          <span>{v.text} </span>
+          <span>{v.text}</span>
         )}
+        {/* Verses run together inline, so each needs a trailing space. The tokens themselves
+            reproduce the verse text exactly, which means no token supplies one. */}{' '}
       </span>
     </span>
   )

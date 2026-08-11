@@ -17,6 +17,7 @@ import type {
   InterlinearContent,
   Note,
   SearchResponse,
+  UpdatesApi,
   VerseVariant
 } from '@shared/types'
 
@@ -249,6 +250,7 @@ export async function installDevMock(): Promise<void> {
       lastGrade: grade,
       updatedAt: Date.now()
     }),
+    seenCards: async () => [],
     srsStats: async () => ({ total: 0, due: 0, learned: 0 }),
     getLearnProgress: async () => ({}),
     setLearnProgress: async () => undefined,
@@ -389,4 +391,15 @@ export async function installDevMock(): Promise<void> {
     }
   }
   ;(window as unknown as { ai: AiApi }).ai = ai
+
+  // The update check never fires in a browser preview — report "up to date" so the banner is
+  // absent, matching a normal offline launch.
+  const updates: UpdatesApi = {
+    check: async () => null,
+    getPrefs: async () => ({ checkOnLaunch: true }),
+    setPrefs: async (patch) => ({ checkOnLaunch: patch.checkOnLaunch ?? true }),
+    dismiss: async () => undefined,
+    openDownload: async () => undefined
+  }
+  ;(window as unknown as { updates: UpdatesApi }).updates = updates
 }

@@ -29,6 +29,10 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
   const [aiErr, setAiErr] = useState<string | null>(null)
 
   const loadedFile = useRef<string | null>(null)
+  // What's on disk as far as this window knows. The drawer and the detached notebook window are
+  // separate renderers editing the same files, so an idle window must never write back content it
+  // merely loaded — that would clobber edits made in the other one.
+  const savedContent = useRef<string>('')
 
   const refreshFiles = (): void => {
     window.notebook
@@ -55,18 +59,23 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
       ?.read(active)
       .then((text) => {
         setContent(text)
+        savedContent.current = text
         loadedFile.current = active
       })
       .catch(() => setContent(''))
   }, [active])
 
-  // Debounced autosave — only after the active file's content has actually loaded.
+  // Debounced autosave — only after the active file's content has loaded, and only when the text
+  // actually changed, so simply opening a note never rewrites it.
   useEffect(() => {
-    if (!active || loadedFile.current !== active) return
+    if (!active || loadedFile.current !== active || content === savedContent.current) return
     const t = setTimeout(() => {
       window.notebook
         ?.write(active, content)
-        .then(() => setSavedAt(Date.now()))
+        .then(() => {
+          savedContent.current = content
+          setSavedAt(Date.now())
+        })
         .catch(() => undefined)
     }, 600)
     return () => clearTimeout(t)

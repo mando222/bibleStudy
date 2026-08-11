@@ -10,7 +10,16 @@ import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } from 'node
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { BOOKS, BOOK_BY_USFM } from '../src/shared/books'
-import { cleanLexBody, normGreek, normHebrew, normStrongs, translitGreek } from './lib'
+import { foldLatinHomoglyphs } from '../src/shared/originalText'
+import {
+  cleanLexBody,
+  normGreek,
+  normHebrew,
+  normStrongs,
+  retileTokens,
+  translitGreek,
+  type RawToken
+} from './lib'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '..')
@@ -194,6 +203,10 @@ function verseText(content: unknown[]): string {
   }
   return pieces
     .join(' ')
+    // The KJV source marks paragraph starts with a pilcrow inside the verse content. It's
+    // typography, not Scripture, and this reader flows verses inline — so ~3k KJV verses used to
+    // begin with a stray "¶ ".
+    .replace(/¶/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/\s+([,.;:!?’”'")\]])/g, '$1')
     .replace(/([“‘("[])\s+/g, '$1')
@@ -231,6 +244,88 @@ function parseKjvTokens(en: string): Tok[] {
     out.push({ surface: surface || clean, trailer: `${punct} `, strongs: tags[0] ?? null })
   }
   return out
+}
+
+/**
+ * Make `verses.text` authoritative for a tagged translation by re-tiling its verse_tokens onto the
+ * real words of each verse (see retileTokens in ./lib).
+ *
+ * The word-level Strong's sources are third-party and imperfect — kaiserlik/kjv truncates the tail
+ * of thousands of verses and prepends Psalm superscriptions, bereanbible's table carries alignment
+ * markup — and the reader renders FROM these tokens whenever Strong's numbers or Quick Replace are
+ * on. Without this step those defects become visible (and silently truncated) Scripture text.
+ */
+function reconcileVerseTokens(
+  db: DatabaseSync,
+  id: string
+): { verses: number; repaired: number; untagged: number } {
+  const texts = new Map<string, string>()
+  for (const r of db
+    .prepare('SELECT book_id, chapter, verse, text FROM verses WHERE translation_id = ?')
+    .all(id) as { book_id: string; chapter: number; verse: number; text: string }[]) {
+    texts.set(`${r.book_id}|${r.chapter}|${r.verse}`, r.text)
+  }
+
+  const byVerse = new Map<string, RawToken[]>()
+  for (const r of db
+    .prepare(
+      `SELECT book_id, chapter, verse, surface, trailer, strongs, lemma, translit, morph, gloss
+         FROM verse_tokens WHERE translation_id = ? ORDER BY book_id, chapter, verse, position`
+    )
+    .all(id) as Record<string, unknown>[]) {
+    const key = `${r.book_id}|${r.chapter}|${r.verse}`
+    let arr = byVerse.get(key)
+    if (!arr) {
+      arr = []
+      byVerse.set(key, arr)
+    }
+    arr.push({
+      surface: r.surface as string,
+      trailer: (r.trailer as string) ?? ' ',
+      strongs: (r.strongs as string) ?? null,
+      lemma: (r.lemma as string) ?? null,
+      translit: (r.translit as string) ?? null,
+      morph: (r.morph as string) ?? null,
+      gloss: (r.gloss as string) ?? null
+    })
+  }
+
+  const ins = db.prepare(
+    `INSERT INTO verse_tokens
+       (translation_id, book_id, chapter, verse, position, surface, trailer, strongs, lemma, translit, morph, gloss)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+  )
+  let repaired = 0
+  let untagged = 0
+  db.exec('BEGIN')
+  db.prepare('DELETE FROM verse_tokens WHERE translation_id = ?').run(id)
+  for (const [key, toks] of byVerse) {
+    const text = texts.get(key)
+    if (!text) continue // a tagged verse we don't actually carry — drop the orphan tokens
+    const before = toks.map((t) => t.surface + t.trailer).join('')
+    const tiled = retileTokens(text, toks)
+    if (before !== tiled.map((t) => t.surface + t.trailer).join('')) repaired++
+    const [book, ch, v] = key.split('|')
+    tiled.forEach((t, pos) => {
+      if (!t.strongs) untagged++
+      ins.run(
+        id,
+        book,
+        Number(ch),
+        Number(v),
+        pos,
+        t.surface,
+        t.trailer,
+        t.strongs,
+        t.lemma ?? null,
+        t.translit ?? null,
+        t.morph ?? null,
+        t.gloss ?? null
+      )
+    })
+  }
+  db.exec('COMMIT')
+  return { verses: byVerse.size, repaired, untagged }
 }
 
 /** Tag the BSB with per-word Strong's + original-language alignment from bsb_tables.tsv.
@@ -610,7 +705,7 @@ async function buildSeptuagintEdition(db: DatabaseSync): Promise<number> {
  * its accents; only the (invisible) FTS index is folded, so a query like "θεος" finds "θεὸς".
  */
 export function foldOriginal(s: string): string {
-  return s
+  return foldLatinHomoglyphs(s)
     .normalize('NFD')
     .replace(/[̀-֑ͯ-ׇ]/g, '')
     .toLowerCase()
@@ -1339,6 +1434,21 @@ async function main(): Promise<void> {
   ).n
   process.stdout.write(` ${tokenCount} tokens\n`)
 
+  // BSB word-level Strong's + original-language alignment → verse_tokens
+  process.stdout.write('• BSB interlinear tagging:')
+  const bsbTokens = await tagBsb(db)
+  process.stdout.write(` ${bsbTokens} tokens\n`)
+
+  // Re-tile both tagged translations onto their real verse text, so the reader can never show
+  // truncated Scripture or tagger markup. Runs before the divine-name backfill below, so words
+  // the taggers dropped are restored first and then get tagged like any other.
+  process.stdout.write('• reconciling tokens to verse text:')
+  for (const id of ['KJV', 'BSB']) {
+    const r = reconcileVerseTokens(db, id)
+    process.stdout.write(` ${id} ${r.repaired}/${r.verses} verses repaired`)
+  }
+  process.stdout.write('\n')
+
   // Backfill divine-name tags the KJV Strong's source left blank. In the KJV OT, small-caps
   // LORD/GOD always render the Tetragrammaton (YHWH, and YHWH beside Adonai); tagging the gaps
   // makes every occurrence clickable for study and reachable by the Divine Names feature.
@@ -1356,11 +1466,6 @@ async function main(): Promise<void> {
   process.stdout.write(
     `  divine-name backfill: LORD +${Number(fixLord.changes)}, GOD +${Number(fixGod.changes)}\n`
   )
-
-  // BSB word-level Strong's + original-language alignment → verse_tokens
-  process.stdout.write('• BSB interlinear tagging:')
-  const bsbTokens = await tagBsb(db)
-  process.stdout.write(` ${bsbTokens} tokens\n`)
 
   // Original-language editions (selectable interlinear bases)
   const insEdition = db.prepare(
@@ -1476,12 +1581,49 @@ async function main(): Promise<void> {
     errors.push(`KJV John 1:1 'Word' should tag G3056, got ${JSON.stringify(wordG3056)}`)
   }
 
+  const pilcrow = db.prepare("SELECT COUNT(*) n FROM verses WHERE text LIKE '%¶%'").get() as {
+    n: number
+  }
+  if (pilcrow.n > 0) errors.push(`${pilcrow.n} verses still carry a ¶ paragraph marker`)
+
+  // The reader renders FROM verse_tokens when Strong's numbers / Quick Replace are on, so the
+  // tokens of every tagged verse must reconstruct that verse's text EXACTLY — no truncated tails,
+  // no tagger markup. This is the gate for the reconcile step above.
+  for (const id of ['KJV', 'BSB']) {
+    const mismatched = db
+      .prepare(
+        `SELECT COUNT(*) n FROM (
+           SELECT t.book_id, t.chapter, t.verse
+             FROM verse_tokens t
+             JOIN verses v ON v.translation_id = t.translation_id AND v.book_id = t.book_id
+                          AND v.chapter = t.chapter AND v.verse = t.verse
+            WHERE t.translation_id = ?
+            GROUP BY t.book_id, t.chapter, t.verse
+           HAVING group_concat(t.surface || t.trailer, '') != v.text
+         )`
+      )
+      .get(id) as { n: number }
+    if (mismatched.n > 0) {
+      errors.push(`${id}: ${mismatched.n} verses whose tokens do not reconstruct verses.text`)
+    }
+  }
+
   const bsbCount = (
     db.prepare("SELECT COUNT(*) n FROM verse_tokens WHERE translation_id='BSB'").get() as {
       n: number
     }
   ).n
-  if (bsbCount < 400000) errors.push(`BSB tokens only ${bsbCount} (expected ~430k)`)
+  // ~386k after reconciliation: multi-word runs merge into one token and markup-only tokens
+  // (". . .", "{}") are dropped, so this sits below the ~411k the raw tagger emits.
+  if (bsbCount < 360000) errors.push(`BSB tokens only ${bsbCount} (expected ~386k)`)
+  const bsbTagged = (
+    db
+      .prepare("SELECT COUNT(*) n FROM verse_tokens WHERE translation_id='BSB' AND strongs IS NOT NULL")
+      .get() as { n: number }
+  ).n
+  if (bsbTagged < bsbCount * 0.9) {
+    errors.push(`BSB only ${bsbTagged}/${bsbCount} tokens tagged — reconciliation lost alignment`)
+  }
   const bsbWord = db
     .prepare(
       "SELECT strongs, lemma FROM verse_tokens WHERE translation_id='BSB' AND book_id='John' AND chapter=1 AND verse=1 AND surface='Word'"

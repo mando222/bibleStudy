@@ -197,9 +197,11 @@ function Column({ translation, index, canRemove, book, chapter, registerRef, onS
     window.getSelection()?.removeAllRanges()
   }
 
-  // Scroll to a verse requested via search / navigation, then flash it briefly.
+  // Scroll to a verse requested via search / navigation, then flash it briefly. Only the first
+  // column drives this — it clears the request, and the other columns follow via scroll sync, so
+  // letting every column race for it left all but one parked at the top.
   useEffect(() => {
-    if (scrollToVerse == null || !data) return
+    if (index !== 0 || scrollToVerse == null || !data) return
     const el = containerRef.current?.querySelector<HTMLElement>(`[data-verse="${scrollToVerse}"]`)
     if (el) {
       el.scrollIntoView({ block: 'center', behavior: 'smooth' })
@@ -207,7 +209,7 @@ function Column({ translation, index, canRemove, book, chapter, registerRef, onS
       window.setTimeout(() => el.classList.remove('verse-flash'), 1600)
     }
     clearScroll()
-  }, [scrollToVerse, data, clearScroll])
+  }, [index, scrollToVerse, data, clearScroll])
 
   const openMenu = (verse: number, e: React.MouseEvent): void => {
     const el = containerRef.current

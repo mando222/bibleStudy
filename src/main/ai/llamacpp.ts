@@ -34,6 +34,22 @@ interface ChatState {
 }
 let chat: ChatState | null = null
 
+// There is exactly one llama context, shared by the chat drawer and the Notebook's one-shot
+// "ask the AI to edit this note". Without serialising, a notebook completion arriving mid-stream
+// disposes the context the chat is still generating into. Generations queue instead.
+let chatBusy: Promise<void> | null = null
+async function acquireChat(): Promise<() => void> {
+  while (chatBusy) await chatBusy
+  let release!: () => void
+  chatBusy = new Promise<void>((resolve) => {
+    release = () => {
+      chatBusy = null
+      resolve()
+    }
+  })
+  return release
+}
+
 async function getLlama(): Promise<any> {
   if (!llama) {
     const mod = await nlc()
@@ -112,6 +128,22 @@ async function createContext(model: any): Promise<any> {
  * `system` is the fixed system prompt; `priorTurns` are earlier user/assistant messages.
  */
 export async function* chatTurn(opts: {
+  modelFile: string
+  conversationId: string
+  system: string
+  priorTurns: ChatMessage[]
+  userPrompt: string
+  signal?: AbortSignal
+}): AsyncGenerator<string> {
+  const release = await acquireChat()
+  try {
+    yield* runChatTurn(opts)
+  } finally {
+    release()
+  }
+}
+
+async function* runChatTurn(opts: {
   modelFile: string
   conversationId: string
   system: string

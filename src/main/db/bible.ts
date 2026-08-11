@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
+import { foldLatinHomoglyphs } from '../../shared/originalText'
 import type {
   Translation,
   ChapterRef,
@@ -31,10 +32,16 @@ import type {
 let db: DatabaseSync | null = null
 
 function resolveDbPath(): string | null {
+  // app.getAppPath() is the app root when launched as `electron .`, but the SCRIPT'S directory when
+  // launched as `electron out/main/index.js` — which is how the smoke test used to miss the DB and
+  // report 16 phantom failures. Walking up from __dirname (out/main → repo root) and the cwd covers
+  // both, on top of the packaged extraResources location.
   const candidates = [
     join(process.resourcesPath ?? '', 'bible.sqlite'),
     join(app.getAppPath(), 'resources', 'bible.sqlite'),
-    join(app.getAppPath(), '..', 'resources', 'bible.sqlite')
+    join(app.getAppPath(), '..', 'resources', 'bible.sqlite'),
+    join(__dirname, '..', '..', 'resources', 'bible.sqlite'),
+    join(process.cwd(), 'resources', 'bible.sqlite')
   ]
   return candidates.find((p) => p && existsSync(p)) ?? null
 }
@@ -167,14 +174,6 @@ export function getStrongs(id: string): StrongsEntry | null {
   }
 }
 
-/** Natural Earth land polygons (GeoJSON string) for the offline Maps basemap. */
-export function getMapLand(): string {
-  const r = required().prepare("SELECT value FROM meta WHERE key = 'land_geojson'").get() as
-    | { value: string }
-    | undefined
-  return r?.value ?? ''
-}
-
 /** True if a table exists — lets new-in-0.1.2 queries no-op gracefully before a db:build. */
 function hasTable(name: string): boolean {
   return !!required()
@@ -182,12 +181,24 @@ function hasTable(name: string): boolean {
     .get(name)
 }
 
-/** Hand-authored, approximate kingdoms/regions overlay (GeoJSON string) for the map time slider. */
-export function getMapRegions(): string {
-  const r = required().prepare("SELECT value FROM meta WHERE key = 'regions_geojson'").get() as
+/** A GeoJSON layer stored in `meta`. Returns '' (an absent layer) rather than throwing, matching
+ *  the other map/study getters, so the Maps view degrades instead of erroring before a db:build. */
+function mapLayer(key: string): string {
+  if (!isReady() || !hasTable('meta')) return ''
+  const r = required().prepare('SELECT value FROM meta WHERE key = ?').get(key) as
     | { value: string }
     | undefined
   return r?.value ?? ''
+}
+
+/** Natural Earth land polygons (GeoJSON string) for the offline Maps basemap. */
+export function getMapLand(): string {
+  return mapLayer('land_geojson')
+}
+
+/** Hand-authored, approximate kingdoms/regions overlay (GeoJSON string) for the map time slider. */
+export function getMapRegions(): string {
+  return mapLayer('regions_geojson')
 }
 
 /** Treasury of Scripture Knowledge cross-references for a verse, most-voted first. */
@@ -305,7 +316,9 @@ const LEX_META: Record<string, { name: string; basedOn: string; lang: 'greek' | 
 }
 
 function normGreekWord(s: string): string {
-  return s
+  // Must fold exactly as data-pipeline/lib.ts normGreek does, or a word looked up at runtime
+  // won't match the keys written into form_parses at build time.
+  return foldLatinHomoglyphs(s)
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '') // combining diacritics/breathing/accents
     .toLowerCase()
@@ -396,8 +409,11 @@ export function getConcordance(strongs: string, opts: ConcordanceOptions = {}): 
   const offset = opts.offset ?? 0
   const rows = d
     .prepare(
+      // group_concat(DISTINCT …) can't take a separator, so it joins on ',' — which corrupted
+      // surfaces that themselves contain a comma ("had 44,760"). Join on US (U+001F), which can
+      // never occur in verse text, and de-duplicate in JS instead.
       `SELECT vt.book_id, vt.chapter, vt.verse,
-              group_concat(DISTINCT vt.surface) AS surfaces,
+              group_concat(vt.surface, char(31)) AS surfaces,
               v.text AS text, b.name AS book_name
        FROM verse_tokens vt
        JOIN verses v ON v.translation_id = vt.translation_id AND v.book_id = vt.book_id
@@ -411,13 +427,13 @@ export function getConcordance(strongs: string, opts: ConcordanceOptions = {}): 
     .all(translation, sid, limit, offset) as Record<string, unknown>[]
 
   const hits: ConcordanceHit[] = rows.map((r) => {
-    const surfaces = (r.surfaces as string) ?? ''
+    const surfaces = [...new Set(((r.surfaces as string) ?? '').split('\u001f').filter(Boolean))]
     return {
       book: r.book_id as string,
       bookName: r.book_name as string,
       chapter: r.chapter as number,
       verse: r.verse as number,
-      surface: surfaces.split(',')[0] ?? '',
+      surface: surfaces[0] ?? '',
       snippet: markSurfaces(r.text as string, surfaces)
     }
   })
@@ -425,14 +441,14 @@ export function getConcordance(strongs: string, opts: ConcordanceOptions = {}): 
 }
 
 /** Wrap whole-word occurrences of each surface in {{…}} for emphasis in the UI. */
-function markSurfaces(text: string, surfaces: string): string {
-  const uniq = [...new Set(surfaces.split(','))]
-    .filter(Boolean)
-    .sort((a, b) => b.length - a.length)
+function markSurfaces(text: string, surfaces: string[]): string {
+  // Longest first, so a multi-word surface wins over its own constituent words.
+  const uniq = [...surfaces].sort((a, b) => b.length - a.length)
   let out = text
   for (const s of uniq) {
     const esc = s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    out = out.replace(new RegExp(`\\b(${esc})\\b`, 'gi'), '{{$1}}')
+    // \b doesn't fire next to punctuation inside a surface, so anchor on the edges instead.
+    out = out.replace(new RegExp(`(?<![\\p{L}\\p{N}])(${esc})(?![\\p{L}\\p{N}])`, 'giu'), '{{$1}}')
   }
   return out
 }
@@ -759,6 +775,17 @@ export function search(q: SearchQuery): SearchResponse {
   return { total, hits }
 }
 
+/** How many verses a translation actually has. Editions differ (MT 21,178 · LXX 22,694 · KJV
+ *  31,102), so the semantic index must measure completeness against the real total. */
+export function verseCount(translation: string): number {
+  if (!isReady()) return 0
+  return (
+    required().prepare('SELECT COUNT(*) n FROM verses WHERE translation_id = ?').get(translation) as {
+      n: number
+    }
+  ).n
+}
+
 /** All verses of a translation (for building the semantic index). */
 export function allVerses(
   translation: string
@@ -798,12 +825,15 @@ export function retrieveByKeywords(
   }))
 }
 
-/** Turn a user query into a safe FTS5 MATCH expression (prefix match on each term). */
+/**
+ * Turn a user query into a safe FTS5 MATCH expression, prefix-matching the final term so a search
+ * for "love" also finds "loved"/"loveth" (the way readers expect) while earlier terms stay exact.
+ * Quotes and `*` are stripped from the input, so the expression can't be injected.
+ */
 function ftsQuery(input: string): string {
   const terms = input
     .replace(/["*]/g, ' ')
     .split(/\s+/)
     .filter(Boolean)
-    .map((t) => `"${t}"`)
-  return terms.join(' ')
+  return terms.map((t, i) => (i === terms.length - 1 ? `"${t}"*` : `"${t}"`)).join(' ')
 }

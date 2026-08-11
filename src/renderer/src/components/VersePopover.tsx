@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Highlight, Note } from '@shared/types'
 import { BOOK_BY_ID } from '@shared/books'
 import { useAppStore } from '@/store/useAppStore'
@@ -34,6 +34,15 @@ export default function VersePopover({
   const askAssistantAbout = useAppStore((s) => s.askAssistantAbout)
   const [noteText, setNoteText] = useState(note?.body ?? '')
   const [editingNote, setEditingNote] = useState(false)
+  // The chapter's notes load asynchronously, so `note` can arrive after this popover mounts.
+  // Adopt it then — otherwise the box stays blank and saving wipes the existing note. Only sync
+  // when the note identity changes, so it never overwrites what the user is typing.
+  const loadedNoteId = useRef(note?.id ?? null)
+  useEffect(() => {
+    if ((note?.id ?? null) === loadedNoteId.current) return
+    loadedNoteId.current = note?.id ?? null
+    setNoteText(note?.body ?? '')
+  }, [note?.id, note?.body])
 
   const setColor = async (color: (typeof HIGHLIGHT_COLORS)[number]): Promise<void> => {
     await window.api.saveHighlight({

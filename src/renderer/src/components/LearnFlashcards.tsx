@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import type { VocabItem, SrsStats } from '@shared/types'
 import type { LearnLanguage } from '@/store/useAppStore'
 
+// How many never-seen words to introduce in one sitting, after all due reviews.
+const NEW_PER_SESSION = 40
+
 // SM-2 grade buttons.
 const GRADES: { label: string; grade: number; cls: string }[] = [
   { label: 'Again', grade: 0, cls: 'bg-red-500/80' },
@@ -20,15 +23,20 @@ export default function LearnFlashcards({ language }: { language: LearnLanguage 
 
   const load = async (): Promise<void> => {
     setLoading(true)
-    const [deck, due, s] = await Promise.all([
-      window.api.getVocab(language, 200),
-      window.api.listDueCards(language, 100),
+    // The whole frequency-ranked list, not a top-N slice: a card that comes due is looked up here,
+    // so slicing silently dropped every review scheduled beyond the slice.
+    const [deck, due, seen, s] = await Promise.all([
+      window.api.getVocab(language, 20000),
+      window.api.listDueCards(language, 500),
+      window.api.seenCards(language),
       window.api.srsStats(language)
     ])
     const byStrongs = new Map(deck.map((v) => [v.strongs, v]))
-    const dueSet = new Set(due.map((d) => d.strongs))
+    const seenSet = new Set(seen)
     const dueVocab = due.map((d) => byStrongs.get(d.strongs)).filter((v): v is VocabItem => !!v)
-    const fresh = deck.filter((v) => !dueSet.has(v.strongs))
+    // Reviews first, then the most frequent words not studied yet — capped so a session stays
+    // finite rather than queueing all ~8k lemmas.
+    const fresh = deck.filter((v) => !seenSet.has(v.strongs)).slice(0, NEW_PER_SESSION)
     setQueue([...dueVocab, ...fresh])
     setStats(s)
     setI(0)
@@ -68,11 +76,10 @@ export default function LearnFlashcards({ language }: { language: LearnLanguage 
     return (
       <div className="p-10 text-center">
         <p className="text-lg text-ink">Session complete 🎉</p>
+        {/* Reload rather than replay: the cards just graded are no longer due, and a fresh
+            batch of new words should come in. */}
         <button
-          onClick={() => {
-            setI(0)
-            setRevealed(false)
-          }}
+          onClick={() => void load()}
           className="mt-4 px-4 py-2 rounded-md bg-accent text-white text-sm hover:opacity-90"
         >
           Study again

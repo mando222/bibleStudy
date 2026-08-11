@@ -1,35 +1,35 @@
 import { useEffect, useState } from 'react'
 import type { LexiconGroup } from '@shared/types'
 
+const EMPTY: LexiconGroup[] = []
+
+/** Scholarly-lexicon entries for a Strong's number. Tagged with its id so the panel never shows a
+ *  previous word's lexicons (or an empty state) while the new one is still loading. */
 export function useLexicons(id: string | null): { groups: LexiconGroup[]; loading: boolean } {
-  const [groups, setGroups] = useState<LexiconGroup[]>([])
-  const [loading, setLoading] = useState(false)
+  const [state, setState] = useState<{ id: string | null; groups: LexiconGroup[] }>({
+    id: null,
+    groups: EMPTY
+  })
 
   useEffect(() => {
     if (!id) {
-      setGroups([])
+      setState({ id: null, groups: EMPTY })
       return
     }
     let cancelled = false
-    setLoading(true)
     window.api
       .getLexiconEntries(id)
-      .then((g) => {
-        if (!cancelled) {
-          setGroups(g)
-          setLoading(false)
-        }
+      .then((groups) => {
+        if (!cancelled) setState({ id, groups })
       })
       .catch(() => {
-        if (!cancelled) {
-          setGroups([])
-          setLoading(false)
-        }
+        if (!cancelled) setState({ id, groups: EMPTY })
       })
     return () => {
       cancelled = true
     }
   }, [id])
 
-  return { groups, loading }
+  const settled = state.id === id
+  return { groups: settled ? state.groups : EMPTY, loading: id != null && !settled }
 }

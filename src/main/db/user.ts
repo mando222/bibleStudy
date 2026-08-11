@@ -554,6 +554,15 @@ export function listDueCards(language: string, limit = 100): SrsCard[] {
   ).map(mapCard)
 }
 
+/** Every lemma that already has a card, so a study session can stop re-teaching known words. */
+export function seenCards(language: string): string[] {
+  return (
+    required()
+      .prepare('SELECT strongs FROM srs_cards WHERE language = ?')
+      .all(language) as { strongs: string }[]
+  ).map((r) => r.strongs)
+}
+
 export function srsStats(language: string): SrsStats {
   const d = required()
   const total = (

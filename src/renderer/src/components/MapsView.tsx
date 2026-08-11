@@ -229,23 +229,34 @@ export default function MapsView(): JSX.Element {
   const plotted = filtered.filter(inBox)
   const activeRegions = showRegions ? regions.filter((r) => year >= r.from && year <= r.to) : []
 
-  // Pan & zoom
-  const ptr = (e: { clientX: number; clientY: number }): { px: number; py: number } => {
-    const r = svgRef.current?.getBoundingClientRect()
-    if (!r) return { px: W / 2, py: H / 2 }
-    return { px: ((e.clientX - r.left) / r.width) * W, py: ((e.clientY - r.top) / r.height) * H }
-  }
+  // Pan & zoom (the zoom buttons; the wheel is handled by the non-passive listener above)
   const zoomAbout = (px: number, py: number, factor: number): void =>
     setView((v) => {
       const scale = Math.min(14, Math.max(1, v.scale * factor))
       const k = scale / v.scale
       return clampView({ scale, tx: px - (px - v.tx) * k, ty: py - (py - v.ty) * k })
     })
-  const onWheel = (e: React.WheelEvent): void => {
-    e.preventDefault()
-    const { px, py } = ptr(e)
-    zoomAbout(px, py, e.deltaY < 0 ? 1.15 : 1 / 1.15)
-  }
+  // React registers `wheel` on the root as a PASSIVE listener, so an onWheel handler can't call
+  // preventDefault (it's ignored, with a console warning, and the page still scrolls). Bind our
+  // own non-passive listener instead. setView's updater form keeps this effect dependency-free.
+  useEffect(() => {
+    const el = svgRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent): void => {
+      e.preventDefault()
+      const r = el.getBoundingClientRect()
+      const px = ((e.clientX - r.left) / r.width) * W
+      const py = ((e.clientY - r.top) / r.height) * H
+      const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15
+      setView((v) => {
+        const scale = Math.min(14, Math.max(1, v.scale * factor))
+        const k = scale / v.scale
+        return clampView({ scale, tx: px - (px - v.tx) * k, ty: py - (py - v.ty) * k })
+      })
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
   const onDown = (e: React.MouseEvent): void => {
     drag.current = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty }
   }
@@ -364,7 +375,6 @@ export default function MapsView(): JSX.Element {
           <svg
             ref={svgRef}
             viewBox={`0 0 ${W} ${H}`}
-            onWheel={onWheel}
             onMouseDown={onDown}
             onMouseMove={onMove}
             onMouseUp={onUp}

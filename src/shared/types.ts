@@ -225,9 +225,10 @@ export interface AiDoc {
 }
 export interface AiIndexStatus {
   bibleIndexed: number
-  bibleTotal: number
+  bibleTotal: number // verses in THIS translation — never assume the KJV's 31,102
   building: boolean
   stale?: boolean // indexed by a different embedding model → needs a rebuild
+  error?: string // the build stopped early (e.g. the embedding model isn't ready)
 }
 
 export interface AiApi {
@@ -393,6 +394,29 @@ export interface GrammarLesson {
   exercises: GrammarExercise[]
 }
 
+// ---- Update check (the app's only network call — see src/main/updates.ts) ----
+export interface UpdateInfo {
+  current: string // the running version
+  latest: string // the newest published release, without the "v"
+  notes: string // release notes (Markdown, as written in CHANGELOG.md)
+  releaseUrl: string
+  downloadUrl: string // the installer for THIS platform, or the release page as a fallback
+  assetName: string | null
+}
+export interface UpdatePrefs {
+  checkOnLaunch: boolean
+}
+export interface UpdatesApi {
+  /** Newer release, or null for "nothing to show" (disabled, throttled, dismissed, or offline). */
+  check(force?: boolean): Promise<UpdateInfo | null>
+  getPrefs(): Promise<UpdatePrefs>
+  setPrefs(patch: Partial<UpdatePrefs>): Promise<UpdatePrefs>
+  /** Stop offering this version until a newer one appears. */
+  dismiss(version: string): Promise<void>
+  /** Open the installer in the user's browser. The app never downloads or executes it. */
+  openDownload(url: string): Promise<void>
+}
+
 // ---- Notebook (feat 3): free-form Markdown notes saved to a local folder ----
 export interface NotebookFile {
   name: string
@@ -504,6 +528,8 @@ export interface BibleApi {
   // Learn: spaced repetition + progress
   listDueCards(language: string, limit?: number): Promise<SrsCard[]>
   reviewCard(strongs: string, language: string, grade: number): Promise<SrsCard>
+  /** Lemmas that already have a card (studied at least once), due or not. */
+  seenCards(language: string): Promise<string[]>
   srsStats(language: string): Promise<SrsStats>
   getLearnProgress(module: string): Promise<Record<string, string>>
   setLearnProgress(module: string, key: string, value: string): Promise<void>

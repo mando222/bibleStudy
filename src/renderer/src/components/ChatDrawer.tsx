@@ -87,7 +87,9 @@ export default function ChatDrawer(): JSX.Element {
   const activeDocs = docs.filter((d) => d.active).length
 
   const [idx, setIdx] = useState<AiIndexStatus | null>(null)
+  const [idxErr, setIdxErr] = useState<string | null>(null)
   useEffect(() => {
+    setIdxErr(null)
     window.ai
       ?.indexStatus(primary)
       .then(setIdx)
@@ -97,6 +99,21 @@ export default function ChatDrawer(): JSX.Element {
   }, [primary])
   const indexDone = !!idx && idx.bibleTotal > 0 && idx.bibleIndexed >= idx.bibleTotal && !idx.stale
   const indexPct = idx && idx.bibleTotal ? Math.round((100 * idx.bibleIndexed) / idx.bibleTotal) : 0
+  // buildBibleIndex rejects when the embedding model isn't ready — show that rather than
+  // leaving the user with a bar that silently stops.
+  const buildIndex = async (): Promise<void> => {
+    setIdxErr(null)
+    try {
+      await window.ai?.buildBibleIndex(primary)
+    } catch (e) {
+      setIdxErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      window.ai
+        ?.indexStatus(primary)
+        .then(setIdx)
+        .catch(() => undefined)
+    }
+  }
 
   const refreshStatus = (): void => {
     window.ai
@@ -121,7 +138,7 @@ export default function ChatDrawer(): JSX.Element {
         ?.indexStatus(primary)
         .then((s) => {
           const done = s.bibleTotal > 0 && s.bibleIndexed >= s.bibleTotal && !s.stale
-          if (!done && !s.building) void window.ai?.buildBibleIndex(primary)
+          if (!done && !s.building) void buildIndex()
         })
         .catch(() => undefined)
     }
@@ -382,10 +399,7 @@ export default function ChatDrawer(): JSX.Element {
               ) : idx?.building ? (
                 <span className="text-xs text-muted tabular-nums">Building… {indexPct}%</span>
               ) : (
-                <button
-                  onClick={() => void window.ai?.buildBibleIndex(primary)}
-                  className="text-xs text-accent hover:underline"
-                >
+                <button onClick={() => void buildIndex()} className="text-xs text-accent hover:underline">
                   {idx?.stale ? 'Rebuild index' : 'Build index'}
                 </button>
               )}
@@ -394,6 +408,9 @@ export default function ChatDrawer(): JSX.Element {
               <div className="mt-1.5 h-1 rounded bg-line overflow-hidden">
                 <div className="h-full bg-accent transition-all" style={{ width: `${indexPct}%` }} />
               </div>
+            )}
+            {(idxErr || idx?.error) && (
+              <div className="mt-1.5 text-[11px] text-red-500 leading-snug">{idxErr ?? idx?.error}</div>
             )}
             <p className="text-[11px] text-muted mt-1 leading-relaxed">
               Find verses by meaning, not just keywords. One-time; runs locally.

@@ -104,6 +104,7 @@ export function registerIpc(): void {
   ipcMain.handle('user:reviewCard', (_e, strongs: string, language: string, grade: number) =>
     user.reviewCard(strongs, language, grade)
   )
+  ipcMain.handle('user:seenCards', (_e, language: string) => user.seenCards(language))
   ipcMain.handle('user:srsStats', (_e, language: string) => user.srsStats(language))
   ipcMain.handle('user:getLearnProgress', (_e, module: string) => user.getLearnProgress(module))
   ipcMain.handle('user:setLearnProgress', (_e, module: string, key: string, value: string) =>
