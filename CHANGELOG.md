@@ -16,6 +16,49 @@ Group changes under: **Added** (new features), **Changed** (changes to existing 
 
 _Nothing yet._
 
+## [0.2.0] - 2026-08-11
+
+### Added
+
+- **Update notifications.** The app can now tell you when a newer version has been released, with a
+  one-click button that opens the right installer for your computer. It asks GitHub at most once a
+  day, sends nothing about you, and stays completely silent when you're offline. There's a switch
+  for it (and a "Check now" button) under **About** — turn it off and the app makes no network
+  request at all. Everything else remains fully offline.
+
+### Fixed
+
+- **Scripture text is no longer altered when Strong's numbers or Quick Replace are switched on.**
+  The reader builds those views from word-level tagging data, and that data came from third-party
+  sources with real gaps — so roughly 3,000 KJV verses silently lost their last word or two (Acts
+  3:1 ended "…being the ninth", dropping "hour."), Psalm superscriptions appeared as raw
+  `[[Shiggaion of David…]]` markup, and the Berean text showed translator brackets and `. . .`
+  placeholders. The word tagging is now reconciled against the actual verse text at build time, so
+  what you read is identical whether or not the study layers are on. Verified across all 62,000+
+  tagged verses, and locked in by a build-time check.
+- **Stray paragraph marks removed from the KJV.** About 2,970 verses began with a leftover `¶`.
+- **Semantic search index reported nonsense for most translations.** Progress was measured against
+  the KJV's verse count no matter which text you'd indexed, so the Masoretic Hebrew and Septuagint
+  could never reach "done" and kept offering to rebuild. It also marched to 100% and stored nothing
+  when the embedding model wasn't ready; it now says what went wrong.
+- **Vocabulary reviews stopped disappearing.** Flashcards only looked at the 200 most frequent
+  words, so any word you'd learned beyond that vanished from your review queue. Words you already
+  know are no longer reshuffled in as new.
+- **Drills no longer show the correct answer twice** when two words share a definition.
+- **Searching now matches word beginnings**, so "love" finds "loved" and "loveth" (281 → 442 KJV
+  verses).
+- **Concordance highlighting** no longer breaks apart phrases containing a comma.
+- **Original-language words written with look-alike Latin letters are findable again.** The
+  Septuagint transcription substitutes Latin letters inside some Greek words ("Ισραὴλ") and carries
+  printed-page section numbers; both made those words impossible to look up. The displayed text is
+  untouched — only the search key is normalised.
+- Clicking a word no longer flashes "No lexicon entry found" before the entry loads.
+- A verse opened from search now scrolls into view in every parallel column, not just one.
+- A deleted imported translation left in a side-by-side column no longer leaves a dead panel.
+- Zooming the map with the scroll wheel no longer scrolls the page behind it.
+- The notebook no longer risks overwriting itself when open in both the drawer and its own window.
+- Asking the AI to edit a note can no longer interrupt an answer the assistant is still writing.
+
 ## [0.1.2] - 2026-08-10
 
 ### Added
