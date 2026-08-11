@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import { useAppStore } from '@/store/useAppStore'
 import TopBar from '@/components/TopBar'
+import UpdateBanner from '@/components/UpdateBanner'
 import NavPanel from '@/components/NavPanel'
 import ReadingPanel from '@/components/ReadingPanel'
 import StudyPanel from '@/components/StudyPanel'
@@ -32,16 +33,20 @@ export default function App(): JSX.Element {
     window.api?.addHistory(book, chapter).catch(() => undefined)
   }, [book, chapter])
 
-  // Load the available translations once, and repair any stale/invalid selection.
+  // Load the available translations once, and repair any stale/invalid selection. Every column is
+  // checked, not just the primary — a deleted imported translation left in a secondary column used
+  // to render as a permanently empty "Not available" panel.
   useEffect(() => {
     window.api
       .listTranslations()
       .then((list) => {
         setTranslations(list)
+        if (!list.length) return
         const st = useAppStore.getState()
-        if (list.length && !list.some((t) => t.id === st.primary)) {
-          st.setParallels([list[0].id])
-        }
+        const available = new Set(list.map((t) => t.id))
+        const kept = st.parallels.filter((id) => available.has(id))
+        if (!kept.length) st.setParallels([list[0].id])
+        else if (kept.length !== st.parallels.length) st.setParallels(kept)
       })
       .catch(() => undefined)
   }, [setTranslations])
@@ -49,6 +54,7 @@ export default function App(): JSX.Element {
   return (
     <div className="h-full flex flex-col bg-bg text-ink">
       <TopBar />
+      <UpdateBanner />
       <div className="flex-1 min-h-0 flex">
         <ActivityRail />
         <div className="flex-1 min-w-0">

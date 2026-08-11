@@ -120,6 +120,8 @@ export default function AboutModal(): JSX.Element | null {
             Bundled texts and lexicons retain their own licenses, credited below.
           </p>
 
+          <UpdateSetting />
+
           <div className="mt-5 rounded-lg border border-line bg-elevated p-3">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -238,6 +240,75 @@ function SourceRow({ s }: { s: Source }): JSX.Element {
         <span className="text-muted"> — {s.detail}</span>
       </div>
       <span className="text-xs text-faint whitespace-nowrap">{s.license}</span>
+    </div>
+  )
+}
+
+/**
+ * The update check is the only thing this app ever sends over the network, so it gets an explicit,
+ * visible switch — and says plainly what it does and doesn't do.
+ */
+function UpdateSetting(): JSX.Element {
+  const [on, setOn] = useState(true)
+  const [checking, setChecking] = useState(false)
+  const [result, setResult] = useState<string | null>(null)
+
+  useEffect(() => {
+    window.updates
+      ?.getPrefs()
+      .then((p) => setOn(p.checkOnLaunch))
+      .catch(() => undefined)
+  }, [])
+
+  const toggle = async (next: boolean): Promise<void> => {
+    setOn(next)
+    setResult(null)
+    await window.updates?.setPrefs({ checkOnLaunch: next }).catch(() => undefined)
+  }
+
+  const checkNow = async (): Promise<void> => {
+    setChecking(true)
+    setResult(null)
+    try {
+      const info = await window.updates?.check(true)
+      setResult(info ? `Version ${info.latest} is available.` : 'You’re on the latest version.')
+    } catch {
+      setResult('Couldn’t reach GitHub — you may be offline.')
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  return (
+    <div className="mt-5 rounded-lg border border-line bg-elevated p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium text-ink">Check for updates</div>
+          <div className="text-xs text-muted">
+            Asks GitHub once a day whether a newer release exists. Nothing about you is sent, and
+            everything else in this app stays fully offline. Turn it off and no request is made.
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => void checkNow()}
+            disabled={checking}
+            className="px-2.5 py-1 rounded-md border border-line text-xs text-muted hover:bg-panel disabled:opacity-50 whitespace-nowrap"
+          >
+            {checking ? 'Checking…' : 'Check now'}
+          </button>
+          <label className="flex items-center gap-1.5 text-xs text-muted cursor-pointer whitespace-nowrap">
+            <input
+              type="checkbox"
+              checked={on}
+              onChange={(e) => void toggle(e.target.checked)}
+              className="accent-accent"
+            />
+            On launch
+          </label>
+        </div>
+      </div>
+      {result && <div className="mt-2 text-xs text-accent">{result}</div>}
     </div>
   )
 }

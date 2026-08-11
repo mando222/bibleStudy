@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { registerIpc } from './ipc'
 import { registerAiIpc } from './ai/ipc'
 import { registerNotebookIpc } from './notebook'
+import { registerUpdateIpc } from './updates'
 import { openBibleDb } from './db/bible'
 import { openUserDb } from './db/user'
 import { runSmokeTest } from './smoke'
@@ -121,6 +122,7 @@ if (!isSmokeTest && !app.requestSingleInstanceLock()) {
     registerIpc()
     registerAiIpc()
     registerNotebookIpc()
+    registerUpdateIpc()
     ipcMain.handle('notebook:openWindow', () => openNotebookWindow())
     openBibleDb() // open the bundled DB if present; renderer shows a hint otherwise
     openUserDb() // create/open the writable user DB (notes + highlights)
