@@ -13,6 +13,7 @@ const TRANSLATIONS: Source[] = [
   { what: 'King James Version', detail: 'KJV (1769)', license: 'Public Domain', url: 'https://bible.helloao.org' },
   { what: 'Berean Standard Bible', detail: 'BSB — text + word alignment', license: 'Public Domain', url: 'https://berean.bible' },
   { what: 'World English Bible', detail: 'WEB', license: 'Public Domain', url: 'https://ebible.org' },
+  { what: 'American Standard Version', detail: 'ASV (1901)', license: 'Public Domain', url: 'https://ebible.org/Scriptures/details.php?id=eng-asv' },
   { what: "Young's Literal Translation", detail: 'YLT (1898)', license: 'Public Domain', url: 'https://bible.helloao.org' },
   { what: 'Julia E. Smith Translation', detail: '1876 — text via studybible.info', license: 'Public Domain', url: 'https://studybible.info/JuliaSmith' }
 ]

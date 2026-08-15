@@ -6,8 +6,10 @@ pipeline (`npm run db:build`) fetches these fresh; nothing here is redistributed
 ## Bible text
 
 - **helloao "Free Use Bible API"** — <https://bible.helloao.org> — verse text for the King James
-  Version (KJV), Berean Standard Bible (BSB), World English Bible (WEB), and Young's Literal
-  Translation (YLT). These translations are in the Public Domain.
+  Version (KJV), Berean Standard Bible (BSB), World English Bible (WEB), American Standard Version
+  (ASV), and Young's Literal Translation (YLT). These translations are in the Public Domain.
+- **American Standard Version (1901)** — via helloao / <https://ebible.org/Scriptures/details.php?id=eng-asv>
+  — Public Domain.
 - **Julia E. Smith Translation (1876)** — text via <https://studybible.info/JuliaSmith> — Public
   Domain.
 

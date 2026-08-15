@@ -66,6 +66,19 @@ const TRANSLATIONS: TranslationSource[] = [
     sortOrder: 3
   },
   {
+    // The ancestor of the NASB, RSV/ESV and the WEB we already ship. Kept for textual comparison:
+    // it follows the critical text against the KJV's Textus Receptus, renders the divine name as
+    // "Jehovah", and transliterates Sheol/Hades — and its versification matches the KJV exactly,
+    // so it lines up verse-for-verse in a parallel column.
+    id: 'ASV',
+    helloaoId: 'eng_asv',
+    abbrev: 'ASV',
+    name: 'American Standard Version',
+    license: 'Public Domain',
+    attribution: 'American Standard Version (1901). Public Domain (eBible.org).',
+    sortOrder: 5
+  },
+  {
     id: 'YLT',
     helloaoId: 'eng_ylt',
     abbrev: 'YLT',
@@ -1579,6 +1592,39 @@ async function main(): Promise<void> {
     .get() as { strongs: string } | undefined
   if (wordG3056?.strongs !== 'G3056') {
     errors.push(`KJV John 1:1 'Word' should tag G3056, got ${JSON.stringify(wordG3056)}`)
+  }
+
+  // ASV sanity: right text, right versification, and its two signature renderings — the divine
+  // name as "Jehovah" and a transliterated "Sheol" — so a mis-mapped source id can't slip through.
+  // 31,086 not 31,102: the ASV follows the critical text, so it omits the 16 verses whose
+  // manuscript support is weak (Matt 17:21, Mark 9:44, Acts 8:37, …) that the KJV's Textus
+  // Receptus carries. It shares that exact omission set with the BSB. Verse NUMBERING still
+  // matches the KJV, so parallel columns stay aligned — the 16 simply show as gaps.
+  const asvCount = (
+    db.prepare("SELECT COUNT(*) n FROM verses WHERE translation_id='ASV'").get() as { n: number }
+  ).n
+  if (asvCount !== 31086) errors.push(`ASV has ${asvCount} verses (expected 31086)`)
+  const asvOmits = (
+    db
+      .prepare(
+        `SELECT COUNT(*) n FROM verses k WHERE k.translation_id='KJV' AND NOT EXISTS (
+           SELECT 1 FROM verses a WHERE a.translation_id='ASV'
+            AND a.book_id=k.book_id AND a.chapter=k.chapter AND a.verse=k.verse)`
+      )
+      .get() as { n: number }
+  ).n
+  if (asvOmits !== 16) errors.push(`ASV omits ${asvOmits} KJV verses (expected exactly 16)`)
+  const asvGen = db
+    .prepare("SELECT text FROM verses WHERE translation_id='ASV' AND book_id='Gen' AND chapter=2 AND verse=4")
+    .get() as { text: string } | undefined
+  if (!/Jehovah/.test(asvGen?.text ?? '')) {
+    errors.push(`ASV Gen 2:4 should render the divine name as "Jehovah": ${asvGen?.text ?? '(missing)'}`)
+  }
+  const asvPs = db
+    .prepare("SELECT text FROM verses WHERE translation_id='ASV' AND book_id='Ps' AND chapter=16 AND verse=10")
+    .get() as { text: string } | undefined
+  if (!/Sheol/.test(asvPs?.text ?? '')) {
+    errors.push(`ASV Ps 16:10 should transliterate "Sheol": ${asvPs?.text ?? '(missing)'}`)
   }
 
   const pilcrow = db.prepare("SELECT COUNT(*) n FROM verses WHERE text LIKE '%¶%'").get() as {

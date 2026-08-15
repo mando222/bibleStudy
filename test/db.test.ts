@@ -192,6 +192,42 @@ suite('bible.sqlite integrity', () => {
     ).toBe('G3056')
   })
 
+  it('ASV omits exactly the 16 critical-text verses, and no others', () => {
+    // The ASV follows the critical text, so it lacks the 16 verses of weak manuscript support
+    // that the KJV's Textus Receptus carries. This is correct, not data loss — and it's the
+    // guard that would catch a genuinely dropped verse, which would otherwise look identical.
+    expect(n("SELECT COUNT(*) n FROM verses WHERE translation_id='ASV'")).toBe(31086)
+    const omitted = all(
+      `SELECT k.book_id b, k.chapter c, k.verse v FROM verses k
+        WHERE k.translation_id='KJV' AND NOT EXISTS (
+          SELECT 1 FROM verses a WHERE a.translation_id='ASV'
+           AND a.book_id=k.book_id AND a.chapter=k.chapter AND a.verse=k.verse)
+        ORDER BY (SELECT sort_order FROM books WHERE id=k.book_id), k.chapter, k.verse`
+    ).map((r) => `${r.b} ${r.c}:${r.v}`)
+    expect(omitted).toEqual([
+      'Matt 17:21', 'Matt 18:11', 'Matt 23:14',
+      'Mark 7:16', 'Mark 9:44', 'Mark 9:46', 'Mark 11:26', 'Mark 15:28',
+      'Luke 17:36', 'Luke 23:17', 'John 5:4',
+      'Acts 8:37', 'Acts 15:34', 'Acts 24:7', 'Acts 28:29', 'Rom 16:24'
+    ])
+  })
+
+  it('ASV carries its distinctive renderings', () => {
+    const at = (b: string, c: number, v: number): string =>
+      String(
+        one('SELECT text FROM verses WHERE translation_id=? AND book_id=? AND chapter=? AND verse=?', 'ASV', b, c, v)
+          ?.text ?? ''
+      )
+    expect(at('Gen', 2, 4)).toMatch(/Jehovah/) // divine name, not "the LORD"
+    expect(at('Ps', 16, 10)).toMatch(/Sheol/) // transliterated, not "hell"
+    expect(at('Matt', 1, 18)).toMatch(/Holy Spirit/) // not "Holy Ghost"
+    // Follows the critical text, so the Comma Johanneum is absent (the KJV's TR has it).
+    expect(at('1John', 5, 7)).not.toMatch(/bear record in heaven/)
+    expect(String(one("SELECT text FROM verses WHERE translation_id='KJV' AND book_id='1John' AND chapter=5 AND verse=7").text)).toMatch(
+      /bear record in heaven/
+    )
+  })
+
   it('verse text carries no source typography or stray whitespace', () => {
     // The KJV source puts a pilcrow inside verse content to mark paragraph starts; this reader
     // flows verses inline, so ~3k verses used to begin with a stray "¶ ".
