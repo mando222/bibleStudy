@@ -16,6 +16,29 @@ Group changes under: **Added** (new features), **Changed** (changes to existing 
 
 _Nothing yet._
 
+## [0.2.1] - 2026-08-11
+
+### Added
+
+- **American Standard Version (1901).** The ancestor of the NASB, ESV and the World English Bible
+  already included here, added for comparison rather than for easy reading. It renders the divine
+  name as "Jehovah" (5,821 verses, against 7 in the KJV), transliterates *Sheol* and *Hades* instead
+  of flattening both to "hell", and follows the critical text — so reading it beside the KJV shows
+  you, verse by verse, where the two textual traditions differ. It uses KJV verse numbering, so it
+  lines up in a parallel column.
+
+### Fixed
+
+- **macOS no longer reports the app as "damaged".** Downloads were arriving with an invalid
+  signature, so macOS refused them outright with a dialog whose only real button was *Move to
+  Trash* — and the usual right-click → Open workaround could not clear it. The app is now signed,
+  so you get the ordinary "unidentified developer" warning instead, which right-click → **Open**
+  clears in one step. (The warning itself can only be removed with a paid Apple Developer
+  certificate.) If you already have 0.2.0 installed and stuck, 0.2.1 fixes it.
+- **Install instructions corrected.** They previously advertised an Intel Mac download that has
+  never existed — the published Mac build is Apple Silicon only — and recommended a workaround that
+  could not work on the affected versions.
+
 ## [0.2.0] - 2026-08-11
 
 ### Added
