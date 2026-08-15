@@ -13,26 +13,38 @@ how to get past it on each platform.
 
 ## macOS
 
-There are two Mac downloads — pick the one for your computer:
+The Mac download is **Apple Silicon only** (M1/M2/M3/M4):
+`Open Bible Study-<version>-mac-arm64.dmg`
 
-- **Apple Silicon** (M1/M2/M3/M4): `Open Bible Study-<version>-mac-arm64.dmg`
-- **Intel**: `Open Bible Study-<version>-mac-x64.dmg`
+> **Intel Macs aren't supported by the published builds.** Rosetta can't run an Apple Silicon
+> app on an Intel machine, so there's no download that will work. You can still build from
+> source — see the README.
 
 Steps:
 
 1. Open the `.dmg` and drag **Open Bible Study** into your **Applications** folder.
-2. The first time you open it, macOS may say the app *"is damaged"* or *"can't be
-   opened because Apple cannot check it."* This is just the unsigned-app warning.
-3. Fix it once, either way:
-   - **Easy:** right-click (or Control-click) the app → **Open** → **Open** again.
-   - **If that doesn't work:** open the **Terminal** app and paste this line, then
-     press Return:
-     ```bash
-     xattr -cr "/Applications/Open Bible Study.app"
-     ```
-     Then open the app normally.
+2. The first time you open it, macOS says the app *"can't be opened because Apple cannot
+   check it for malicious software."* That's the unsigned-app warning — expected for free,
+   independently published software.
+3. Clear it once: **right-click (or Control-click) the app → Open → Open again.**
+   You can also go to **System Settings → Privacy & Security**, where a button offers to
+   **Open Anyway**.
 
 After that first time, it opens like any other app.
+
+<details>
+<summary>If macOS says the app <em>"is damaged and can't be opened"</em></summary>
+
+That wording means the signature is invalid rather than merely untrusted, and right-click →
+Open won't clear it. It affects **versions 0.2.0 and earlier**, which were published without a
+valid signature. Either download 0.2.1 or later, or strip the download flag by hand:
+
+```bash
+xattr -cr "/Applications/Open Bible Study.app"
+```
+
+Then open the app normally.
+</details>
 
 ---
 

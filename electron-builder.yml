@@ -19,6 +19,11 @@ extraResources:
   - from: build/icon.png
     to: icon.png
 
+# Ad-hoc sign the macOS bundle. Without this the .app has no valid signature, and macOS reports a
+# quarantined download as "damaged … move it to the Trash" instead of the normal unsigned-app
+# warning that right-click → Open can clear. See build/afterPack.cjs.
+afterPack: ./build/afterPack.cjs
+
 # Native binaries (llama.cpp N-API + the sqlite-vec loadable extension) can't live inside the asar.
 asarUnpack:
   - '**/node_modules/node-llama-cpp/**'
