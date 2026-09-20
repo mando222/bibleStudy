@@ -16,6 +16,37 @@ Group changes under: **Added** (new features), **Changed** (changes to existing 
 
 _Nothing yet._
 
+## [0.2.3] - 2026-09-20
+
+### Added
+
+- **Words are now clickable in every translation, not just two.** Until now only the KJV and the
+  Berean carried word-level data, so in the ASV, WEB, Young's, Julia Smith, Tyndale, Geneva and
+  Wycliffe every word was inert — no lexicon on click, no Quick Replace, no concordance, no
+  word-by-word interlinear. Those translations now have word→Strong's mappings covering **29–71%**
+  of their words, depending on how close the wording is to modern English.
+
+  These mappings are **inferred, not scholarship.** They're worked out by matching each verse
+  against the Berean Standard Bible, which is professionally aligned to the Greek and Hebrew, and
+  they're right about 95% of the time — measured against the KJV's own independent tagging. Because
+  they aren't certain, the app shows them differently: an inferred word carries a dotted underline,
+  and its Strong's number appears in a lighter italic marked "inferred, not scholarly tagging". The
+  KJV and Berean are untouched and still show their real tagging. Where the evidence is ambiguous,
+  a word is left untagged rather than guessed at.
+
+- **Geneva Bible (1599).** The Bible of the Reformation and of Shakespeare, and the missing link
+  between Tyndale and the King James — much of the KJV's phrasing passed through it. Original 1599
+  spelling.
+
+- **Wycliffe Bible (c. 1395), surviving portions.** The earliest English Bible, translated from the
+  Latin Vulgate roughly 140 years before Tyndale. Only the Pentateuch and the four Gospels are
+  available in a public-domain form, so those nine books are what's included; the rest of the Bible
+  shows as unavailable in this translation. Middle English throughout —
+  "For God louede so the world, that he yaf his oon bigetun sone."
+
+  With these two, the app now carries the English Bible's whole family line: Wycliffe (1395) →
+  Tyndale (1534) → Geneva (1599) → King James (1769) → ASV (1901) → World English Bible.
+
 ## [0.2.2] - 2026-09-20
 
 ### Added
