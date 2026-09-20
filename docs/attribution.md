@@ -10,6 +10,9 @@ pipeline (`npm run db:build`) fetches these fresh; nothing here is redistributed
   (ASV), and Young's Literal Translation (YLT). These translations are in the Public Domain.
 - **American Standard Version (1901)** — via helloao / <https://ebible.org/Scriptures/details.php?id=eng-asv>
   — Public Domain.
+- **Tyndale New Testament (1534)** — William Tyndale, via helloao /
+  <https://ebible.org/Scriptures/details.php?id=engtnt> — Public Domain. New Testament only,
+  in original 1534 spelling.
 - **Julia E. Smith Translation (1876)** — text via <https://studybible.info/JuliaSmith> — Public
   Domain.
 

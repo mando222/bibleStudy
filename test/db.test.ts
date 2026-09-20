@@ -228,6 +228,40 @@ suite('bible.sqlite integrity', () => {
     )
   })
 
+  it('Tyndale NT is New Testament only, KJV-aligned, in original 1534 spelling', () => {
+    // 7,954, not the KJV NT's 7,957: verse numbers were retrofitted onto Tyndale's text in 1551
+    // and three have no corresponding text, so the source carries them as empty placeholders.
+    expect(n("SELECT COUNT(*) n FROM verses WHERE translation_id='TNT'")).toBe(7954)
+    const gaps = all(
+      `SELECT k.book_id b, k.chapter c, k.verse v FROM verses k
+         JOIN books bk ON bk.id = k.book_id
+        WHERE k.translation_id='KJV' AND bk.testament='NT' AND NOT EXISTS (
+          SELECT 1 FROM verses t WHERE t.translation_id='TNT'
+           AND t.book_id=k.book_id AND t.chapter=k.chapter AND t.verse=k.verse)
+        ORDER BY bk.sort_order, k.chapter, k.verse`
+    ).map((r) => `${r.b} ${r.c}:${r.v}`)
+    expect(gaps).toEqual(['Mark 11:26', 'Luke 17:36', 'Rev 21:26'])
+    // 27 books, none of them Old Testament — the library's first partial translation.
+    expect(n("SELECT COUNT(DISTINCT book_id) n FROM verses WHERE translation_id='TNT'")).toBe(27)
+    expect(
+      n(`SELECT COUNT(*) n FROM verses WHERE translation_id='TNT'
+           AND book_id IN (SELECT id FROM books WHERE testament='OT')`)
+    ).toBe(0)
+    const at = (b: string, c: number, v: number): string =>
+      String(
+        one('SELECT text FROM verses WHERE translation_id=? AND book_id=? AND chapter=? AND verse=?', 'TNT', b, c, v)
+          ?.text ?? ''
+      )
+    // Original spelling, not a modernised edition — the thing that makes it worth bundling.
+    expect(at('John', 3, 16)).toMatch(/everlastinge/i)
+    expect(at('John', 1, 1)).toMatch(/beginnynge/i)
+    // Tyndale reads "love" where the KJV has "charity" — a signature divergence.
+    expect(at('1Cor', 13, 1)).toMatch(/love/i)
+    expect(String(one("SELECT text FROM verses WHERE translation_id='KJV' AND book_id='1Cor' AND chapter=13 AND verse=1").text)).toMatch(/charity/i)
+    // Shares the KJV's NT versification, so parallel columns line up.
+    expect(n("SELECT COUNT(*) n FROM verses WHERE translation_id='KJV' AND book_id IN (SELECT id FROM books WHERE testament='NT')")).toBe(7957)
+  })
+
   it('verse text carries no source typography or stray whitespace', () => {
     // The KJV source puts a pilcrow inside verse content to mark paragraph starts; this reader
     // flows verses inline, so ~3k verses used to begin with a stray "¶ ".

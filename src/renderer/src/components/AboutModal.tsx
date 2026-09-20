@@ -14,6 +14,7 @@ const TRANSLATIONS: Source[] = [
   { what: 'Berean Standard Bible', detail: 'BSB — text + word alignment', license: 'Public Domain', url: 'https://berean.bible' },
   { what: 'World English Bible', detail: 'WEB', license: 'Public Domain', url: 'https://ebible.org' },
   { what: 'American Standard Version', detail: 'ASV (1901)', license: 'Public Domain', url: 'https://ebible.org/Scriptures/details.php?id=eng-asv' },
+  { what: 'Tyndale New Testament', detail: 'TNT (1534) — New Testament only, original spelling', license: 'Public Domain', url: 'https://ebible.org/Scriptures/details.php?id=engtnt' },
   { what: "Young's Literal Translation", detail: 'YLT (1898)', license: 'Public Domain', url: 'https://bible.helloao.org' },
   { what: 'Julia E. Smith Translation', detail: '1876 — text via studybible.info', license: 'Public Domain', url: 'https://studybible.info/JuliaSmith' }
 ]

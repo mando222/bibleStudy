@@ -34,6 +34,9 @@ interface TranslationSource {
   license: string
   attribution: string
   sortOrder: number
+  /** Coverage of this source. Defaults to a complete 66-book Bible; 'nt' marks a New-Testament-
+   *  only text such as Tyndale 1534, so the completeness assertions below expect the right shape. */
+  scope?: 'full' | 'nt'
 }
 
 // v1 reading set — all public domain.
@@ -86,6 +89,20 @@ const TRANSLATIONS: TranslationSource[] = [
     license: 'Public Domain',
     attribution: "Young's Literal Translation (1898). Public Domain.",
     sortOrder: 6
+  },
+  {
+    // The fountainhead of the English Bible: most of the KJV New Testament is Tyndale's wording,
+    // carried through Geneva and the Bishops' Bible. NEW TESTAMENT ONLY (27 books) and in original
+    // 1534 spelling ("worlde", "geven", "everlastinge lyfe"), so it is here for historical and
+    // textual comparison, not for everyday reading. Versification matches the KJV NT exactly.
+    id: 'TNT',
+    helloaoId: 'eng_tnt',
+    abbrev: 'TNT',
+    name: 'Tyndale New Testament',
+    license: 'Public Domain',
+    attribution: 'Tyndale New Testament (1534), William Tyndale. Public Domain (eBible.org).',
+    sortOrder: 7,
+    scope: 'nt'
   }
 ]
 
@@ -1553,8 +1570,14 @@ async function main(): Promise<void> {
       if (s.verses < 28000) errors.push(`Julia Smith: only ${s.verses} verses (expected ~31k)`)
       continue
     }
-    if (s.chapters < 1180 || s.chapters > 1200) errors.push(`${s.id}: ${s.chapters} chapters (expected ~1189)`)
-    if (s.verses < 30000) errors.push(`${s.id}: only ${s.verses} verses`)
+    const scope = TRANSLATIONS.find((x) => x.id === s.id)?.scope ?? 'full'
+    const want = scope === 'nt' ? { lo: 255, hi: 265, verses: 7900 } : { lo: 1180, hi: 1200, verses: 30000 }
+    if (s.chapters < want.lo || s.chapters > want.hi) {
+      errors.push(`${s.id}: ${s.chapters} chapters (expected ${want.lo}-${want.hi} for a '${scope}' text)`)
+    }
+    if (s.verses < want.verses) {
+      errors.push(`${s.id}: only ${s.verses} verses (expected >= ${want.verses} for a '${scope}' text)`)
+    }
   }
 
   const jsJn = db
@@ -1625,6 +1648,31 @@ async function main(): Promise<void> {
     .get() as { text: string } | undefined
   if (!/Sheol/.test(asvPs?.text ?? '')) {
     errors.push(`ASV Ps 16:10 should transliterate "Sheol": ${asvPs?.text ?? '(missing)'}`)
+  }
+
+  // Tyndale sanity: the right text, NT-only, and its 1534 spelling intact. A modernised or
+  // mis-mapped source would sail through a bare row count, so check a signature spelling.
+  // 7,954 and not the KJV NT's 7,957: verse numbers were retrofitted onto Tyndale's 1534 text in
+  // 1551, and three of them (Mark 11:26, Luke 17:36, Rev 21:26) have no corresponding text — the
+  // source carries them as empty placeholders. Those show as gaps in a parallel column.
+  const tntCount = (
+    db.prepare("SELECT COUNT(*) n FROM verses WHERE translation_id='TNT'").get() as { n: number }
+  ).n
+  if (tntCount !== 7954) errors.push(`TNT has ${tntCount} verses (expected 7954)`)
+  const tntOt = (
+    db
+      .prepare(
+        `SELECT COUNT(*) n FROM verses WHERE translation_id='TNT'
+           AND book_id IN (SELECT id FROM books WHERE testament='OT')`
+      )
+      .get() as { n: number }
+  ).n
+  if (tntOt !== 0) errors.push(`TNT is New Testament only, but carries ${tntOt} OT verses`)
+  const tntJohn = db
+    .prepare("SELECT text FROM verses WHERE translation_id='TNT' AND book_id='John' AND chapter=3 AND verse=16")
+    .get() as { text: string } | undefined
+  if (!/everlastinge/i.test(tntJohn?.text ?? '')) {
+    errors.push(`TNT John 3:16 should keep 1534 spelling: ${tntJohn?.text ?? '(missing)'}`)
   }
 
   const pilcrow = db.prepare("SELECT COUNT(*) n FROM verses WHERE text LIKE '%¶%'").get() as {
