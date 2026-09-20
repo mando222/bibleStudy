@@ -16,6 +16,26 @@ Group changes under: **Added** (new features), **Changed** (changes to existing 
 
 _Nothing yet._
 
+## [0.2.4] - 2026-09-20
+
+### Fixed
+
+- **Quick Replace no longer repeats a name.** In the translations that use the new inferred word
+  mappings — the ASV, WEB, Young's, Julia Smith, Tyndale, Geneva and Wycliffe — a divine name could
+  appear two or three times in a row: "the word **Yahweh Yahweh** unto me", "**Adonai Adonai**
+  Jehovah". The cause was in 0.2.3: where the Berean treats a phrase like "of the LORD" as a single
+  unit standing for one Hebrew word, the app was splitting it into separate words and substituting
+  the replacement once for each. Phrases that render a single original word are now kept together,
+  so the name appears once — while two genuinely separate occurrences still both appear. This
+  affected roughly 23,000 verses.
+
+### Changed
+
+- **The translation picker shows full names when the column is wide enough.** "TNT", "GNV" and
+  "WYC" told you very little; you'll now see "Tyndale New Testament", "Geneva Bible" and "Wycliffe
+  Bible (portions)" unless the column is too narrow to fit them, in which case it falls back to the
+  short forms rather than cutting a name off. Hovering always shows the full name.
+
 ## [0.2.3] - 2026-09-20
 
 ### Added

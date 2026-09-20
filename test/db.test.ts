@@ -299,10 +299,41 @@ suite('bible.sqlite integrity', () => {
     expect(
       n(`SELECT COUNT(*) n FROM (
            SELECT DISTINCT TRIM(value) s FROM derived_tags, json_each('["' || REPLACE(strongs,' ','","') || '"]')
-            WHERE TRIM(value) != '-' LIMIT 5000)
+            WHERE TRIM(value) NOT IN ('-', '+') LIMIT 5000)
           WHERE s NOT IN (SELECT id FROM strongs_lexicon)`),
       'derived tags referencing unknown Strong\'s numbers'
     ).toBe(0)
+  })
+
+  it('a phrase rendering one original word stays ONE derived token', () => {
+    // Regression (0.2.3): the Berean tags "of the LORD" as a single token carrying H3068. Emitting
+    // one derived token per word made Quick Replace substitute once per word — "Yahweh Yahweh".
+    // A '+' slot marks a word that continues the token before it.
+    const packed = (tr: string, b: string, c: number, v: number): string =>
+      String(
+        one('SELECT strongs FROM derived_tags WHERE translation_id=? AND book_id=? AND chapter=? AND verse=?', tr, b, c, v)
+          ?.strongs ?? ''
+      )
+    // Young's "a word of Jehovah": "of Jehovah" renders the single Hebrew word, so the second
+    // word must be a continuation rather than a second H3068 token.
+    const ez = packed('YLT', 'Ezek', 30, 1).split(' ')
+    expect(ez.filter((s) => s === 'H3068')).toHaveLength(1)
+    expect(ez).toContain('+')
+
+    // Corpus-wide: no verse may start two ADJACENT tokens carrying the same divine name, which is
+    // what produced the visible doubling.
+    const DIVINE = new Set(['H3068', 'H3069', 'H3050', 'H136', 'H410', 'H430', 'H433'])
+    let doubled = 0
+    for (const r of all('SELECT translation_id t, book_id b, chapter c, verse v, strongs s FROM derived_tags')) {
+      const slots = String(r.s).split(' ')
+      for (let i = 1; i < slots.length; i++) {
+        // Two token STARTS in a row with the same divine name (a '+' between them is fine).
+        if (DIVINE.has(slots[i]) && slots[i] === slots[i - 1]) doubled++
+      }
+    }
+    // A small residue is genuine — Daniel 11:36 really does say "the God of gods" — but it must
+    // stay a rounding error, not the 22,942 verses the bug affected.
+    expect(doubled).toBeLessThan(400)
   })
 
   it('verse text carries no source typography or stray whitespace', () => {

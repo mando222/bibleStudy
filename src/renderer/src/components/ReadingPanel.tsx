@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useAppStore } from '@/store/useAppStore'
 import { BOOK_BY_ID } from '@shared/books'
 import { useChapter } from '@/hooks/useChapter'
@@ -85,6 +85,53 @@ export default function ReadingPanel(): JSX.Element {
   )
 }
 
+// Room for the dropdown arrow the browser draws inside the select. Approximate and deliberately
+// generous, so a long name never sits flush against it.
+const SELECT_ARROW_PX = 26
+
+let measureCanvas: HTMLCanvasElement | null = null
+/** Rendered width of `text` at `font`, measured off-screen so it costs no layout. */
+function textWidth(text: string, font: string): number {
+  if (!measureCanvas) measureCanvas = document.createElement('canvas')
+  const ctx = measureCanvas.getContext('2d')
+  if (!ctx) return Number.POSITIVE_INFINITY
+  ctx.font = font
+  return ctx.measureText(text).width
+}
+
+/**
+ * True when every one of `labels` fits the select at its current width.
+ *
+ * A native <select> renders the same text in the closed box and in the popup, and the closed box is
+ * only as wide as its column — so full names are all-or-nothing. A list mixing "King James Version"
+ * with "WYC" reads as a bug, and a clipped "American Standard Versi…" is worse than a clean "ASV".
+ * No feedback loop: the select is flex-1/min-w-0, so its width comes from the column, not its text.
+ */
+function useLabelsFit(ref: React.RefObject<HTMLSelectElement | null>, labels: string[]): boolean {
+  const [fits, setFits] = useState(false)
+  const key = labels.join('\u0000')
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || !key) {
+      setFits(false)
+      return
+    }
+    const check = (): void => {
+      const s = getComputedStyle(el)
+      const font = `${s.fontStyle} ${s.fontWeight} ${s.fontSize} ${s.fontFamily}`
+      const widest = Math.max(...key.split('\u0000').map((l) => textWidth(l, font)))
+      const chrome =
+        parseFloat(s.paddingLeft || '0') + parseFloat(s.paddingRight || '0') + SELECT_ARROW_PX
+      setFits(widest + chrome <= el.clientWidth)
+    }
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [ref, key])
+  return fits
+}
+
 /** Per-column header: the translation picker for this column and its close button. */
 function ColumnHeader({
   translation,
@@ -98,9 +145,17 @@ function ColumnHeader({
   const translations = useAppStore((s) => s.translations)
   const parallels = useAppStore((s) => s.parallels)
   const setParallels = useAppStore((s) => s.setParallels)
+  // Prefer the full name — "TNT"/"GNV"/"WYC" tell a reader nothing — but only when the column is
+  // wide enough to show it whole.
+  const selectRef = useRef<HTMLSelectElement | null>(null)
+  const showFullNames = useLabelsFit(
+    selectRef,
+    translations.map((t) => t.name)
+  )
   const options = translations.length
-    ? translations.map((t) => ({ id: t.id, label: t.abbrev }))
-    : parallels.map((id) => ({ id, label: id }))
+    ? translations.map((t) => ({ id: t.id, label: showFullNames ? t.name : t.abbrev, title: t.name }))
+    : parallels.map((id) => ({ id, label: id, title: id }))
+  const currentName = translations.find((t) => t.id === translation)?.name
   const setColumn = (id: string): void => {
     const p = [...parallels]
     p[index] = id
@@ -109,12 +164,14 @@ function ColumnHeader({
   return (
     <div className="h-9 shrink-0 border-b border-line bg-panel px-2 flex items-center gap-1">
       <select
+        ref={selectRef}
         value={translation}
         onChange={(e) => setColumn(e.target.value)}
+        title={currentName}
         className="flex-1 min-w-0 bg-elevated border border-line rounded-md text-xs px-2 py-1 text-ink outline-none focus:border-accent"
       >
         {options.map((o) => (
-          <option key={o.id} value={o.id}>
+          <option key={o.id} value={o.id} title={o.title}>
             {o.label}
           </option>
         ))}

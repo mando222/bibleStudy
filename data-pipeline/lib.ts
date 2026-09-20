@@ -1,7 +1,8 @@
 import { foldLatinHomoglyphs } from '../src/shared/originalText'
 // One splitter, shared with the main process — see src/shared/verseUnits.ts for why.
-export { normSurface, splitVerseUnits } from '../src/shared/verseUnits'
-import { normSurface, splitVerseUnits } from '../src/shared/verseUnits'
+export { normSurface, splitVerseUnits, packTags, unpackTags } from '../src/shared/verseUnits'
+import { normSurface, splitVerseUnits, type DerivedTag } from '../src/shared/verseUnits'
+export type { DerivedTag } from '../src/shared/verseUnits'
 
 // Pure text-processing helpers for the build pipeline — extracted so they can be unit-tested
 // independently (a bad transliteration/normalisation/sanitiser would silently corrupt the DB).
@@ -223,6 +224,9 @@ export function stemWord(w: string): string {
 export interface PivotWord {
   key: string
   strongs: string | null
+  /** Index of the source token this word belongs to. The Berean tags phrases ("of the LORD"), so
+   *  several pivot words can share one token — and the words they map to must stay one token too. */
+  token: number
 }
 
 /**
@@ -234,9 +238,11 @@ export function deriveVerseTags(
   pivot: PivotWord[],
   candidates: ReadonlySet<string>,
   attested: ReadonlyMap<string, ReadonlySet<string>>
-): (string | null)[] {
+): DerivedTag[] {
   const keys = words.map(wordKey)
   const out: (string | null)[] = new Array(words.length).fill(null)
+  // Which source token each word came from (-1 = none), so a tagged phrase stays one token.
+  const owner: number[] = new Array(words.length).fill(-1)
 
   // Pass 1 — LCS alignment against the pivot translation.
   const n = keys.length
@@ -257,6 +263,7 @@ export function deriveVerseTags(
     while (i < n && j < m) {
       if (keys[i] !== '' && keys[i] === pivot[j].key) {
         out[i] = pivot[j].strongs
+        owner[i] = pivot[j].token
         i++
         j++
       } else if (dp[(i + 1) * w + j] >= dp[i * w + j + 1]) i++
@@ -279,15 +286,21 @@ export function deriveVerseTags(
     }
     out[i] = hit
   }
-  return out
-}
 
-/** Pack per-word tags into one compact string per verse ('-' = no tag). */
-export function packTags(tags: (string | null)[]): string {
-  return tags.map((t) => t ?? '-').join(' ')
-}
-
-/** Unpack a stored row back into per-word tags. */
-export function unpackTags(packed: string): (string | null)[] {
-  return packed.split(' ').map((t) => (t === '-' ? null : t))
+  // Decide where one token ends and the next begins.
+  //
+  // Adjacent words carrying the same Strong's are almost always two English words rendering ONE
+  // original word — "of Jehovah" for יהוה — and must be a single token, or Quick Replace
+  // substitutes twice and prints "Yahweh Yahweh". That happens both inside one Berean token
+  // ("of the LORD") and across the two passes, where the pivot tags "of" and the fallback
+  // independently tags "Jehovah".
+  //
+  // The exception is a genuine repetition — "Shelah and Shelah" — which the Berean records as two
+  // distinct tokens. So: merge on a matching Strong's UNLESS both words came from different KNOWN
+  // source tokens, which is the only positive evidence that two separate originals are in play.
+  return out.map((strongs, i) => {
+    if (i === 0 || strongs === null || out[i - 1] !== strongs) return { strongs, continues: false }
+    const distinctSources = owner[i] !== -1 && owner[i - 1] !== -1 && owner[i] !== owner[i - 1]
+    return { strongs, continues: !distinctSources }
+  })
 }

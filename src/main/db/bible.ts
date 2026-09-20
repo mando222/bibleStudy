@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
 import { foldLatinHomoglyphs } from '../../shared/originalText'
-import { splitVerseUnits } from '../../shared/verseUnits'
+import { splitVerseUnits, unpackTags } from '../../shared/verseUnits'
 import type {
   Translation,
   ChapterRef,
@@ -145,21 +145,34 @@ export function getChapter(ref: ChapterRef): ChapterContent {
     for (const row of packed) {
       const text = verseRows.find((v) => v.verse === row.verse)?.text
       if (!text) continue
-      const tags = row.strongs.split(' ')
-      tokensByVerse.set(
-        row.verse,
-        splitVerseUnits(text).map((u, i) => ({
-          position: i,
-          surface: u.surface,
-          trailer: u.trailer,
-          strongs: tags[i] && tags[i] !== '-' ? tags[i] : null,
+      const units = splitVerseUnits(text)
+      const tags = unpackTags(row.strongs)
+      // Collapse each run of words belonging to one source token into ONE token, the way the
+      // scholar-tagged translations are stored. Otherwise a phrase the Berean tags as a unit
+      // ("of the LORD" → H3068) becomes three tokens all carrying H3068, and Quick Replace
+      // substitutes once per token — "Yahweh Yahweh Yahweh".
+      const toks: VerseToken[] = []
+      for (let i = 0; i < units.length; ) {
+        let j = i + 1
+        while (j < units.length && tags[j]?.continues) j++
+        let surface = ''
+        for (let k = i; k < j; k++) {
+          surface += k === j - 1 ? units[k].surface : units[k].surface + units[k].trailer
+        }
+        toks.push({
+          position: toks.length,
+          surface,
+          trailer: units[j - 1].trailer,
+          strongs: tags[i]?.strongs ?? null,
           lemma: null,
           translit: null,
           morph: null,
           gloss: null,
           derived: true
-        }))
-      )
+        })
+        i = j
+      }
+      tokensByVerse.set(row.verse, toks)
     }
   }
 

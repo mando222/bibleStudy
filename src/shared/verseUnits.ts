@@ -27,3 +27,35 @@ export function splitVerseUnits(text: string): { surface: string; trailer: strin
   }
   return units
 }
+
+// ---- derived-tag wire format ------------------------------------------------
+// `derived_tags.strongs` holds one slot per word unit above. A slot is:
+//
+//   "-"      the word carries no tag, and stands as its own token
+//   "H3068"  the word carries this tag and STARTS a token
+//   "+"      the word continues the previous token
+//
+// The continuation marker exists because the Berean tags phrases, not words: "of the LORD" is a
+// single token carrying H3068. Without it, every word of that phrase becomes its own token holding
+// H3068, and Quick Replace substitutes once per token — rendering "Yahweh Yahweh Yahweh". Marking
+// continuations keeps a phrase one token, exactly as the scholar-tagged translations store it,
+// while still letting two genuinely separate occurrences ("LORD, LORD") stay two tokens.
+
+export interface DerivedTag {
+  strongs: string | null
+  /** This word belongs to the same source token as the word before it. */
+  continues: boolean
+}
+
+export function packTags(tags: DerivedTag[]): string {
+  return tags.map((t) => (t.continues ? '+' : (t.strongs ?? '-'))).join(' ')
+}
+
+export function unpackTags(packed: string): DerivedTag[] {
+  const out: DerivedTag[] = []
+  for (const slot of packed.split(' ')) {
+    if (slot === '+' && out.length) out.push({ strongs: out[out.length - 1].strongs, continues: true })
+    else out.push({ strongs: slot === '-' || slot === '+' ? null : slot, continues: false })
+  }
+  return out
+}

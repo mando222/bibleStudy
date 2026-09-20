@@ -15,6 +15,7 @@ import {
   cleanLexBody,
   deriveVerseTags,
   packTags,
+  type PivotWord,
   stemWord,
   wordKey,
   splitVerseUnits,
@@ -403,19 +404,29 @@ function buildDerivedTags(
   db: DatabaseSync
 ): { coverage: { id: string; pct: number }[]; agreement: number } {
   // Pivot: the BSB is 99% tagged and aligned to the originals.
-  const pivot = new Map<string, { key: string; strongs: string | null }[]>()
+  const pivot = new Map<string, PivotWord[]>()
   for (const r of db
     .prepare(
-      `SELECT book_id, chapter, verse, surface, strongs FROM verse_tokens
+      `SELECT book_id, chapter, verse, position, surface, strongs FROM verse_tokens
         WHERE translation_id = 'BSB' ORDER BY book_id, chapter, verse, position`
     )
-    .all() as { book_id: string; chapter: number; verse: number; surface: string; strongs: string | null }[]) {
+    .all() as {
+    book_id: string
+    chapter: number
+    verse: number
+    position: number
+    surface: string
+    strongs: string | null
+  }[]) {
     const k = `${r.book_id}|${r.chapter}|${r.verse}`
     let arr = pivot.get(k)
     if (!arr) pivot.set(k, (arr = []))
+    // Every word of a multi-word Berean token carries that token's position, so the words it maps
+    // to stay ONE token downstream — otherwise "of the LORD" becomes three tokens all holding
+    // H3068, and Quick Replace renders "Yahweh Yahweh Yahweh".
     for (const w of r.surface.split(/\s+/)) {
       const key = wordKey(w)
-      if (key) arr.push({ key, strongs: r.strongs })
+      if (key) arr.push({ key, strongs: r.strongs, token: r.position })
     }
   }
 
@@ -477,7 +488,7 @@ function buildDerivedTags(
       const units = splitVerseUnits(r.text).map((u) => u.surface)
       const tags = deriveVerseTags(units, pivot.get(k) ?? [], candidates.get(k) ?? new Set(), attested)
       words += units.length
-      hits += tags.filter(Boolean).length
+      hits += tags.filter((x) => x.strongs).length
       ins.run(id, r.book_id, r.chapter, r.verse, packTags(tags))
     }
     coverage.push({ id, pct: words ? Math.round((100 * hits) / words) : 0 })
@@ -510,9 +521,9 @@ function buildDerivedTags(
     const k = `${v.book_id}|${v.chapter}|${v.verse}`
     const got = deriveVerseTags(words, pivot.get(k) ?? [], candidates.get(k) ?? new Set(), attested)
     for (let i = 0; i < truth.length; i++) {
-      if (!truth[i] || !got[i]) continue
+      if (!truth[i] || !got[i]?.strongs) continue
       scored++
-      if (got[i] === truth[i]) agreed++
+      if (got[i].strongs === truth[i]) agreed++
     }
   }
   return { coverage, agreement: scored ? Math.round((1000 * agreed) / scored) / 10 : 0 }
