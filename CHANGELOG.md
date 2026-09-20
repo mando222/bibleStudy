@@ -16,6 +16,22 @@ Group changes under: **Added** (new features), **Changed** (changes to existing 
 
 _Nothing yet._
 
+## [0.2.2] - 2026-09-20
+
+### Added
+
+- **Tyndale New Testament (1534).** The first English New Testament translated directly from Greek,
+  and the source of most of the King James wording that followed it — reading the two side by side
+  shows you where the English Bible actually came from. Two things to know before you open it: it is
+  **New Testament only**, and it keeps Tyndale's original spelling ("For God so loveth the worlde
+  that he hath geven his only sonne… but shuld have everlastinge lyfe"), so it is here for historical
+  comparison rather than everyday reading. Searching still works for most words, since the search
+  matches word beginnings, but exact modern spellings will sometimes miss.
+
+  Worth looking up: 1 Corinthians 13, where Tyndale writes **love** and the KJV writes *charity*.
+
+  Old Testament chapters show as unavailable, since Tyndale never finished translating them.
+
 ## [0.2.1] - 2026-08-11
 
 ### Added
