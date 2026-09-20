@@ -65,11 +65,14 @@ export default function VerseView({ v, highlight, hasNote, onOpenMenu }: Props):
               <span key={tok.position}>
                 <span
                   onClick={clickable ? () => selectStrongs(tok.strongs) : undefined}
+                  // Inferred tags are marked with a dotted underline: still clickable, but never
+                  // presented as the scholarly tagging the KJV and BSB carry.
+                  title={tok.derived ? 'Inferred word mapping — not scholarly tagging' : undefined}
                   className={
                     clickable
                       ? `cursor-pointer rounded-sm transition-colors ${
                           isSel ? 'bg-accent-soft text-accent' : 'hover:bg-accent-soft/60'
-                        }`
+                        } ${tok.derived ? 'underline decoration-dotted decoration-accent/40 underline-offset-4' : ''}`
                       : ''
                   }
                 >
@@ -84,8 +87,14 @@ export default function VerseView({ v, highlight, hasNote, onOpenMenu }: Props):
                 {strongsVisible && tok.strongs && (
                   <sup
                     onClick={() => selectStrongs(tok.strongs)}
-                    title={`Strong's ${tok.strongs}`}
-                    className="align-super text-[0.6em] font-sans text-accent/70 hover:text-accent cursor-pointer mx-[1px]"
+                    title={
+                      tok.derived
+                        ? `Strong's ${tok.strongs} — inferred, not scholarly tagging`
+                        : `Strong's ${tok.strongs}`
+                    }
+                    className={`align-super text-[0.6em] font-sans cursor-pointer mx-[1px] hover:text-accent ${
+                      tok.derived ? 'text-faint italic' : 'text-accent/70'
+                    }`}
                   >
                     {tok.strongs.replace(/^[GH]/, '')}
                   </sup>

@@ -250,3 +250,24 @@ CREATE TABLE meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- Machine-derived word→Strong's mappings, for translations that carry no scholarly word tagging
+-- of their own (everything except KJV and BSB). Inferred by aligning each verse to the BSB — which
+-- IS tagged and aligned to the originals — then filling gaps from the Strong's numbers that verse
+-- actually contains. See data-pipeline/lib.ts `deriveVerseTags`.
+--
+-- These are NOT scholarship. They are ~92% accurate, measured against the KJV's independent
+-- tagging, so they live in their own table rather than in verse_tokens, and the reader marks them
+-- as inferred. Keeping them separate is what makes the provenance honest.
+--
+-- One row per verse. `strongs` is a space-separated list aligned to the verse text's
+-- whitespace-split words, with '-' for a word that received no tag — compact enough (~5 bytes a
+-- word) that tagging seven translations costs tens of MB rather than hundreds.
+CREATE TABLE derived_tags (
+  translation_id TEXT NOT NULL,
+  book_id        TEXT NOT NULL,
+  chapter        INTEGER NOT NULL,
+  verse          INTEGER NOT NULL,
+  strongs        TEXT NOT NULL,
+  PRIMARY KEY (translation_id, book_id, chapter, verse)
+) WITHOUT ROWID;

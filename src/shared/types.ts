@@ -16,6 +16,9 @@ export interface Translation {
 
 /** One word within a verse, for Strong's overlay + interlinear. */
 export interface VerseToken {
+  /** True when the Strong's number was INFERRED rather than taken from scholarly tagging
+   *  (see derived_tags in schema.sql). ~92% accurate; the reader marks these visually. */
+  derived?: boolean
   position: number
   surface: string // the word as printed
   trailer: string // punctuation/whitespace that follows (for faithful re-rendering)

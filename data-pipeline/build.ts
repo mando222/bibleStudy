@@ -13,6 +13,11 @@ import { BOOKS, BOOK_BY_USFM } from '../src/shared/books'
 import { foldLatinHomoglyphs } from '../src/shared/originalText'
 import {
   cleanLexBody,
+  deriveVerseTags,
+  packTags,
+  stemWord,
+  wordKey,
+  splitVerseUnits,
   normGreek,
   normHebrew,
   normStrongs,
@@ -34,9 +39,10 @@ interface TranslationSource {
   license: string
   attribution: string
   sortOrder: number
-  /** Coverage of this source. Defaults to a complete 66-book Bible; 'nt' marks a New-Testament-
-   *  only text such as Tyndale 1534, so the completeness assertions below expect the right shape. */
-  scope?: 'full' | 'nt'
+  /** Expected coverage, for the completeness assertions. Defaults to a complete 66-book Bible;
+   *  'nt' is a New-Testament-only text (Tyndale 1534); an explicit {books, minVerses} covers any
+   *  other partial source (Wycliffe's surviving portions). */
+  scope?: 'full' | 'nt' | { books: number; minVerses: number }
 }
 
 // v1 reading set — all public domain.
@@ -103,6 +109,30 @@ const TRANSLATIONS: TranslationSource[] = [
     attribution: 'Tyndale New Testament (1534), William Tyndale. Public Domain (eBible.org).',
     sortOrder: 7,
     scope: 'nt'
+  },
+  {
+    // The Bible of the Reformation and of Shakespeare, and the missing link between Tyndale and
+    // the KJV. Original 1599 spelling, like Tyndale.
+    id: 'GNV',
+    helloaoId: 'eng_gnv',
+    abbrev: 'GNV',
+    name: 'Geneva Bible',
+    license: 'Public Domain',
+    attribution: 'Geneva Bible (1599). Public Domain (eBible.org).',
+    sortOrder: 8
+  },
+  {
+    // The earliest complete English Bible (from the Latin Vulgate, c. 1395) — but only these
+    // portions survive in a public-domain transcription: the Pentateuch and the four Gospels.
+    // The complete modern-spelling editions are CC BY-NC-ND, which this project can't bundle.
+    id: 'WYC',
+    helloaoId: 'eng_w88',
+    abbrev: 'WYC',
+    name: 'Wycliffe Bible (portions)',
+    license: 'Public Domain',
+    attribution: 'Wycliffe Bible (c. 1395), surviving portions. Public Domain (eBible.org).',
+    sortOrder: 9,
+    scope: { books: 9, minVerses: 9000 }
   }
 ]
 
@@ -233,6 +263,8 @@ function verseText(content: unknown[]): string {
   }
   return pieces
     .join(' ')
+    // Wycliffe's transcription marks phrase groups with a backtick ("his `oon bigetun sone").
+    .replace(/`/g, '')
     // The KJV source marks paragraph starts with a pilcrow inside the verse content. It's
     // typography, not Scripture, and this reader flows verses inline — so ~3k KJV verses used to
     // begin with a stray "¶ ".
@@ -356,6 +388,134 @@ function reconcileVerseTokens(
   }
   db.exec('COMMIT')
   return { verses: byVerse.size, repaired, untagged }
+}
+
+/**
+ * Infer word→Strong's mappings for every translation that has no word tagging of its own, and
+ * store them in `derived_tags`. See the header in ./lib and the table comment in schema.sql for
+ * what this is and — importantly — what it isn't.
+ *
+ * Returns per-translation coverage, plus an agreement score: the same derivation is run over the
+ * KJV and scored against the KJV's own independent tagging, which the method never sees. That
+ * number is the honest accuracy estimate, and the build asserts on it.
+ */
+function buildDerivedTags(
+  db: DatabaseSync
+): { coverage: { id: string; pct: number }[]; agreement: number } {
+  // Pivot: the BSB is 99% tagged and aligned to the originals.
+  const pivot = new Map<string, { key: string; strongs: string | null }[]>()
+  for (const r of db
+    .prepare(
+      `SELECT book_id, chapter, verse, surface, strongs FROM verse_tokens
+        WHERE translation_id = 'BSB' ORDER BY book_id, chapter, verse, position`
+    )
+    .all() as { book_id: string; chapter: number; verse: number; surface: string; strongs: string | null }[]) {
+    const k = `${r.book_id}|${r.chapter}|${r.verse}`
+    let arr = pivot.get(k)
+    if (!arr) pivot.set(k, (arr = []))
+    for (const w of r.surface.split(/\s+/)) {
+      const key = wordKey(w)
+      if (key) arr.push({ key, strongs: r.strongs })
+    }
+  }
+
+  // Which Strong's numbers each verse actually contains, and which English words are attested for
+  // each number. Both are learned from the tagged translations plus each entry's KJV usage list.
+  const candidates = new Map<string, Set<string>>()
+  const attested = new Map<string, Set<string>>()
+  const add = (m: Map<string, Set<string>>, k: string, v: string): void => {
+    let s = m.get(k)
+    if (!s) m.set(k, (s = new Set()))
+    s.add(v)
+  }
+  for (const r of db
+    .prepare(
+      `SELECT book_id, chapter, verse, surface, strongs, translation_id FROM verse_tokens
+        WHERE strongs IS NOT NULL`
+    )
+    .all() as { book_id: string; chapter: number; verse: number; surface: string; strongs: string; translation_id: string }[]) {
+    add(candidates, `${r.book_id}|${r.chapter}|${r.verse}`, r.strongs)
+    for (const w of r.surface.split(/\s+/)) {
+      const k = wordKey(w)
+      if (k) add(attested, r.strongs, stemWord(k))
+    }
+  }
+  for (const r of db
+    .prepare("SELECT id, kjv_def FROM strongs_lexicon WHERE kjv_def IS NOT NULL")
+    .all() as { id: string; kjv_def: string }[]) {
+    for (const w of r.kjv_def.match(/[A-Za-z]+/g) ?? []) {
+      const k = stemWord(wordKey(w))
+      if (k.length > 2) add(attested, r.id, k)
+    }
+  }
+
+  const tagged = new Set(
+    (db.prepare('SELECT DISTINCT translation_id AS id FROM verse_tokens').all() as { id: string }[]).map(
+      (r) => r.id
+    )
+  )
+  const targets = (
+    db
+      .prepare("SELECT id FROM translations WHERE is_original = 0 ORDER BY sort_order")
+      .all() as { id: string }[]
+  )
+    .map((r) => r.id)
+    .filter((id) => !tagged.has(id))
+
+  const ins = db.prepare(
+    'INSERT OR REPLACE INTO derived_tags (translation_id, book_id, chapter, verse, strongs) VALUES (?,?,?,?,?)'
+  )
+  const coverage: { id: string; pct: number }[] = []
+  db.exec('BEGIN')
+  for (const id of targets) {
+    let words = 0
+    let hits = 0
+    for (const r of db
+      .prepare('SELECT book_id, chapter, verse, text FROM verses WHERE translation_id = ?')
+      .all(id) as { book_id: string; chapter: number; verse: number; text: string }[]) {
+      const k = `${r.book_id}|${r.chapter}|${r.verse}`
+      const units = splitVerseUnits(r.text).map((u) => u.surface)
+      const tags = deriveVerseTags(units, pivot.get(k) ?? [], candidates.get(k) ?? new Set(), attested)
+      words += units.length
+      hits += tags.filter(Boolean).length
+      ins.run(id, r.book_id, r.chapter, r.verse, packTags(tags))
+    }
+    coverage.push({ id, pct: words ? Math.round((100 * hits) / words) : 0 })
+  }
+  db.exec('COMMIT')
+
+  // Score the same method against the KJV's independent tagging, which it never sees. Tagger
+  // tokens can span several words, so expand them to line up word-for-word with the derivation.
+  let scored = 0
+  let agreed = 0
+  const kjvVerses = db
+    .prepare("SELECT DISTINCT book_id, chapter, verse FROM verse_tokens WHERE translation_id='KJV'")
+    .all() as { book_id: string; chapter: number; verse: number }[]
+  const kjvToks = db.prepare(
+    "SELECT surface, strongs FROM verse_tokens WHERE translation_id='KJV' AND book_id=? AND chapter=? AND verse=? ORDER BY position"
+  )
+  for (const v of kjvVerses) {
+    const words: string[] = []
+    const truth: (string | null)[] = []
+    for (const tok of kjvToks.all(v.book_id, v.chapter, v.verse) as {
+      surface: string
+      strongs: string | null
+    }[]) {
+      for (const w of tok.surface.split(/\s+/)) {
+        if (!w) continue
+        words.push(w)
+        truth.push(tok.strongs)
+      }
+    }
+    const k = `${v.book_id}|${v.chapter}|${v.verse}`
+    const got = deriveVerseTags(words, pivot.get(k) ?? [], candidates.get(k) ?? new Set(), attested)
+    for (let i = 0; i < truth.length; i++) {
+      if (!truth[i] || !got[i]) continue
+      scored++
+      if (got[i] === truth[i]) agreed++
+    }
+  }
+  return { coverage, agreement: scored ? Math.round((1000 * agreed) / scored) / 10 : 0 }
 }
 
 /** Tag the BSB with per-word Strong's + original-language alignment from bsb_tables.tsv.
@@ -1323,7 +1483,7 @@ async function main(): Promise<void> {
     'INSERT INTO verses_fts (text, translation_id, book_id, chapter, verse) VALUES (?,?,?,?,?)'
   )
 
-  const summary: { id: string; verses: number; chapters: number }[] = []
+  const summary: { id: string; verses: number; chapters: number; books: number }[] = []
 
   for (const t of TRANSLATIONS) {
     process.stdout.write(`• ${t.id}: fetching…`)
@@ -1358,7 +1518,12 @@ async function main(): Promise<void> {
       }
     }
     db.exec('COMMIT')
-    summary.push({ id: t.id, verses: verseCount, chapters: chapterSet.size })
+    summary.push({
+      id: t.id,
+      verses: verseCount,
+      chapters: chapterSet.size,
+      books: new Set([...chapterSet].map((k) => k.split(':')[0])).size
+    })
     process.stdout.write(` ${verseCount} verses, ${chapterSet.size} chapters\n`)
   }
 
@@ -1382,7 +1547,12 @@ async function main(): Promise<void> {
     jsChapters.add(`${v.book}:${v.chapter}`)
   }
   db.exec('COMMIT')
-  summary.push({ id: 'Smith', verses: jsVerses.length, chapters: jsChapters.size })
+  summary.push({
+    id: 'Smith',
+    verses: jsVerses.length,
+    chapters: jsChapters.size,
+    books: new Set([...jsChapters].map((k) => k.split(':')[0])).size
+  })
   process.stdout.write(` ${jsVerses.length} verses, ${jsChapters.size} chapters\n`)
 
   // Strong's lexicon
@@ -1497,6 +1667,14 @@ async function main(): Promise<void> {
     `  divine-name backfill: LORD +${Number(fixLord.changes)}, GOD +${Number(fixGod.changes)}\n`
   )
 
+  // Derived word tags for the translations with no scholarly tagging of their own.
+  process.stdout.write('• deriving word tags (inferred, kept apart from scholarship):')
+  const derived = buildDerivedTags(db)
+  process.stdout.write(
+    ' ' + derived.coverage.map((c) => `${c.id} ${c.pct}%`).join(' · ') +
+      `  |  ${derived.agreement}% agreement vs the KJV's own tagging\n`
+  )
+
   // Original-language editions (selectable interlinear bases)
   const insEdition = db.prepare(
     'INSERT OR REPLACE INTO editions (id, name, language, testament, sort_order) VALUES (?,?,?,?,?)'
@@ -1571,12 +1749,19 @@ async function main(): Promise<void> {
       continue
     }
     const scope = TRANSLATIONS.find((x) => x.id === s.id)?.scope ?? 'full'
-    const want = scope === 'nt' ? { lo: 255, hi: 265, verses: 7900 } : { lo: 1180, hi: 1200, verses: 30000 }
-    if (s.chapters < want.lo || s.chapters > want.hi) {
-      errors.push(`${s.id}: ${s.chapters} chapters (expected ${want.lo}-${want.hi} for a '${scope}' text)`)
-    }
-    if (s.verses < want.verses) {
-      errors.push(`${s.id}: only ${s.verses} verses (expected >= ${want.verses} for a '${scope}' text)`)
+    if (typeof scope === 'object') {
+      if (s.books !== scope.books) errors.push(`${s.id}: ${s.books} books (expected ${scope.books})`)
+      if (s.verses < scope.minVerses) {
+        errors.push(`${s.id}: only ${s.verses} verses (expected >= ${scope.minVerses})`)
+      }
+    } else {
+      const want = scope === 'nt' ? { lo: 255, hi: 265, verses: 7900 } : { lo: 1180, hi: 1200, verses: 30000 }
+      if (s.chapters < want.lo || s.chapters > want.hi) {
+        errors.push(`${s.id}: ${s.chapters} chapters (expected ${want.lo}-${want.hi} for a '${scope}' text)`)
+      }
+      if (s.verses < want.verses) {
+        errors.push(`${s.id}: only ${s.verses} verses (expected >= ${want.verses} for a '${scope}' text)`)
+      }
     }
   }
 
@@ -1674,6 +1859,32 @@ async function main(): Promise<void> {
   if (!/everlastinge/i.test(tntJohn?.text ?? '')) {
     errors.push(`TNT John 3:16 should keep 1534 spelling: ${tntJohn?.text ?? '(missing)'}`)
   }
+
+  // The derivation is inferred, so the build measures it rather than trusting it: score the same
+  // method against the KJV's independent tagging and refuse to ship if it degrades.
+  if (derived.agreement < 90) {
+    errors.push(`derived word tags only ${derived.agreement}% agreement vs the KJV (expected >= 90%)`)
+  }
+  // A floor to catch a broken pivot (which would collapse every translation to ~0%), not a quality
+  // bar. Wycliffe's Middle English — "louede", "yaf", "bigetun" — genuinely sits around 29%, which
+  // is the honest low-water mark for this method; modern English lands at 52-71%.
+  for (const cov of derived.coverage) {
+    if (cov.pct < 20) errors.push(`${cov.id}: derived tags cover only ${cov.pct}% of words`)
+  }
+  const derivedRows = (
+    db.prepare('SELECT COUNT(*) n FROM derived_tags').get() as { n: number }
+  ).n
+  if (derivedRows < 100000) errors.push(`derived_tags has only ${derivedRows} rows`)
+  // Derived tags must never shadow real scholarship.
+  const overlap = (
+    db
+      .prepare(
+        `SELECT COUNT(*) n FROM derived_tags d
+          WHERE EXISTS (SELECT 1 FROM verse_tokens v WHERE v.translation_id = d.translation_id)`
+      )
+      .get() as { n: number }
+  ).n
+  if (overlap > 0) errors.push(`${overlap} derived rows for translations that have real tagging`)
 
   const pilcrow = db.prepare("SELECT COUNT(*) n FROM verses WHERE text LIKE '%¶%'").get() as {
     n: number

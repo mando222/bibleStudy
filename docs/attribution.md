@@ -13,8 +13,23 @@ pipeline (`npm run db:build`) fetches these fresh; nothing here is redistributed
 - **Tyndale New Testament (1534)** — William Tyndale, via helloao /
   <https://ebible.org/Scriptures/details.php?id=engtnt> — Public Domain. New Testament only,
   in original 1534 spelling.
+- **Geneva Bible (1599)** — via helloao / <https://ebible.org/Scriptures/details.php?id=enggnv>
+  — Public Domain. Original 1599 spelling.
+- **Wycliffe Bible (c. 1395), surviving portions** — via helloao /
+  <https://ebible.org/Scriptures/details.php?id=engWycliffe> — Public Domain. The Pentateuch and
+  the four Gospels only, in Middle English. (The complete modern-spelling editions are
+  CC BY-NC-ND, which this project does not bundle.)
 - **Julia E. Smith Translation (1876)** — text via <https://studybible.info/JuliaSmith> — Public
   Domain.
+
+## Derived word mappings
+
+- **Inferred word→Strong's tags** for translations with no scholarly tagging of their own (ASV,
+  WEB, YLT, Julia Smith, Tyndale, Geneva, Wycliffe). Not a third-party source: these are computed
+  at build time by aligning each verse to the Berean Standard Bible's word alignment, then
+  resolving leftovers against the Strong's numbers that verse contains. They are **inferred, not
+  scholarship** — measured at ~95% agreement against the KJV's independent tagging — and the
+  reader marks them as such. See `derived_tags` in `data-pipeline/schema.sql`.
 
 ## Original languages & lexicons
 

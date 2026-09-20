@@ -7,7 +7,12 @@ import {
   cleanLexBody,
   splitVerseUnits,
   retileTokens,
-  type RawToken
+  type RawToken,
+  deriveVerseTags,
+  packTags,
+  unpackTags,
+  stemWord,
+  wordKey
 } from '../data-pipeline/lib'
 import { foldLatinHomoglyphs } from '../src/shared/originalText'
 
@@ -185,5 +190,61 @@ describe('foldLatinHomoglyphs (Swete LXX transcription artifacts)', () => {
     for (const w of ['θεός', 'ἀγάπη', 'λόγος', 'Ἰησοῦς', 'ἐν']) {
       expect(foldLatinHomoglyphs(w)).toBe(w)
     }
+  })
+})
+
+describe('derived word tags', () => {
+  const pivot = (pairs: [string, string | null][]): { key: string; strongs: string | null }[] =>
+    pairs.map(([w, s]) => ({ key: wordKey(w), strongs: s }))
+
+  it('carries tags across from the pivot translation, occurrence-aware', () => {
+    // "the" appears twice and must map to the RIGHT occurrence, not the first.
+    const got = deriveVerseTags(
+      ['In', 'the', 'beginning', 'was', 'the', 'Word'],
+      pivot([['In', 'G1722'], ['the', 'G3588'], ['beginning', 'G746'], ['was', 'G1510'], ['the', 'G3739'], ['Word', 'G3056']]),
+      new Set(),
+      new Map()
+    )
+    expect(got).toEqual(['G1722', 'G3588', 'G746', 'G1510', 'G3739', 'G3056'])
+  })
+
+  it('returns one entry per word, including punctuation-only chunks', () => {
+    const got = deriveVerseTags(['God', '—', 'love'], pivot([['God', 'H430']]), new Set(), new Map())
+    expect(got).toHaveLength(3)
+    expect(got[0]).toBe('H430')
+    expect(got[1]).toBeNull()
+  })
+
+  it('falls back to the verse\'s own Strong\'s set when the pivot words differ', () => {
+    // The pivot says "love"; this translation says "charity". Both are attested for G26, and G26
+    // is one of the numbers this verse actually contains — so it resolves.
+    const got = deriveVerseTags(
+      ['charity'],
+      pivot([['love', 'G26']]),
+      new Set(['G26', 'G1722']),
+      new Map([['G26', new Set([stemWord(wordKey('charity')), 'love'])]])
+    )
+    expect(got).toEqual(['G26'])
+  })
+
+  it('refuses to guess when two candidates both match', () => {
+    const got = deriveVerseTags(
+      ['love'],
+      [],
+      new Set(['G25', 'G26']),
+      new Map([['G25', new Set(['love'])], ['G26', new Set(['love'])]])
+    )
+    expect(got).toEqual([null]) // ambiguous -> untagged, never a coin flip
+  })
+
+  it('bridges inflection and archaic spelling via the stemmer', () => {
+    expect(stemWord(wordKey('loveth'))).toBe(stemWord(wordKey('loved')))
+    expect(stemWord(wordKey('worlde'))).toBe(stemWord(wordKey('world')))
+  })
+
+  it('packs and unpacks losslessly, marking untagged words', () => {
+    const tags = ['G1722', null, 'H430', null]
+    expect(packTags(tags)).toBe('G1722 - H430 -')
+    expect(unpackTags(packTags(tags))).toEqual(tags)
   })
 })

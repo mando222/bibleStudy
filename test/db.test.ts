@@ -262,6 +262,49 @@ suite('bible.sqlite integrity', () => {
     expect(n("SELECT COUNT(*) n FROM verses WHERE translation_id='KJV' AND book_id IN (SELECT id FROM books WHERE testament='NT')")).toBe(7957)
   })
 
+  it('Geneva and Wycliffe are present, with Wycliffe limited to its surviving portions', () => {
+    expect(n("SELECT COUNT(*) n FROM verses WHERE translation_id='GNV'")).toBe(31090)
+    // Only the Pentateuch and the four Gospels survive in a public-domain transcription. The
+    // complete modern-spelling editions are CC BY-NC-ND, which this project can't bundle.
+    expect(n("SELECT COUNT(DISTINCT book_id) n FROM verses WHERE translation_id='WYC'")).toBe(9)
+    expect(n("SELECT COUNT(*) n FROM verses WHERE translation_id='WYC'")).toBe(9622)
+    const at = (id: string, b: string, c: number, v: number): string =>
+      String(one('SELECT text FROM verses WHERE translation_id=? AND book_id=? AND chapter=? AND verse=?', id, b, c, v)?.text ?? '')
+    expect(at('GNV', 'John', 3, 16)).toMatch(/God so loued|loued the worlde|beleeueth/i) // 1599 spelling
+    expect(at('WYC', 'John', 3, 16)).toMatch(/louede|bigetun/i) // Middle English
+    // The transcription's phrase-group backticks must not reach the reader.
+    expect(n("SELECT COUNT(*) n FROM verses WHERE text LIKE '%`%'"), 'stray backticks').toBe(0)
+  })
+
+  it('derived word tags exist, stay out of the tagged translations, and line up with the text', () => {
+    // Inferred mappings for translations with no scholarly tagging — see derived_tags in schema.sql.
+    const tagged = all("SELECT DISTINCT translation_id id FROM verse_tokens").map((r) => r.id)
+    const derivedIds = all('SELECT DISTINCT translation_id id FROM derived_tags').map((r) => r.id)
+    expect(derivedIds.length).toBeGreaterThan(4)
+    for (const id of derivedIds) expect(tagged, `${id} has real tagging`).not.toContain(id)
+
+    // One tag slot per whitespace-delimited word, or the tags would silently shift.
+    const bad = all(
+      `SELECT d.translation_id t, d.book_id b, d.chapter c, d.verse v,
+              LENGTH(d.strongs) - LENGTH(REPLACE(d.strongs,' ','')) + 1 tags,
+              LENGTH(TRIM(ve.text)) - LENGTH(REPLACE(TRIM(ve.text),' ','')) + 1 words
+         FROM derived_tags d
+         JOIN verses ve ON ve.translation_id=d.translation_id AND ve.book_id=d.book_id
+                       AND ve.chapter=d.chapter AND ve.verse=d.verse
+        WHERE tags != words LIMIT 3`
+    )
+    expect(bad.length, `tag/word count mismatch: ${JSON.stringify(bad)}`).toBe(0)
+
+    // Every derived Strong's must be a real lexicon entry — never an invented id.
+    expect(
+      n(`SELECT COUNT(*) n FROM (
+           SELECT DISTINCT TRIM(value) s FROM derived_tags, json_each('["' || REPLACE(strongs,' ','","') || '"]')
+            WHERE TRIM(value) != '-' LIMIT 5000)
+          WHERE s NOT IN (SELECT id FROM strongs_lexicon)`),
+      'derived tags referencing unknown Strong\'s numbers'
+    ).toBe(0)
+  })
+
   it('verse text carries no source typography or stray whitespace', () => {
     // The KJV source puts a pilcrow inside verse content to mark paragraph starts; this reader
     // flows verses inline, so ~3k verses used to begin with a stray "¶ ".

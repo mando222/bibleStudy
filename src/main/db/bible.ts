@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
 import { foldLatinHomoglyphs } from '../../shared/originalText'
+import { splitVerseUnits } from '../../shared/verseUnits'
 import type {
   Translation,
   ChapterRef,
@@ -130,6 +131,36 @@ export function getChapter(ref: ChapterRef): ChapterContent {
       morph: (t.morph as string) ?? null,
       gloss: (t.gloss as string) ?? null
     })
+  }
+
+  // Translations with no scholarly tagging get inferred tags instead, stored one packed row per
+  // verse (see derived_tags in schema.sql). Materialise them into tokens here, marked `derived`,
+  // so the reader has a single uniform shape to render and can flag them as inferred.
+  if (tokenRows.length === 0) {
+    const packed = d
+      .prepare(
+        'SELECT verse, strongs FROM derived_tags WHERE translation_id = ? AND book_id = ? AND chapter = ?'
+      )
+      .all(ref.translation, ref.book, ref.chapter) as { verse: number; strongs: string }[]
+    for (const row of packed) {
+      const text = verseRows.find((v) => v.verse === row.verse)?.text
+      if (!text) continue
+      const tags = row.strongs.split(' ')
+      tokensByVerse.set(
+        row.verse,
+        splitVerseUnits(text).map((u, i) => ({
+          position: i,
+          surface: u.surface,
+          trailer: u.trailer,
+          strongs: tags[i] && tags[i] !== '-' ? tags[i] : null,
+          lemma: null,
+          translit: null,
+          morph: null,
+          gloss: null,
+          derived: true
+        }))
+      )
+    }
   }
 
   const verses: Verse[] = verseRows.map((r) => ({

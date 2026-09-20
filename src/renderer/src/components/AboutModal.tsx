@@ -15,6 +15,8 @@ const TRANSLATIONS: Source[] = [
   { what: 'World English Bible', detail: 'WEB', license: 'Public Domain', url: 'https://ebible.org' },
   { what: 'American Standard Version', detail: 'ASV (1901)', license: 'Public Domain', url: 'https://ebible.org/Scriptures/details.php?id=eng-asv' },
   { what: 'Tyndale New Testament', detail: 'TNT (1534) — New Testament only, original spelling', license: 'Public Domain', url: 'https://ebible.org/Scriptures/details.php?id=engtnt' },
+  { what: 'Geneva Bible', detail: 'GNV (1599) — original spelling', license: 'Public Domain', url: 'https://ebible.org/Scriptures/details.php?id=enggnv' },
+  { what: 'Wycliffe Bible', detail: 'WYC (c. 1395) — Pentateuch + Gospels, Middle English', license: 'Public Domain', url: 'https://ebible.org/Scriptures/details.php?id=engWycliffe' },
   { what: "Young's Literal Translation", detail: 'YLT (1898)', license: 'Public Domain', url: 'https://bible.helloao.org' },
   { what: 'Julia E. Smith Translation', detail: '1876 — text via studybible.info', license: 'Public Domain', url: 'https://studybible.info/JuliaSmith' }
 ]
@@ -27,6 +29,16 @@ const ORIGINALS: Source[] = [
   { what: 'Lexicons: BDB · Abbott-Smith · LSJ', detail: 'TBESH / TBESG / TFLSJ, keyed to Strong’s', license: 'CC BY 4.0 — STEPBible / Tyndale House', url: 'https://github.com/STEPBible/STEPBible-Data' },
   { what: "KJV Strong's word tagging", detail: 'kaiserlik/kjv', license: 'Open', url: 'https://github.com/kaiserlik/kjv' },
   { what: 'Verse-text distribution', detail: 'helloao Free Use Bible API', license: 'Open', url: 'https://bible.helloao.org' }
+]
+
+const DERIVED: Source[] = [
+  {
+    what: 'Inferred word mappings',
+    detail:
+      'Translations without scholarly tagging (ASV, WEB, YLT, Smith, Tyndale, Geneva, Wycliffe) get word→Strong’s links inferred from the Berean alignment — ~95% accurate, and marked in the text as inferred rather than scholarship',
+    license: 'Computed at build time by this project',
+    url: 'https://berean.bible'
+  }
 ]
 
 const STUDY_DATA: Source[] = [
@@ -180,6 +192,12 @@ export default function AboutModal(): JSX.Element | null {
 
           <Section title="Original languages & lexicons">
             {ORIGINALS.map((s) => (
+              <SourceRow key={s.what} s={s} />
+            ))}
+          </Section>
+
+          <Section title="Derived word mappings (inferred, not scholarship)">
+            {DERIVED.map((s) => (
               <SourceRow key={s.what} s={s} />
             ))}
           </Section>
