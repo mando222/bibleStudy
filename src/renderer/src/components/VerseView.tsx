@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { Verse, Highlight } from '@shared/types'
-import { useAppStore, computeQuickReplacements } from '@/store/useAppStore'
+import { useAppStore, computeQuickReplacements, quickReplaceApplies } from '@/store/useAppStore'
 import { highlightVar } from '@/lib/highlights'
 
 interface Props {
@@ -24,11 +24,19 @@ export default function VerseView({ v, highlight, hasNote, onOpenMenu }: Props):
   const quickReplace = useAppStore((s) => s.quickReplace)
   const quickReplaceConfig = useAppStore((s) => s.quickReplaceConfig)
 
-  // Quick-Replace renderings are derived from the (persisted) config; manual replacements win.
-  const effective = useMemo(
-    () => ({ ...computeQuickReplacements(quickReplace, quickReplaceConfig), ...replacements }),
-    [replacements, quickReplace, quickReplaceConfig]
+  // Quick Replace renderings come from the persisted config; a manual replacement (chosen from the
+  // lexicon card) always wins and is never form-gated, because the user picked that word directly.
+  const quick = useMemo(
+    () => computeQuickReplacements(quickReplace, quickReplaceConfig),
+    [quickReplace, quickReplaceConfig]
   )
+  const replacementFor = (tok: { strongs: string | null; surface: string }): string | undefined => {
+    if (!tok.strongs) return undefined
+    const manual = replacements[tok.strongs]
+    if (manual) return manual
+    const auto = quick[tok.strongs]
+    return auto && quickReplaceApplies(tok.strongs, tok.surface) ? auto : undefined
+  }
   const useTokens = !!v.tokens && v.tokens.length > 0
 
   const bg = highlight
@@ -60,7 +68,7 @@ export default function VerseView({ v, highlight, hasNote, onOpenMenu }: Props):
           v.tokens!.map((tok) => {
             const clickable = !!tok.strongs
             const isSel = selected != null && selected === tok.strongs
-            const replaced = tok.strongs ? effective[tok.strongs] : undefined
+            const replaced = replacementFor(tok)
             return (
               <span key={tok.position}>
                 <span

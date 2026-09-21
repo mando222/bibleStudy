@@ -203,6 +203,13 @@ function Column({ translation, index, canRemove, book, chapter, registerRef, onS
   const { data, loading, error } = useChapter(translation, book, chapter)
   const meta = useAppStore((s) => s.translations.find((x) => x.id === translation))
   const strongsVisible = useAppStore((s) => s.strongsVisible)
+  // Replacing a word changes its width, and a multi-word phrase collapsing to a single word
+  // ("of the LORD" → "Yahweh") removes spaces from the line — so justification has fewer, wider
+  // gaps to stretch and the spacing goes visibly uneven. Same reason Strong's numbers switch to
+  // left-aligned below.
+  const replacementsActive = useAppStore(
+    (s) => s.quickReplace || Object.keys(s.replacements).length > 0
+  )
   const highlights = useHighlights(translation, book, chapter)
   const { byVerse } = useNotes(book, chapter)
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -317,8 +324,9 @@ function Column({ translation, index, canRemove, book, chapter, registerRef, onS
           <div
             dir={rtl ? 'rtl' : 'ltr'}
             className={`text-scripture text-ink hyphens-auto ${
-              // Strong's numbers stretch justified lines; left-align reads cleaner then.
-              strongsVisible ? 'text-left leading-[2.15]' : 'text-justify'
+              // Anything that changes word widths mid-line — Strong's numbers, replacements —
+              // makes justified spacing lurch. Left-align reads cleaner then.
+              strongsVisible || replacementsActive ? 'text-left leading-[2.15]' : 'text-justify'
             } ${rtl ? 'font-hebrew text-right' : 'font-serif'}`}
           >
             {data.verses.map((v) => (
