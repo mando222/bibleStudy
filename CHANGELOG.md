@@ -16,6 +16,38 @@ Group changes under: **Added** (new features), **Changed** (changes to existing 
 
 _Nothing yet._
 
+## [0.2.5] - 2026-09-21
+
+### Fixed
+
+- **Inferred word mappings now reach the interlinear and the concordance.** 0.2.3 said the ASV,
+  WEB, Young's, Julia Smith, Tyndale, Geneva and Wycliffe had gained word-by-word interlinear
+  alignment and concordance lookup. Clicking a word for its lexicon entry did work, but those two
+  did not — the inferred tags were only ever read by the reader. They now work everywhere: stacking
+  one of those translations under the interlinear aligns it word-for-word against the Greek or
+  Hebrew, and the concordance follows whichever translation you're reading rather than always
+  showing the King James. Where a translation has no word data at all, the concordance falls back
+  to the KJV and says so.
+
+- **Quick Replace no longer replaces the wrong sense of a word.** A Strong's number can carry more
+  than one meaning — H5945 is the divine title "Most High" *and* the ordinary adjective "upper" —
+  and replacing on the number alone rewrote both, turning an upper chamber into an "Elyon" chamber.
+  Each replacement now knows which English words it applies to, so the divine title is replaced and
+  the everyday adjective is left alone. This affected the King James too, whose word tagging is
+  professional: it was never a fault of the inferred mappings. About 11% of replacements were wrong
+  this way and are now left as written; the correct ones are unchanged.
+
+- **Uneven word spacing while Quick Replace is on.** Justified text stretches the gaps between
+  words to reach the margin, and replacing a phrase like "of the LORD" with a single word removes
+  spaces from the line, forcing what remains to stretch further — which read as odd padding around
+  replaced words. The reader now left-aligns while replacements are active, as it already did when
+  Strong's numbers are shown.
+
+- **macOS install instructions.** They recommended right-click → Open first, which does not
+  reliably clear the prompt on current macOS for an app signed the way this one is. They now lead
+  with System Settings → Privacy & Security → Open Anyway, and give the Terminal command that
+  always works.
+
 ## [0.2.4] - 2026-09-20
 
 ### Fixed
