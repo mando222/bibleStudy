@@ -16,6 +16,54 @@ Group changes under: **Added** (new features), **Changed** (changes to existing 
 
 _Nothing yet._
 
+## [0.3.0] - 2026-09-21
+
+### Added
+
+- **Updates now download inside the app.** When a new version is out, the bar at the top of the
+  window offers **Download**: the installer is fetched into your Downloads folder, with a progress
+  bar, while you carry on reading. Nothing is installed for you — when you're ready, quit Open
+  Bible Study, open the file and replace your copy. This matters most on a Mac, where the system
+  won't let a running app replace itself, so until now you had to stop what you were doing and go
+  fetch a 300 MB file in a browser. Downloading in your browser is still one click away, and the
+  update check can still be switched off completely.
+
+- **A plain-language account of Quick Replace in the About screen.** Quick Replace changes the
+  words of Scripture on screen, so it now explains itself: what it swaps, what it leaves untouched,
+  the one word it drops and the reason, that the stored translation is never edited, and that word
+  links in some translations are inferred by this project rather than scholarship.
+
+### Fixed
+
+- **Quick Replace was deleting the words around a divine name.** "The day of the LORD is near" came
+  out as "the Day Yahweh is near" — the "of" simply vanished. Translations like the Berean link a
+  whole English phrase ("of the LORD") to a single Hebrew word, and the substitution was swallowing
+  the entire phrase instead of just the name. Now only the name is replaced and everything around
+  it stays, so it reads "the Day of Yahweh is near". With Quick Replace switched on, roughly one
+  verse in nine reads differently from before, and in every case it is a word restored that should
+  never have gone missing.
+
+- **The King James read "the day of the Yahweh".** The other half of the same fault. The King James
+  tags one word at a time, so its "the" sat in a word of its own and survived a substitution it
+  should not have. Hebrew never writes the definite article in front of this name, so it is now
+  dropped — in 6,586 places. Titles that Hebrew *does* write with "the" keep theirs, so "the God"
+  still reads "the Elohim".
+
+- **"The most high" came out as "the most Elyon"** in 16 verses of the King James, where that title
+  is likewise split across two tagged words. It now reads "Elyon".
+
+- **Stray spacing around replaced words.** A replacement next to a quotation mark or a bracket could
+  leave a gap behind it, and in the Geneva Bible — which spells "them" as "the" — a pronoun could be
+  removed by mistake. Every verse of all eight translations was checked: no word is lost, and no
+  spacing appears that the translation did not already have.
+
+### Changed
+
+- **The update check now describes downloading too.** This app is offline-first, and the once-a-day
+  update check was the only thing it ever sent over the network. Choosing to download an update is
+  now a second one. The About screen and the install guide say so plainly. Nothing about you is
+  ever sent, the app never runs an installer for you, and turning the check off stops all of it.
+
 ## [0.2.5] - 2026-09-21
 
 ### Fixed

@@ -49,3 +49,24 @@ export function pickReleaseAsset(
   }
   return null // unknown platform — send the user to the release page, don't guess
 }
+
+/**
+ * Only these two hosts serve our releases, and only over https.
+ *
+ * The dots are escaped on purpose: an unescaped `.` matches any character, so `github.com` also
+ * matched `githubXcom`. Everything the app opens or fetches passes through here.
+ */
+export function isReleaseUrl(url: string): boolean {
+  return /^https:\/\/(github\.com|objects\.githubusercontent\.com)\//.test(url)
+}
+
+/**
+ * A filename safe to write into the Downloads folder.
+ *
+ * The asset name arrives in a network response, so it must never be able to steer where we write —
+ * no directory separators, no `..`, no leading dot, nothing but word characters, dots and dashes.
+ */
+export function safeAssetFilename(name: string): string {
+  const base = (name.split(/[\\/]/).pop() ?? '').replace(/[^\w.-]/g, '_').replace(/^[.]+/, '')
+  return base || 'update'
+}

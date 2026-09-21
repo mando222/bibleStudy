@@ -1,24 +1,33 @@
 import { app, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
 import { readFileSync, writeFileSync } from 'node:fs'
+import { downloadToFile } from './download'
 import { isNewerVersion } from '../shared/semver'
-import { pickReleaseAsset, type ReleaseAsset } from '../shared/releaseAssets'
-import type { UpdateInfo, UpdatePrefs } from '../shared/types'
+import {
+  isReleaseUrl,
+  pickReleaseAsset,
+  safeAssetFilename,
+  type ReleaseAsset
+} from '../shared/releaseAssets'
+import type { UpdateDownload, UpdateInfo, UpdatePrefs } from '../shared/types'
 
 /**
- * The ONLY network call this app makes: an unauthenticated GET to the GitHub Releases API to see
- * whether a newer version has been published.
+ * The only network this app ever touches: an unauthenticated GET to the GitHub Releases API to see
+ * whether a newer version has been published, and — only if the user presses Download — a fetch of
+ * that release's installer.
  *
  * The project is deliberately offline-first (see CLAUDE.md), so this is deliberately narrow:
  *   • nothing is sent — no identifiers, no telemetry, no query parameters;
  *   • it never blocks startup, and any failure (offline, rate-limited, DNS) is silent;
  *   • it runs at most once a day, and not at all when the user turns it off;
- *   • nothing is ever downloaded or executed by the app. The "Update" button hands the correct
- *     installer URL to the user's browser via shell.openExternal.
+ *   • the app never RUNS an installer. Downloading one is explicit, user-pressed, and writes to the
+ *     user's own Downloads folder; installing is left entirely to them.
  *
  * Silent download-and-install (electron-updater) is intentionally NOT used: macOS builds are
  * unsigned (`identity: null` in electron-builder.yml) and Squirrel.Mac requires a signed,
- * notarized app, so it could never work there. See issue #1.
+ * notarized app, so it could never work there. See issue #1. Fetching the installer in-app is the
+ * part of that we CAN do — on macOS a running app cannot replace its own bundle, so the download
+ * has to be able to finish while the app is still open and be installed whenever the user quits.
  */
 
 const RELEASES_API = 'https://api.github.com/repos/mando222/bibleStudy/releases/latest'
@@ -116,12 +125,56 @@ export function registerUpdateIpc(): void {
   ipcMain.handle('updates:dismiss', (_e, version: string) => {
     writeConfig({ dismissedVersion: version })
   })
-  // Hand the installer to the browser — the app never downloads or runs it itself.
+  // Hand the installer to the browser — the app never runs it itself.
   ipcMain.handle('updates:openDownload', (_e, url: string) => {
-    // Dots escaped: an unescaped `.` matches any character, so `github.com` also matched
-    // `githubXcom`. Only these two hosts serve our releases.
-    if (/^https:\/\/(github\.com|objects\.githubusercontent\.com)\//.test(url)) {
-      void shell.openExternal(url)
-    }
+    if (isReleaseUrl(url)) void shell.openExternal(url)
   })
+  ipcMain.handle('updates:download', (e, url: string, assetName: string) =>
+    downloadInstaller(e.sender, url, assetName)
+  )
+  ipcMain.handle('updates:cancelDownload', () => {
+    inFlight?.abort()
+  })
+  // Only ever the file this process just wrote — never a path chosen by the renderer.
+  ipcMain.handle('updates:revealDownload', () => {
+    if (lastDownload) shell.showItemInFolder(lastDownload)
+  })
+}
+
+
+let inFlight: AbortController | null = null
+let lastDownload: string | null = null
+
+/**
+ * Fetch a release installer into the user's Downloads folder, reporting progress as it goes.
+ *
+ * Deliberately just a download. The file is written where a browser would have put it and then
+ * shown in the file manager; nothing is mounted, unpacked or executed, and the running app is
+ * never touched — on macOS it cannot be, since an app can't replace its own bundle while open.
+ */
+async function downloadInstaller(
+  sender: Electron.WebContents,
+  url: string,
+  assetName: string
+): Promise<UpdateDownload> {
+  if (!isReleaseUrl(url)) return { ok: false, error: 'That link isn’t one of our releases.' }
+  if (inFlight) return { ok: false, error: 'A download is already running.' }
+
+  const dest = join(app.getPath('downloads'), safeAssetFilename(assetName))
+  const controller = new AbortController()
+  inFlight = controller
+  try {
+    const res = await downloadToFile(
+      url,
+      dest,
+      (p) => {
+        if (!sender.isDestroyed()) sender.send('updates:progress', p)
+      },
+      controller.signal
+    )
+    if (res.ok) lastDownload = res.path
+    return res
+  } finally {
+    inFlight = null
+  }
 }

@@ -2,6 +2,12 @@ import { describe, it, expect } from 'vitest'
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { KNOWN_FEATURE_TYPES } from '../src/shared/mapFeatures'
+import {
+  computeQuickReplacements,
+  applyQuickReplace,
+  quickReplaceApplies,
+  renderQuickReplace
+} from '../src/shared/quickReplace'
 
 // Load node:sqlite at runtime — Vite's static resolver doesn't yet know this new builtin.
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite')
@@ -355,5 +361,117 @@ suite('bible.sqlite integrity', () => {
       n("SELECT COUNT(*) n FROM verse_tokens WHERE translation_id='BSB' AND surface GLOB '*[{}]*'"),
       'BSB alignment braces'
     ).toBe(0)
+  })
+
+  // ─── Quick Replace ───────────────────────────────────────────────────────────────────────────
+  //
+  // A tagged translation aligns a whole English phrase to one original word, so substituting the
+  // entire token surface deleted the words around the name: "the Day of Yahweh" came out as
+  // "the Day Yahweh". These check the rule against the real corpus, and against the Hebrew that
+  // justifies it.
+
+  const ON = computeQuickReplacements(true, {})
+  const readVerse = (tr: string, b: string, c: number, v: number): string => {
+    const toks = all(
+      'SELECT surface, trailer, strongs FROM verse_tokens WHERE translation_id=? AND book_id=? AND chapter=? AND verse=? ORDER BY position',
+      tr,
+      b,
+      c,
+      v
+    ) as unknown as { surface: string; trailer: string | null; strongs: string | null }[]
+    return renderQuickReplace(toks, (t) => {
+      const r = t.strongs ? ON[t.strongs] : undefined
+      if (!r || !t.strongs || !quickReplaceApplies(t.strongs, t.surface)) return undefined
+      return applyQuickReplace(t.strongs, t.surface, r)
+    })
+      .map((r) => (r.part ? r.part.before + r.part.replaced + r.part.after : r.tail) + r.trailer)
+      .join('')
+  }
+
+  it('keeps the preposition when a phrase token carries the divine name', () => {
+    // The BSB maps "of the LORD" to the single Hebrew word לַיהוָה.
+    expect(readVerse('BSB', 'Ezek', 30, 3)).toContain('the Day of Yahweh is near')
+    expect(readVerse('BSB', 'Ezek', 30, 1)).toContain('the word of Yahweh came to me')
+  })
+
+  it('drops an article held in a neighbouring token', () => {
+    // The KJV tokenises word-by-word, so the "the" of "of the LORD" is its own token.
+    const kjv = readVerse('KJV', 'Ezek', 30, 3)
+    expect(kjv).toContain('the day of Yahweh is near')
+    expect(kjv).not.toContain('of the Yahweh')
+    // "most high" is likewise split across two KJV tokens.
+    expect(readVerse('KJV', 'Ps', 83, 18)).toContain('art Elyon over all the earth')
+    expect(readVerse('KJV', 'Exod', 20, 7)).toContain('the name of Yahweh thy Elohim')
+  })
+
+  it('never loses a word or doubles a space, across every tagged verse', () => {
+    const words = (t: string): string[] => t.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
+    // Words that may legitimately disappear: the renderings being replaced, and dropped articles.
+    const replaceable = new Set([
+      'the', 'lord', 'lords', 'god', 'gods', 'jah', 'jehovah', 'yahweh',
+      'almighty', 'most', 'high', 'highest', 'jesus', 'emmanuel'
+    ])
+    for (const tr of ['BSB', 'KJV']) {
+      const rows = all(
+        'SELECT DISTINCT book_id, chapter, verse FROM verse_tokens WHERE translation_id=?',
+        tr
+      ) as unknown as { book_id: string; chapter: number; verse: number }[]
+      const bad: string[] = []
+      for (const r of rows) {
+        const src = String(
+          (one(
+            'SELECT text FROM verses WHERE translation_id=? AND book_id=? AND chapter=? AND verse=?',
+            tr, r.book_id, r.chapter, r.verse
+          ) as { text: string }).text
+        )
+        const out = readVerse(tr, r.book_id, r.chapter, r.verse)
+        const lost = words(src).filter((w) => !words(out).includes(w) && !replaceable.has(w))
+        if (lost.length || / {2}/.test(out)) bad.push(`${tr} ${r.book_id} ${r.chapter}:${r.verse}`)
+      }
+      expect(bad.slice(0, 5)).toEqual([])
+    }
+  })
+
+  it('introduces no spacing the source text does not already have', () => {
+    // Splicing into a surface can leave the punctuation around it stranded: a bracket with a space
+    // after it, a comma with a space before it, two spaces where a word was removed.
+    const artifacts: [string, RegExp][] = [
+      ['doubled space', / {2}/],
+      ['space after an opening mark', /[“‘(\[]\s/u],
+      ['space before punctuation', /\s[,.;:!?’”)\]]/u],
+      ['leading or trailing space', /^\s|\s$/]
+    ]
+    for (const tr of ['BSB', 'KJV']) {
+      const rows = all(
+        'SELECT DISTINCT book_id, chapter, verse FROM verse_tokens WHERE translation_id=?',
+        tr
+      ) as unknown as { book_id: string; chapter: number; verse: number }[]
+      const bad: string[] = []
+      for (const r of rows) {
+        const src = String(
+          (one(
+            'SELECT text FROM verses WHERE translation_id=? AND book_id=? AND chapter=? AND verse=?',
+            tr, r.book_id, r.chapter, r.verse
+          ) as { text: string }).text
+        )
+        const out = readVerse(tr, r.book_id, r.chapter, r.verse)
+        for (const [what, re] of artifacts) {
+          if (re.test(out) && !re.test(src)) bad.push(`${tr} ${r.book_id} ${r.chapter}:${r.verse} — ${what}`)
+        }
+      }
+      expect(bad.slice(0, 5)).toEqual([])
+    }
+  })
+
+  it('leaves a quote mark and an archaic pronoun intact', () => {
+    expect(readVerse('KJV', 'Deut', 1, 11)).toMatch(/^\(Yahweh Elohim of your fathers/)
+  })
+
+  it('the Hebrew backs the article rule it is based on', () => {
+    // Dropping "the" before Yahweh is only defensible because יהוה is parsed as a proper noun and
+    // never carries the definite-article morpheme — so the "the" in "the LORD" translates nothing.
+    expect(n("SELECT COUNT(*) n FROM original_tokens WHERE edition='MT' AND strongs='H3068' AND morph LIKE '%d/%'")).toBe(0)
+    // אֱלֹהִים *is* articled (הָאֱלֹהִים), which is why H430 deliberately keeps its "the".
+    expect(n("SELECT COUNT(*) n FROM original_tokens WHERE edition='MT' AND strongs='H430' AND morph LIKE '%d/%'")).toBeGreaterThan(0)
   })
 })

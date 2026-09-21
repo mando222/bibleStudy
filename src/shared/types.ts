@@ -414,6 +414,13 @@ export interface UpdateInfo {
 export interface UpdatePrefs {
   checkOnLaunch: boolean
 }
+/** Where a finished download landed, or why it didn't. */
+export type UpdateDownload = { ok: true; path: string } | { ok: false; error: string }
+export interface UpdateProgress {
+  received: number
+  /** Total bytes, or 0 when the server doesn't say. */
+  total: number
+}
 export interface UpdatesApi {
   /** Newer release, or null for "nothing to show" (disabled, throttled, dismissed, or offline). */
   check(force?: boolean): Promise<UpdateInfo | null>
@@ -421,8 +428,15 @@ export interface UpdatesApi {
   setPrefs(patch: Partial<UpdatePrefs>): Promise<UpdatePrefs>
   /** Stop offering this version until a newer one appears. */
   dismiss(version: string): Promise<void>
-  /** Open the installer in the user's browser. The app never downloads or executes it. */
+  /** Open the installer in the user's browser. The app never executes it. */
   openDownload(url: string): Promise<void>
+  /** Fetch the installer into the Downloads folder while the app keeps running. */
+  download(url: string, assetName: string): Promise<UpdateDownload>
+  cancelDownload(): Promise<void>
+  /** Show the finished download in the file manager. Only ever the file we just wrote. */
+  revealDownload(): Promise<void>
+  /** Subscribe to download progress; returns an unsubscribe function. */
+  onProgress(cb: (p: UpdateProgress) => void): () => void
 }
 
 // ---- Notebook (feat 3): free-form Markdown notes saved to a local folder ----

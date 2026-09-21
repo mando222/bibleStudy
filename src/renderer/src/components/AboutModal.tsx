@@ -184,6 +184,8 @@ export default function AboutModal(): JSX.Element | null {
             )}
           </div>
 
+          <QuickReplaceNote />
+
           <Section title="Translations">
             {TRANSLATIONS.map((s) => (
               <SourceRow key={s.what} s={s} />
@@ -226,6 +228,62 @@ export default function AboutModal(): JSX.Element | null {
           </p>
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Quick Replace alters the words of Scripture on screen, so it owes the reader a plain account of
+ * what it does and why — in ordinary language, not the reasoning behind the implementation.
+ */
+function QuickReplaceNote(): JSX.Element {
+  return (
+    <div className="mt-5 rounded-lg border border-line bg-elevated p-3">
+      <div className="text-sm font-medium text-ink">
+        How &ldquo;Quick Replace&rdquo; changes what you read
+      </div>
+      <p className="mt-1 text-xs text-muted">
+        With Quick Replace on, the reader shows the original Hebrew or Greek word where English
+        normally uses a stand-in &mdash; so &ldquo;the LORD&rdquo; reads &ldquo;Yahweh&rdquo;. That
+        is a deliberate choice about how the text is displayed, so here is exactly what it does.
+      </p>
+      <ul className="mt-2 space-y-1.5 text-xs text-muted">
+        <li>
+          <span className="text-ink">Why it exists.</span> Most English Bibles print LORD in small
+          capitals wherever the Hebrew has the personal name יהוה. That substitution is a very old
+          tradition rather than a translation. This puts the name back on the page.
+        </li>
+        <li>
+          <span className="text-ink">Only the name changes.</span> Every other word stays as the
+          translators wrote it. &ldquo;The day of the LORD&rdquo; becomes &ldquo;the day of
+          Yahweh&rdquo; &mdash; the &ldquo;of&rdquo; belongs to the sentence, not to the name, so it
+          stays put.
+        </li>
+        <li>
+          <span className="text-ink">One word does get dropped.</span> Hebrew never puts
+          &ldquo;the&rdquo; in front of this name, so &ldquo;the LORD&rdquo; becomes
+          &ldquo;Yahweh&rdquo;, not &ldquo;the Yahweh&rdquo;. Words that Hebrew <em>does</em> write
+          with &ldquo;the&rdquo; keep it &mdash; &ldquo;the God&rdquo; becomes &ldquo;the
+          Elohim&rdquo;.
+        </li>
+        <li>
+          <span className="text-ink">Nothing is rewritten.</span> The translation stored in the app
+          is never edited; this only affects what is drawn on screen. Switch Quick Replace off and
+          you have the translators&rsquo; own words back. Hover a replaced word to see what stood
+          there.
+        </li>
+        <li>
+          <span className="text-ink">It is yours to set.</span> Every term can be turned off on its
+          own, or given a spelling you prefer. Divine names start on; everything else starts off.
+        </li>
+        <li>
+          <span className="text-ink">Where the word links come from.</span> The KJV and the Berean
+          Standard Bible carry scholarly word-by-word tagging. Other translations get their links
+          inferred by this project and are marked in the text with a dotted underline &mdash;
+          accurate most of the time, but not scholarship, and worth double-checking before you lean
+          on one.
+        </li>
+      </ul>
     </div>
   )
 }
@@ -307,6 +365,8 @@ function UpdateSetting(): JSX.Element {
           <div className="text-xs text-muted">
             Asks GitHub once a day whether a newer release exists. Nothing about you is sent, and
             everything else in this app stays fully offline. Turn it off and no request is made.
+            If you choose to download an update, it is saved to your Downloads folder and never
+            run for you &mdash; you install it yourself, whenever suits.
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">

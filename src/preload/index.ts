@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AiApi, BibleApi, NotebookApi, UpdatesApi } from '../shared/types'
+import type { AiApi, BibleApi, NotebookApi, UpdateProgress, UpdatesApi } from '../shared/types'
 
 const api: BibleApi = {
   version: () => ipcRenderer.invoke('app:version'),
@@ -109,7 +109,15 @@ const updates: UpdatesApi = {
   getPrefs: () => ipcRenderer.invoke('updates:getPrefs'),
   setPrefs: (patch) => ipcRenderer.invoke('updates:setPrefs', patch),
   dismiss: (version) => ipcRenderer.invoke('updates:dismiss', version),
-  openDownload: (url) => ipcRenderer.invoke('updates:openDownload', url)
+  openDownload: (url) => ipcRenderer.invoke('updates:openDownload', url),
+  download: (url, assetName) => ipcRenderer.invoke('updates:download', url, assetName),
+  cancelDownload: () => ipcRenderer.invoke('updates:cancelDownload'),
+  revealDownload: () => ipcRenderer.invoke('updates:revealDownload'),
+  onProgress: (cb) => {
+    const listener = (_e: unknown, p: UpdateProgress): void => cb(p)
+    ipcRenderer.on('updates:progress', listener)
+    return () => ipcRenderer.removeListener('updates:progress', listener)
+  }
 }
 
 if (process.contextIsolated) {

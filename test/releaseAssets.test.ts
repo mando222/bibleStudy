@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { pickReleaseAsset, type ReleaseAsset } from '../src/shared/releaseAssets'
+import { pickReleaseAsset, type ReleaseAsset, isReleaseUrl, safeAssetFilename } from '../src/shared/releaseAssets'
 
 // Verbatim asset names from the real v0.1.2 GitHub release.
 const RELEASE: ReleaseAsset[] = [
@@ -31,5 +31,28 @@ describe('pickReleaseAsset', () => {
     expect(pickReleaseAsset([], 'linux', 'x64')).toBeNull()
     expect(pickReleaseAsset(RELEASE, 'linux', 'arm64')).toBeNull()
     expect(pickReleaseAsset(RELEASE, 'freebsd', 'x64')).toBeNull()
+  })
+})
+
+describe('release download guards', () => {
+  it('accepts only our release hosts, over https', () => {
+    expect(isReleaseUrl('https://github.com/mando222/bibleStudy/releases/download/v1/a.dmg')).toBe(true)
+    expect(isReleaseUrl('https://objects.githubusercontent.com/x/a.dmg')).toBe(true)
+    expect(isReleaseUrl('http://github.com/a.dmg')).toBe(false)
+    expect(isReleaseUrl('https://evil.com/a.dmg')).toBe(false)
+    // An unescaped dot in the pattern would let this through.
+    expect(isReleaseUrl('https://githubXcom/a.dmg')).toBe(false)
+    expect(isReleaseUrl('https://github.com.evil.com/a.dmg')).toBe(false)
+  })
+
+  it('never lets a response-supplied name escape the Downloads folder', () => {
+    expect(safeAssetFilename('Open.Bible.Study-0.2.5-mac-arm64.dmg')).toBe('Open.Bible.Study-0.2.5-mac-arm64.dmg')
+    expect(safeAssetFilename('../../etc/passwd')).toBe('passwd')
+    expect(safeAssetFilename('..\\..\\windows\\system32\\evil.exe')).toBe('evil.exe')
+    expect(safeAssetFilename('/absolute/path.dmg')).toBe('path.dmg')
+    expect(safeAssetFilename('..')).toBe('update')
+    expect(safeAssetFilename('')).toBe('update')
+    expect(safeAssetFilename('.bashrc')).toBe('bashrc')
+    expect(safeAssetFilename('a b;rm -rf.dmg')).toBe('a_b_rm_-rf.dmg')
   })
 })

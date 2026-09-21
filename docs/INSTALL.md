@@ -40,6 +40,17 @@ Steps:
 
 After that first time, it opens like any other app.
 
+### Updating later
+
+When a new version is out, a bar appears at the top of the window. **Download** fetches the
+installer straight into your Downloads folder while you carry on reading — the app does not close
+and nothing is installed for you. When you are ready, quit Open Bible Study, open the `.dmg` and
+drag the new copy into Applications, replacing the old one. (macOS will not let an app replace
+itself while it is running, which is why installing is a separate step you control.)
+
+You can also press **In browser** to download it the ordinary way instead, or turn the update
+check off entirely in the About screen.
+
 <details>
 <summary>If macOS says the app <em>"is damaged and can't be opened"</em></summary>
 

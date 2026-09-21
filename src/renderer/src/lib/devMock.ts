@@ -399,7 +399,11 @@ export async function installDevMock(): Promise<void> {
     getPrefs: async () => ({ checkOnLaunch: true }),
     setPrefs: async (patch) => ({ checkOnLaunch: patch.checkOnLaunch ?? true }),
     dismiss: async () => undefined,
-    openDownload: async () => undefined
+    openDownload: async () => undefined,
+    download: async () => ({ ok: false, error: 'Downloads are unavailable in the browser preview.' }),
+    cancelDownload: async () => undefined,
+    revealDownload: async () => undefined,
+    onProgress: () => () => undefined
   }
   ;(window as unknown as { updates: UpdatesApi }).updates = updates
 }

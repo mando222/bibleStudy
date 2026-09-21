@@ -24,138 +24,29 @@ export interface ChatMsg {
   citations?: ChatCitation[]
 }
 
-// "Quick Replace": render the ORIGINAL word (its transliteration) in place of the traditional
-// English rendering — LORD → Yahweh, love → agape, Christ → Christos. It only ever shows the
-// original text, never a new interpretation. Applied through the word-replace map, so it affects
-// translations that carry Strong's tags (KJV, BSB). Each term can be toggled and its rendering
-// customised; divine names are on by default, everything else is opt-in. Persists across restarts.
-export type QuickReplaceCategory =
-  | 'divine'
-  | 'jesus'
-  | 'love'
-  | 'marriage'
-  | 'satan'
-  | 'afterlife'
-  | 'other'
-
-export const QUICK_REPLACE_CATEGORIES: { id: QuickReplaceCategory; label: string }[] = [
-  { id: 'divine', label: 'Divine names' },
-  { id: 'jesus', label: 'Jesus & his titles' },
-  { id: 'love', label: 'Love' },
-  { id: 'marriage', label: 'Marriage' },
-  { id: 'satan', label: 'Satan & evil' },
-  { id: 'afterlife', label: 'Heaven & hell' },
-  { id: 'other', label: 'Other key terms' }
-]
-
-export interface QuickReplaceItem {
-  strongs: string
-  glyph: string // original-language lemma glyph, for the settings UI
-  traditional: string // the usual English rendering
-  default: string // default replacement — always the ORIGINAL word, transliterated
-  category: QuickReplaceCategory
-  defaultOn?: boolean // divine names default on (preserves prior behaviour); others opt-in
-  /**
-   * English words that may be replaced. A Strong's number can carry more than one sense — H5945 is
-   * the divine title "Most High" AND the ordinary adjective "upper" — and replacing on the number
-   * alone rewrites the wrong ones ("the upper chamber" → "the Elyon chamber"). Declaring the forms
-   * confines the substitution to the sense this entry is about. Matching is whole-word and
-   * case-insensitive; the token's whole surface is searched, so "of the LORD" matches "lord".
-   * Omit to replace wherever the number appears (the prior behaviour).
-   */
-  forms?: string[]
-}
-
-export const QUICK_REPLACE_LIST: QuickReplaceItem[] = [
-  // Divine names (Hebrew) — on by default
-  { strongs: 'H3068', glyph: 'יהוה', traditional: 'LORD', default: 'Yahweh', category: 'divine', defaultOn: true, forms: ['lord', 'jehovah', 'yahweh'] },
-  { strongs: 'H3069', glyph: 'יהוה', traditional: 'GOD', default: 'Yahweh', category: 'divine', defaultOn: true, forms: ['god', 'lord', 'jehovah'] },
-  { strongs: 'H3050', glyph: 'יָהּ', traditional: 'JAH', default: 'Yah', category: 'divine', defaultOn: true, forms: ['jah', 'yah', 'lord'] },
-  { strongs: 'H136', glyph: 'אֲדֹנָי', traditional: 'Lord', default: 'Adonai', category: 'divine', defaultOn: true, forms: ['lord'] },
-  { strongs: 'H410', glyph: 'אֵל', traditional: 'God', default: 'El', category: 'divine', defaultOn: true, forms: ['god'] },
-  { strongs: 'H430', glyph: 'אֱלֹהִים', traditional: 'God', default: 'Elohim', category: 'divine', defaultOn: true, forms: ['god', 'gods'] },
-  { strongs: 'H433', glyph: 'אֱלוֹהַּ', traditional: 'God', default: 'Eloah', category: 'divine', defaultOn: true, forms: ['god'] },
-  { strongs: 'H7706', glyph: 'שַׁדַּי', traditional: 'Almighty', default: 'Shaddai', category: 'divine', defaultOn: true, forms: ['almighty', 'shaddai'] },
-  { strongs: 'H5945', glyph: 'עֶלְיוֹן', traditional: 'most High', default: 'Elyon', category: 'divine', defaultOn: true, forms: ['most high', 'high', 'highest'] },
-  // Jesus & his titles (Greek) — original forms, not reinterpretations
-  { strongs: 'G2424', glyph: 'Ἰησοῦς', traditional: 'Jesus', default: 'Yeshua', category: 'jesus' },
-  { strongs: 'G5547', glyph: 'Χριστός', traditional: 'Christ', default: 'Christos', category: 'jesus' },
-  { strongs: 'G2962', glyph: 'κύριος', traditional: 'Lord', default: 'Kyrios', category: 'jesus' },
-  { strongs: 'G1694', glyph: 'Ἐμμανουήλ', traditional: 'Emmanuel', default: 'Immanuel', category: 'jesus' },
-  { strongs: 'G3056', glyph: 'λόγος', traditional: 'Word', default: 'Logos', category: 'jesus' },
-  // Love
-  { strongs: 'G26', glyph: 'ἀγάπη', traditional: 'love', default: 'agape', category: 'love' },
-  { strongs: 'G25', glyph: 'ἀγαπάω', traditional: 'love', default: 'agapao', category: 'love' },
-  { strongs: 'G5368', glyph: 'φιλέω', traditional: 'love', default: 'phileo', category: 'love' },
-  { strongs: 'G5373', glyph: 'φιλία', traditional: 'friendship', default: 'philia', category: 'love' },
-  { strongs: 'H160', glyph: 'אַהֲבָה', traditional: 'love', default: 'ahavah', category: 'love' },
-  { strongs: 'H157', glyph: 'אָהֵב', traditional: 'love', default: 'ahav', category: 'love' },
-  { strongs: 'H2617', glyph: 'חֶסֶד', traditional: 'lovingkindness', default: 'chesed', category: 'love' },
-  // Marriage
-  { strongs: 'G1062', glyph: 'γάμος', traditional: 'marriage', default: 'gamos', category: 'marriage' },
-  { strongs: 'G3565', glyph: 'νύμφη', traditional: 'bride', default: 'nymphe', category: 'marriage' },
-  { strongs: 'G3566', glyph: 'νυμφίος', traditional: 'bridegroom', default: 'nymphios', category: 'marriage' },
-  // Satan & evil
-  { strongs: 'H7854', glyph: 'שָׂטָן', traditional: 'Satan', default: 'satan', category: 'satan' },
-  { strongs: 'G4567', glyph: 'Σατανᾶς', traditional: 'Satan', default: 'Satanas', category: 'satan' },
-  { strongs: 'G1228', glyph: 'διάβολος', traditional: 'devil', default: 'diabolos', category: 'satan' },
-  { strongs: 'G954', glyph: 'Βεελζεβούλ', traditional: 'Beelzebub', default: 'Beelzeboul', category: 'satan' },
-  { strongs: 'H1100', glyph: 'בְּלִיַּעַל', traditional: 'Belial', default: 'Belial', category: 'satan' },
-  { strongs: 'H5175', glyph: 'נָחָשׁ', traditional: 'serpent', default: 'nachash', category: 'satan' },
-  // Heaven & hell
-  { strongs: 'H8064', glyph: 'שָׁמַיִם', traditional: 'heaven', default: 'shamayim', category: 'afterlife' },
-  { strongs: 'G3772', glyph: 'οὐρανός', traditional: 'heaven', default: 'ouranos', category: 'afterlife' },
-  { strongs: 'H7585', glyph: 'שְׁאוֹל', traditional: 'hell / grave', default: 'sheol', category: 'afterlife', forms: ['hell', 'grave', 'pit'] },
-  { strongs: 'G86', glyph: 'ᾅδης', traditional: 'hell', default: 'hades', category: 'afterlife' },
-  { strongs: 'G1067', glyph: 'γέεννα', traditional: 'hell', default: 'gehenna', category: 'afterlife' },
-  // Other key terms
-  { strongs: 'H7307', glyph: 'רוּחַ', traditional: 'Spirit', default: 'ruach', category: 'other' },
-  { strongs: 'G4151', glyph: 'πνεῦμα', traditional: 'Spirit', default: 'pneuma', category: 'other' },
-  { strongs: 'G5485', glyph: 'χάρις', traditional: 'grace', default: 'charis', category: 'other' },
-  { strongs: 'G4102', glyph: 'πίστις', traditional: 'faith', default: 'pistis', category: 'other' },
-  { strongs: 'H7965', glyph: 'שָׁלוֹם', traditional: 'peace', default: 'shalom', category: 'other' },
-  { strongs: 'G1515', glyph: 'εἰρήνη', traditional: 'peace', default: 'eirene', category: 'other' },
-  { strongs: 'H1285', glyph: 'בְּרִית', traditional: 'covenant', default: 'berith', category: 'other' },
-  { strongs: 'G1242', glyph: 'διαθήκη', traditional: 'covenant', default: 'diatheke', category: 'other' },
-  { strongs: 'G1391', glyph: 'δόξα', traditional: 'glory', default: 'doxa', category: 'other' },
-  { strongs: 'H3519', glyph: 'כָּבוֹד', traditional: 'glory', default: 'kavod', category: 'other' }
-]
-
-/** Whole-word form matchers per Strong's number, for entries that declare `forms`. */
-const QUICK_REPLACE_FORMS: Record<string, RegExp> = Object.fromEntries(
-  QUICK_REPLACE_LIST.filter((i) => i.forms?.length).map((i) => [
-    i.strongs,
-    new RegExp(`(?<![\\p{L}\\p{N}])(${i.forms!.join('|')})(?![\\p{L}\\p{N}])`, 'iu')
-  ])
-)
-
-/**
- * May this token be replaced? Entries that declare `forms` only substitute where the word actually
- * carries the sense the entry is about — see QuickReplaceItem.forms. Entries without forms keep the
- * prior behaviour of replacing wherever the number appears.
- */
-export function quickReplaceApplies(strongs: string, surface: string): boolean {
-  const re = QUICK_REPLACE_FORMS[strongs]
-  return re ? re.test(surface) : true
-}
-
-export type QuickReplaceConfig = Record<string, { enabled: boolean; custom: string }>
-
-/** The Strong's→text entries contributed by Quick Replace (empty when the master toggle is off). */
-export function computeQuickReplacements(
-  on: boolean,
-  cfg: QuickReplaceConfig
-): Record<string, string> {
-  const out: Record<string, string> = {}
-  if (!on) return out
-  for (const item of QUICK_REPLACE_LIST) {
-    const c = cfg[item.strongs]
-    const enabled = c ? c.enabled : !!item.defaultOn
-    if (!enabled) continue
-    out[item.strongs] = c?.custom?.trim() || item.default
-  }
-  return out
-}
+// "Quick Replace" (render the ORIGINAL word in place of the traditional English rendering)
+// lives in shared/, so the build-time validator can check the very same rules against the
+// Hebrew morphology. Re-exported here because the UI has always imported it from the store.
+import type { QuickReplaceConfig } from '@shared/quickReplace'
+export type {
+  QuickReplaceCategory,
+  QuickReplaceItem,
+  QuickReplaceConfig,
+  ReplacedSurface,
+  QuickReplaceToken,
+  RenderedToken
+} from '@shared/quickReplace'
+export {
+  QUICK_REPLACE_CATEGORIES,
+  QUICK_REPLACE_LIST,
+  quickReplaceApplies,
+  applyQuickReplace,
+  quickReplaceDropsArticle,
+  stripTrailingArticle,
+  stripFormLeadIn,
+  renderQuickReplace,
+  computeQuickReplacements
+} from '@shared/quickReplace'
 
 /** A passage the user picked (verse menu or text selection) to ask the assistant about. */
 export interface PendingContext {

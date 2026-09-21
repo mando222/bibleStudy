@@ -1,6 +1,13 @@
 import { useMemo } from 'react'
 import type { Verse, Highlight } from '@shared/types'
-import { useAppStore, computeQuickReplacements, quickReplaceApplies } from '@/store/useAppStore'
+import {
+  useAppStore,
+  computeQuickReplacements,
+  quickReplaceApplies,
+  applyQuickReplace,
+  renderQuickReplace,
+  type ReplacedSurface
+} from '@/store/useAppStore'
 import { highlightVar } from '@/lib/highlights'
 
 interface Props {
@@ -30,14 +37,29 @@ export default function VerseView({ v, highlight, hasNote, onOpenMenu }: Props):
     () => computeQuickReplacements(quickReplace, quickReplaceConfig),
     [quickReplace, quickReplaceConfig]
   )
-  const replacementFor = (tok: { strongs: string | null; surface: string }): string | undefined => {
+  // A token's surface can be a whole phrase ("of the LORD" for one Hebrew word), so the
+  // replacement is spliced INTO the surface rather than swapping the lot — otherwise the
+  // surrounding words vanish and "the Day of Yahweh" collapses to "the Day Yahweh".
+  const replacementFor = (tok: {
+    strongs: string | null
+    surface: string
+  }): ReplacedSurface | undefined => {
     if (!tok.strongs) return undefined
     const manual = replacements[tok.strongs]
-    if (manual) return manual
+    if (manual) return applyQuickReplace(tok.strongs, tok.surface, manual)
     const auto = quick[tok.strongs]
-    return auto && quickReplaceApplies(tok.strongs, tok.surface) ? auto : undefined
+    if (!auto || !quickReplaceApplies(tok.strongs, tok.surface)) return undefined
+    return applyQuickReplace(tok.strongs, tok.surface, auto)
   }
   const useTokens = !!v.tokens && v.tokens.length > 0
+
+  // Resolved for the whole verse at once: one token's rendering can depend on its neighbour (a
+  // word-tokenised translation keeps the article in the PREVIOUS token). Shared with the tests.
+  const rendered = useMemo(
+    () => renderQuickReplace(v.tokens ?? [], replacementFor),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [v.tokens, replacements, quick]
+  )
 
   const bg = highlight
     ? {
@@ -65,10 +87,10 @@ export default function VerseView({ v, highlight, hasNote, onOpenMenu }: Props):
       )}
       <span style={bg}>
         {useTokens ? (
-          v.tokens!.map((tok) => {
+          v.tokens!.map((tok, i) => {
             const clickable = !!tok.strongs
             const isSel = selected != null && selected === tok.strongs
-            const replaced = replacementFor(tok)
+            const { part: replaced, tail, trailer } = rendered[i]
             return (
               <span key={tok.position}>
                 <span
@@ -85,11 +107,15 @@ export default function VerseView({ v, highlight, hasNote, onOpenMenu }: Props):
                   }
                 >
                   {replaced ? (
-                    <span className="text-accent font-medium" title={tok.surface}>
-                      {replaced}
-                    </span>
+                    <>
+                      {replaced.before}
+                      <span className="text-accent font-medium" title={tok.surface}>
+                        {replaced.replaced}
+                      </span>
+                      {replaced.after}
+                    </>
                   ) : (
-                    tok.surface
+                    tail
                   )}
                 </span>
                 {strongsVisible && tok.strongs && (
@@ -107,7 +133,7 @@ export default function VerseView({ v, highlight, hasNote, onOpenMenu }: Props):
                     {tok.strongs.replace(/^[GH]/, '')}
                   </sup>
                 )}
-                {tok.trailer}
+                {trailer}
               </span>
             )
           })
