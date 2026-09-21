@@ -116,7 +116,7 @@ export async function installDevMock(): Promise<void> {
           hits.push({ book: 'John', bookName: ch.bookName, chapter: 1, verse: v.verse, surface: surfaces[0], snippet })
         }
       }
-      return { total: hits.length, hits }
+      return { total: hits.length, hits, translation: 'KJV', derived: false }
     },
     listEditions: async () => data.editions ?? [],
     getChapterApparatus: async (book, chapter) => data.apparatus?.[`${book}/${chapter}`] ?? [],

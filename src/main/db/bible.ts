@@ -133,46 +133,11 @@ export function getChapter(ref: ChapterRef): ChapterContent {
     })
   }
 
-  // Translations with no scholarly tagging get inferred tags instead, stored one packed row per
-  // verse (see derived_tags in schema.sql). Materialise them into tokens here, marked `derived`,
-  // so the reader has a single uniform shape to render and can flag them as inferred.
+  // Translations with no scholarly tagging get inferred tags instead (see derived_tags in
+  // schema.sql), materialised into the same token shape and marked `derived`.
   if (tokenRows.length === 0) {
-    const packed = d
-      .prepare(
-        'SELECT verse, strongs FROM derived_tags WHERE translation_id = ? AND book_id = ? AND chapter = ?'
-      )
-      .all(ref.translation, ref.book, ref.chapter) as { verse: number; strongs: string }[]
-    for (const row of packed) {
-      const text = verseRows.find((v) => v.verse === row.verse)?.text
-      if (!text) continue
-      const units = splitVerseUnits(text)
-      const tags = unpackTags(row.strongs)
-      // Collapse each run of words belonging to one source token into ONE token, the way the
-      // scholar-tagged translations are stored. Otherwise a phrase the Berean tags as a unit
-      // ("of the LORD" → H3068) becomes three tokens all carrying H3068, and Quick Replace
-      // substitutes once per token — "Yahweh Yahweh Yahweh".
-      const toks: VerseToken[] = []
-      for (let i = 0; i < units.length; ) {
-        let j = i + 1
-        while (j < units.length && tags[j]?.continues) j++
-        let surface = ''
-        for (let k = i; k < j; k++) {
-          surface += k === j - 1 ? units[k].surface : units[k].surface + units[k].trailer
-        }
-        toks.push({
-          position: toks.length,
-          surface,
-          trailer: units[j - 1].trailer,
-          strongs: tags[i]?.strongs ?? null,
-          lemma: null,
-          translit: null,
-          morph: null,
-          gloss: null,
-          derived: true
-        })
-        i = j
-      }
-      tokensByVerse.set(row.verse, toks)
+    for (const [verse, toks] of derivedTokens(ref.translation, ref.book, ref.chapter, verseRows)) {
+      tokensByVerse.set(verse, toks)
     }
   }
 
@@ -190,6 +155,94 @@ export function getChapter(ref: ChapterRef): ChapterContent {
     direction: (transRow?.direction as 'ltr' | 'rtl') ?? 'ltr',
     verses
   }
+}
+
+/**
+ * Materialise a chapter's inferred tags into tokens. Every consumer — the reader, the interlinear
+ * and the concordance — goes through here, so they can't disagree about where one token ends.
+ *
+ * A run of words marked as continuations collapses into ONE token, the way the scholar-tagged
+ * translations are stored. Without that, a phrase the Berean tags as a unit ("of the LORD" →
+ * H3068) becomes three tokens all carrying H3068, and Quick Replace substitutes once per token.
+ */
+function derivedTokens(
+  translation: string,
+  book: string,
+  chapter: number,
+  verseRows: { verse: number; text: string }[]
+): Map<number, VerseToken[]> {
+  const out = new Map<number, VerseToken[]>()
+  if (!hasTable('derived_tags')) return out
+  const packed = required()
+    .prepare(
+      'SELECT verse, strongs FROM derived_tags WHERE translation_id = ? AND book_id = ? AND chapter = ?'
+    )
+    .all(translation, book, chapter) as { verse: number; strongs: string }[]
+  for (const row of packed) {
+    const text = verseRows.find((v) => v.verse === row.verse)?.text
+    if (!text) continue
+    const units = splitVerseUnits(text)
+    const tags = unpackTags(row.strongs)
+    const toks: VerseToken[] = []
+    for (let i = 0; i < units.length; ) {
+      let j = i + 1
+      while (j < units.length && tags[j]?.continues) j++
+      let surface = ''
+      for (let k = i; k < j; k++) {
+        surface += k === j - 1 ? units[k].surface : units[k].surface + units[k].trailer
+      }
+      toks.push({
+        position: toks.length,
+        surface,
+        trailer: units[j - 1].trailer,
+        strongs: tags[i]?.strongs ?? null,
+        lemma: null,
+        translit: null,
+        morph: null,
+        gloss: null,
+        derived: true
+      })
+      i = j
+    }
+    out.set(row.verse, toks)
+  }
+  return out
+}
+
+/** Does this translation carry scholarly word tagging of its own? */
+function hasRealTagging(translation: string): boolean {
+  return !!required()
+    .prepare('SELECT 1 FROM verse_tokens WHERE translation_id = ? LIMIT 1')
+    .get(translation)
+}
+
+/**
+ * A chapter's tagged words for a translation, from whichever source it has — scholarly tagging or
+ * inferred. Used by the interlinear to align a stacked translation word-for-word; before this,
+ * inferred translations fell through to a flat verse line even though their tags existed.
+ */
+function taggedWordsForChapter(
+  translation: string,
+  book: string,
+  chapter: number
+): { verse: number; surface: string; strongs: string }[] {
+  if (hasRealTagging(translation)) {
+    return required()
+      .prepare(
+        `SELECT verse, surface, strongs FROM verse_tokens
+         WHERE translation_id = ? AND book_id = ? AND chapter = ? AND strongs IS NOT NULL
+         ORDER BY verse, position`
+      )
+      .all(translation, book, chapter) as { verse: number; surface: string; strongs: string }[]
+  }
+  const verseRows = required()
+    .prepare('SELECT verse, text FROM verses WHERE translation_id = ? AND book_id = ? AND chapter = ?')
+    .all(translation, book, chapter) as { verse: number; text: string }[]
+  const out: { verse: number; surface: string; strongs: string }[] = []
+  for (const [verse, toks] of derivedTokens(translation, book, chapter, verseRows)) {
+    for (const tk of toks) if (tk.strongs) out.push({ verse, surface: tk.surface, strongs: tk.strongs })
+  }
+  return out.sort((a, b) => a.verse - b.verse)
 }
 
 export function getStrongs(id: string): StrongsEntry | null {
@@ -435,8 +488,16 @@ export function getLexiconEntries(strongs: string): LexiconGroup[] {
 /** Every verse where a Strong's number occurs, in canonical order (word-study concordance). */
 export function getConcordance(strongs: string, opts: ConcordanceOptions = {}): ConcordanceResponse {
   const d = required()
-  const translation = opts.translation ?? 'KJV'
   const sid = strongs.toUpperCase()
+  const wanted = opts.translation ?? 'KJV'
+  // Inferred tags are searchable too, so a reader of the ASV sees ASV verses rather than none.
+  // A translation with no tagging at all falls back to the KJV — the caller is told which it got.
+  if (!hasRealTagging(wanted)) {
+    const derived = derivedConcordance(sid, wanted, opts)
+    if (derived) return derived
+    return { ...getConcordance(sid, { ...opts, translation: 'KJV' }), translation: 'KJV', derived: false }
+  }
+  const translation = wanted
 
   const total = (
     d
@@ -481,7 +542,61 @@ export function getConcordance(strongs: string, opts: ConcordanceOptions = {}): 
       snippet: markSurfaces(r.text as string, surfaces)
     }
   })
-  return { total, hits }
+  return { total, hits, translation, derived: false }
+}
+
+/**
+ * Concordance over a translation's inferred tags. The packed rows hold a space-separated slot per
+ * word, so a whole-slot LIKE finds the candidate verses; the tokens are then materialised through
+ * the shared helper so the marked surfaces match exactly what the reader shows.
+ * Returns null when the translation has no inferred tags either.
+ */
+function derivedConcordance(
+  sid: string,
+  translation: string,
+  opts: ConcordanceOptions
+): ConcordanceResponse | null {
+  if (!hasTable('derived_tags')) return null
+  const d = required()
+  const rows = d
+    .prepare(
+      `SELECT d.book_id, d.chapter, d.verse, d.strongs AS packed, v.text, b.name AS book_name
+         FROM derived_tags d
+         JOIN verses v ON v.translation_id = d.translation_id AND v.book_id = d.book_id
+                      AND v.chapter = d.chapter AND v.verse = d.verse
+         JOIN books b ON b.id = d.book_id
+        WHERE d.translation_id = ? AND ' ' || d.strongs || ' ' LIKE ?
+        ORDER BY b.sort_order, d.chapter, d.verse`
+    )
+    .all(translation, `% ${sid} %`) as {
+    book_id: string
+    chapter: number
+    verse: number
+    packed: string
+    text: string
+    book_name: string
+  }[]
+  if (!rows.length) return null
+
+  const limit = Math.min(opts.limit ?? 300, 1000)
+  const offset = opts.offset ?? 0
+  const hits: ConcordanceHit[] = []
+  for (const r of rows.slice(offset, offset + limit)) {
+    const toks = derivedTokens(translation, r.book_id, r.chapter, [
+      { verse: r.verse, text: r.text }
+    ]).get(r.verse)
+    const surfaces = [...new Set((toks ?? []).filter((t) => t.strongs === sid).map((t) => t.surface))]
+    if (!surfaces.length) continue
+    hits.push({
+      book: r.book_id,
+      bookName: r.book_name,
+      chapter: r.chapter,
+      verse: r.verse,
+      surface: surfaces[0],
+      snippet: markSurfaces(r.text, surfaces)
+    })
+  }
+  return { total: rows.length, hits, translation, derived: true }
 }
 
 /** Wrap whole-word occurrences of each surface in {{…}} for emphasis in the UI. */
@@ -552,17 +667,10 @@ export function getInterlinear(
   // within a verse; untagged ones (WEB, YLT, Julia Smith, …) show as a verse line beneath the grid.
   const linesByVerse = new Map<number, { id: string; text: string }[]>()
   for (const tid of translations) {
-    const tagged = !!d
-      .prepare('SELECT 1 FROM verse_tokens WHERE translation_id = ? LIMIT 1')
-      .get(tid)
-    if (tagged) {
-      const trows = d
-        .prepare(
-          `SELECT verse, surface, strongs FROM verse_tokens
-           WHERE translation_id = ? AND book_id = ? AND chapter = ? AND strongs IS NOT NULL
-           ORDER BY verse, position`
-        )
-        .all(tid, book, chapter) as { verse: number; surface: string; strongs: string }[]
+    // Scholarly tagging where it exists, inferred tags otherwise — an inferred translation aligns
+    // word-for-word just like a tagged one; only a translation with NO tags falls back to a line.
+    const trows = taggedWordsForChapter(tid, book, chapter)
+    if (trows.length > 0) {
       const queues = new Map<number, Map<string, string[]>>()
       for (const r of trows) {
         let q = queues.get(r.verse)

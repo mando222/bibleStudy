@@ -202,7 +202,9 @@ function LexBody({ body }: { body: string }): JSX.Element {
 }
 
 function Concordance({ id, occurrences }: { id: string; occurrences: number }): JSX.Element {
-  const { data, loading } = useConcordance(id)
+  // Follow the translation being read, so an ASV reader sees ASV verses rather than none.
+  const primary = useAppStore((s) => s.primary)
+  const { data, loading } = useConcordance(id, primary)
   const goToVerse = useAppStore((s) => s.goToVerse)
 
   return (
@@ -213,7 +215,13 @@ function Concordance({ id, occurrences }: { id: string; occurrences: number }): 
           {data
             ? `${data.total.toLocaleString()} verses`
             : `${occurrences.toLocaleString()} occurrences`}{' '}
-          · KJV
+          · {data?.translation ?? 'KJV'}
+          {data?.derived && (
+            <span className="italic text-faint" title="Found via inferred word mappings, not scholarly tagging">
+              {' '}
+              (inferred)
+            </span>
+          )}
         </span>
       </div>
 

@@ -118,6 +118,11 @@ export interface ConcordanceHit {
 export interface ConcordanceResponse {
   total: number
   hits: ConcordanceHit[]
+  /** Which translation the hits came from. May differ from the one requested: a translation with
+   *  no word tagging at all falls back to the KJV, and the card says so rather than showing none. */
+  translation: string
+  /** True when those hits come from inferred tags rather than scholarly ones. */
+  derived: boolean
 }
 
 export interface ConcordanceOptions {

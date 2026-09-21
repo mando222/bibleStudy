@@ -4,6 +4,7 @@ import {
   getStrongs,
   listEditions,
   getInterlinear,
+  getConcordance,
   getLexiconEntries,
   getChapterApparatus,
   getMapRegions,
@@ -93,6 +94,26 @@ export async function runSmokeTest(): Promise<void> {
       () => {
         const ev = getEvents()
         if (ev.length < 100 || !ev.some((e) => e.verses.length)) throw new Error('events missing verses')
+      }
+    ],
+    [
+      'Interlinear stacks an INFERRED translation word-for-word',
+      () => {
+        // Regression: derived_tags were read only by the reader, so a stacked ASV column fell back
+        // to a flat verse line even though its tags existed.
+        const il = getInterlinear('John', 1, 'NA', ['ASV'])
+        if (!il.verses.some((v) => v.tokens.some((t) => t.aligned?.ASV))) {
+          throw new Error('ASV did not align word-for-word')
+        }
+      }
+    ],
+    [
+      'Concordance finds verses in an INFERRED translation',
+      () => {
+        const c = getConcordance('G26', { translation: 'ASV', limit: 5 })
+        if (c.translation !== 'ASV' || !c.derived || c.hits.length === 0) {
+          throw new Error(`ASV concordance returned ${c.hits.length} hits from ${c.translation}`)
+        }
       }
     ],
     ['sqlite-vec native extension loads', () => aiDb()],
