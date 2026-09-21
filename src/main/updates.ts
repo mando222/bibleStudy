@@ -118,6 +118,8 @@ export function registerUpdateIpc(): void {
   })
   // Hand the installer to the browser — the app never downloads or runs it itself.
   ipcMain.handle('updates:openDownload', (_e, url: string) => {
+    // Dots escaped: an unescaped `.` matches any character, so `github.com` also matched
+    // `githubXcom`. Only these two hosts serve our releases.
     if (/^https:\/\/(github\.com|objects\.githubusercontent\.com)\//.test(url)) {
       void shell.openExternal(url)
     }

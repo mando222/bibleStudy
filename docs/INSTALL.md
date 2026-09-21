@@ -26,9 +26,17 @@ Steps:
 2. The first time you open it, macOS says the app *"can't be opened because Apple cannot
    check it for malicious software."* That's the unsigned-app warning — expected for free,
    independently published software.
-3. Clear it once: **right-click (or Control-click) the app → Open → Open again.**
-   You can also go to **System Settings → Privacy & Security**, where a button offers to
-   **Open Anyway**.
+3. Clear it once. The reliable route on current macOS:
+   **System Settings → Privacy & Security** → scroll to **Security**, where a line about
+   "Open Bible Study" offers **Open Anyway**. Click it and confirm.
+   Right-click (or Control-click) the app → **Open** also works on some macOS versions, but it
+   does not reliably clear this prompt for an app signed the way ours is — use the setting above
+   if it doesn't.
+
+   If neither works, the Terminal always does:
+   ```bash
+   xattr -cr "/Applications/Open Bible Study.app"
+   ```
 
 After that first time, it opens like any other app.
 
