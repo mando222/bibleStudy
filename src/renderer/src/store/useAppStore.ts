@@ -314,10 +314,10 @@ export const useAppStore = create<AppState>()(
       toggleChronological: () => set({ chronological: !get().chronological }),
       scrollToVerse: null,
       goToVerse: (book, chapter, verse) =>
-        set({ book, chapter, scrollToVerse: verse, activity: 'bible' }),
+        set({ book, chapter, activeVerse: verse, scrollToVerse: verse, activity: 'bible' }),
       clearScroll: () => set({ scrollToVerse: null }),
 
-      goTo: (book, chapter) => set({ book, chapter, scrollToVerse: null }),
+      goTo: (book, chapter) => set({ book, chapter, activeVerse: null, scrollToVerse: null, activity: 'bible' }),
       setPrimary: (id) => {
         const parallels = [...get().parallels]
         parallels[0] = id

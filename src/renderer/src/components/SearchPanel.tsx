@@ -14,24 +14,34 @@ export default function SearchPanel(): JSX.Element {
   const [scope, setScope] = useState<Scope>('all')
   const [res, setRes] = useState<SearchResponse | null>(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
 
   // Debounced search whenever the query, scope, or translation changes.
   useEffect(() => {
     const text = q.trim()
+    let cancelled = false
+    setRes(null)
+    setError(null)
     if (!text) {
-      setRes(null)
+      setLoading(false)
       return
     }
     setLoading(true)
     const t = setTimeout(() => {
       window.api
         .search({ text, translation: primary, testament: scope, limit: 150 })
-        .then((r) => setRes(r))
-        .catch(() => setRes(null))
-        .finally(() => setLoading(false))
+        .then((r) => { if (!cancelled) setRes(r) })
+        .catch((e: unknown) => {
+          if (!cancelled) setError(e instanceof Error ? e.message : 'Please try again.')
+        })
+        .finally(() => { if (!cancelled) setLoading(false) })
     }, 250)
-    return () => clearTimeout(t)
-  }, [q, scope, primary])
+    return () => {
+      cancelled = true
+      clearTimeout(t)
+    }
+  }, [q, scope, primary, attempt])
 
   return (
     <div className="flex flex-col h-full">
@@ -40,6 +50,7 @@ export default function SearchPanel(): JSX.Element {
           <SearchIcon className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
           <input
             autoFocus
+            aria-label={`Search ${primary}`}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder={`Search ${primary}…`}
@@ -51,6 +62,7 @@ export default function SearchPanel(): JSX.Element {
             <button
               key={s}
               onClick={() => setScope(s)}
+              aria-pressed={scope === s}
               className={`px-2 py-0.5 rounded text-xs border ${
                 scope === s ? 'bg-accent-soft border-accent text-accent' : 'border-line text-muted hover:bg-elevated'
               }`}
@@ -60,15 +72,21 @@ export default function SearchPanel(): JSX.Element {
           ))}
           {res && (
             <span className="ml-auto self-center text-xs text-faint tabular-nums">
+              {res.hits.length < res.total ? `${res.hits.length} of ` : ''}
               {res.total.toLocaleString()} result{res.total === 1 ? '' : 's'}
             </span>
           )}
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2">
-        {loading && !res ? (
-          <p className="text-sm text-muted p-2">Searching…</p>
+      <div className="flex-1 overflow-y-auto p-2" aria-busy={loading}>
+        {error ? (
+          <div role="alert" className="text-sm text-muted p-2 space-y-2">
+            <p>Search couldn’t finish. {error}</p>
+            <button onClick={() => setAttempt((n) => n + 1)} className="text-accent underline">Try again</button>
+          </div>
+        ) : loading ? (
+          <p role="status" className="text-sm text-muted p-2">Searching…</p>
         ) : res && res.hits.length > 0 ? (
           <ul className="space-y-1">
             {res.hits.map((h) => (

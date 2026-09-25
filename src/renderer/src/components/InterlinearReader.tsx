@@ -1,4 +1,6 @@
+import { useRef } from 'react'
 import { useEditions, useInterlinear } from '@/hooks/useInterlinear'
+import { useVerseNavigation } from '@/hooks/useVerseNavigation'
 import { useAppStore } from '@/store/useAppStore'
 import { BOOK_BY_ID } from '@shared/books'
 import InterlinearVerse from './InterlinearVerse'
@@ -29,20 +31,23 @@ export default function InterlinearReader({
   // show as a verse line beneath the grid.
   const stackable = translations.filter((t) => t.language !== 'imported')
   const labels = Object.fromEntries(stackable.map((t) => [t.id, t.abbrev]))
-  const taggedIds = new Set(stackable.filter((t) => t.hasStrongs).map((t) => t.id))
-  // Only tagged translations get a per-word row; untagged ones render as a verse line.
-  const wordStack = stack.filter((id) => taggedIds.has(id))
-
   const { data, loading, error } = useInterlinear(book, chapter, effective, stack, parses)
+  // Inferred alignments are returned too, even when metadata says hasStrongs=false.
+  const wordStack = stack.filter((id) =>
+    data?.verses.some((v) => v.tokens.some((t) => t.aligned?.[id]))
+  )
+  const container = useRef<HTMLDivElement>(null)
+  useVerseNavigation(container, `${book}:${chapter}:${effective}`, !loading && !!data)
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div ref={container} className="h-full overflow-y-auto">
       <div className="max-w-5xl mx-auto px-8 py-6">
-        <div className="flex items-center gap-3 mb-5">
+        <div className="flex flex-wrap items-center gap-3 mb-5">
           <span className="text-[11px] uppercase tracking-wider text-faint">
             Interlinear · base text
           </span>
           <select
+            aria-label="Interlinear base text"
             value={effective}
             onChange={(e) => setEdition(e.target.value)}
             className="bg-elevated border border-line rounded-md text-sm px-2 py-1 text-ink outline-none focus:border-accent"
@@ -68,7 +73,7 @@ export default function InterlinearReader({
             {parses ? 'All parses' : 'Best guess'}
           </button>
           {stackable.length > 0 && (
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5 w-full">
               <span className="text-[11px] uppercase tracking-wider text-faint">Stack</span>
               {stackable.map((t) => {
                 const on = stack.includes(t.id)
@@ -76,6 +81,7 @@ export default function InterlinearReader({
                   <button
                     key={t.id}
                     onClick={() => toggleStack(t.id)}
+                    aria-pressed={on}
                     title={`Align ${t.name} under each word (by Strong's)`}
                     className={`text-xs px-2 py-1 rounded-md border transition-colors ${
                       on

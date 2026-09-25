@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useAppStore } from '@/store/useAppStore'
 import { BOOK_BY_ID } from '@shared/books'
 import { useChapter } from '@/hooks/useChapter'
+import { useVerseNavigation } from '@/hooks/useVerseNavigation'
 import { useHighlights, useNotes } from '@/hooks/useUserData'
 import VerseView from './VerseView'
 import VersePopover from './VersePopover'
@@ -218,8 +219,6 @@ function Column({ translation, index, canRemove, book, chapter, registerRef, onS
   const [sel, setSel] = useState<{ x: number; y: number; text: string; v1: number; v2: number } | null>(null)
   const askAssistantAbout = useAppStore((s) => s.askAssistantAbout)
   const setActiveVerse = useAppStore((s) => s.setActiveVerse)
-  const scrollToVerse = useAppStore((s) => s.scrollToVerse)
-  const clearScroll = useAppStore((s) => s.clearScroll)
   const rtl = data?.direction === 'rtl'
   const bookName = BOOK_BY_ID[book]?.name ?? book
 
@@ -261,19 +260,13 @@ function Column({ translation, index, canRemove, book, chapter, registerRef, onS
     window.getSelection()?.removeAllRanges()
   }
 
-  // Scroll to a verse requested via search / navigation, then flash it briefly. Only the first
-  // column drives this — it clears the request, and the other columns follow via scroll sync, so
-  // letting every column race for it left all but one parked at the top.
+  useVerseNavigation(containerRef, `${translation}:${book}:${chapter}`, !loading && !!data, index === 0)
+
+  // A menu or text selection belongs to the passage where it was opened.
   useEffect(() => {
-    if (index !== 0 || scrollToVerse == null || !data) return
-    const el = containerRef.current?.querySelector<HTMLElement>(`[data-verse="${scrollToVerse}"]`)
-    if (el) {
-      el.scrollIntoView({ block: 'center', behavior: 'smooth' })
-      el.classList.add('verse-flash')
-      window.setTimeout(() => el.classList.remove('verse-flash'), 1600)
-    }
-    clearScroll()
-  }, [index, scrollToVerse, data, clearScroll])
+    setMenu(null)
+    setSel(null)
+  }, [book, chapter, translation])
 
   const openMenu = (verse: number, e: React.MouseEvent): void => {
     const el = containerRef.current

@@ -14,6 +14,9 @@ export default function NotebookDrawer(): JSX.Element {
 
   return (
     <div
+      aria-label="Notebook"
+      aria-hidden={!open}
+      {...(!open ? { inert: '' } : {})}
       className={`fixed inset-y-0 right-0 z-40 w-[440px] max-w-[92vw] bg-panel border-l border-line shadow-2xl flex flex-col transition-transform duration-200 ${
         open ? 'translate-x-0' : 'translate-x-full'
       }`}
@@ -31,6 +34,7 @@ export default function NotebookDrawer(): JSX.Element {
         </button>
         <button
           onClick={() => setOpen(false)}
+          aria-label="Close notebook"
           className="w-7 h-7 rounded-md text-muted hover:bg-elevated hover:text-ink"
         >
           ✕

@@ -11,6 +11,7 @@ import {
   statSync
 } from 'node:fs'
 import { safeNotePath } from './notebookPath'
+import { createNotebookFile } from './notebookFiles'
 import type { NotebookFile } from '../shared/types'
 
 // Free-form Markdown notes saved to a real folder on disk (default userData/Notebooks, or a
@@ -87,6 +88,7 @@ async function chooseFolder(win: BrowserWindow | null): Promise<string> {
 }
 
 export function registerNotebookIpc(): void {
+  ipcMain.handle('notebook:create', (_e, name: string) => createNotebookFile(baseDir(), name))
   ipcMain.handle('notebook:list', () => list())
   ipcMain.handle('notebook:read', (_e, name: string) => read(name))
   ipcMain.handle('notebook:write', (_e, name: string, content: string) => write(name, content))

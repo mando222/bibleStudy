@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { NotebookFile } from '@shared/types'
 import { useAppStore } from '@/store/useAppStore'
 import { BOOK_BY_ID } from '@shared/books'
 import { SparkleIcon } from './icons'
+import { useNotebookDocument } from '@/hooks/useNotebookDocument'
 
 /**
  * The notebook editor: a file picker + Markdown editor + "ask AI to edit" proposal flow. Rendered
@@ -17,22 +18,17 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
   const activeVerse = useAppStore((s) => s.activeVerse)
 
   const [files, setFiles] = useState<NotebookFile[]>([])
-  const [content, setContent] = useState('')
+  const { content, edit, flush, ready, status, error } = useNotebookDocument(active, visible)
   const [folder, setFolder] = useState('')
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
-  const [savedAt, setSavedAt] = useState<number | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [fileError, setFileError] = useState<string | null>(null)
 
   const [instruction, setInstruction] = useState('')
   const [aiBusy, setAiBusy] = useState(false)
   const [proposal, setProposal] = useState<string | null>(null)
   const [aiErr, setAiErr] = useState<string | null>(null)
-
-  const loadedFile = useRef<string | null>(null)
-  // What's on disk as far as this window knows. The drawer and the detached notebook window are
-  // separate renderers editing the same files, so an idle window must never write back content it
-  // merely loaded — that would clobber edits made in the other one.
-  const savedContent = useRef<string>('')
 
   const refreshFiles = (): void => {
     window.notebook
@@ -48,43 +44,35 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
     refreshFiles()
   }, [visible])
 
-  // Load the active file's content when it changes.
+  // AI proposals are tied to the note that requested them.
   useEffect(() => {
-    if (!active) {
-      setContent('')
-      loadedFile.current = null
-      return
-    }
-    window.notebook
-      ?.read(active)
-      .then((text) => {
-        setContent(text)
-        savedContent.current = text
-        loadedFile.current = active
-      })
-      .catch(() => setContent(''))
+    setProposal(null)
+    setAiErr(null)
+    setInstruction('')
   }, [active])
 
-  // Debounced autosave — only after the active file's content has loaded, and only when the text
-  // actually changed, so simply opening a note never rewrites it.
-  useEffect(() => {
-    if (!active || loadedFile.current !== active || content === savedContent.current) return
-    const t = setTimeout(() => {
-      window.notebook
-        ?.write(active, content)
-        .then(() => {
-          savedContent.current = content
-          setSavedAt(Date.now())
-        })
-        .catch(() => undefined)
-    }, 600)
-    return () => clearTimeout(t)
-  }, [content, active])
+  const runFileAction = async (action: () => Promise<void>): Promise<void> => {
+    if (busy || aiBusy) return
+    setBusy(true)
+    setFileError(null)
+    try {
+      await flush()
+      await action()
+    } catch (e) {
+      setFileError(e instanceof Error ? e.message : 'Could not update the notebook.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const selectFile = (name: string | null): void => {
+    void runFileAction(async () => { setActive(name) })
+  }
 
   const createFile = async (): Promise<void> => {
     const name = newName.trim()
     if (!name) return
-    const f = await window.notebook.write(name, '')
+    const f = await window.notebook.create(name)
     setCreating(false)
     setNewName('')
     refreshFiles()
@@ -100,6 +88,7 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
 
   const changeFolder = async (): Promise<void> => {
     const dir = await window.notebook.chooseFolder()
+    if (dir === folder) return
     setFolder(dir)
     setActive(null)
     refreshFiles()
@@ -143,7 +132,7 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
           {folder || 'Notebook folder'}
         </span>
         <div className="flex-1" />
-        <button onClick={changeFolder} className="hover:text-accent whitespace-nowrap">
+        <button disabled={busy || aiBusy} onClick={() => void runFileAction(changeFolder)} className="hover:text-accent whitespace-nowrap disabled:opacity-50">
           Change…
         </button>
       </div>
@@ -151,7 +140,9 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
       <div className="shrink-0 border-b border-line p-2 flex items-center gap-1.5">
         <select
           value={active ?? ''}
-          onChange={(e) => setActive(e.target.value || null)}
+          aria-label="Notebook file"
+          disabled={busy || aiBusy}
+          onChange={(e) => selectFile(e.target.value || null)}
           className="flex-1 min-w-0 bg-elevated border border-line rounded-md px-2 py-1 text-sm text-ink outline-none focus:border-accent"
         >
           <option value="">{files.length ? 'Select a note…' : 'No notes yet'}</option>
@@ -169,7 +160,8 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
         </button>
         {active && (
           <button
-            onClick={deleteFile}
+            disabled={busy || aiBusy}
+            onClick={() => void runFileAction(deleteFile)}
             className="px-2 py-1 rounded-md border border-line text-sm text-muted hover:text-red-500"
           >
             Delete
@@ -183,12 +175,14 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
             autoFocus
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && createFile()}
+            onKeyDown={(e) => e.key === 'Enter' && void runFileAction(createFile)}
+            aria-label="New note name"
             placeholder="Note name (.md)"
             className="flex-1 min-w-0 bg-elevated border border-line rounded-md px-2 py-1 text-sm text-ink outline-none focus:border-accent"
           />
           <button
-            onClick={createFile}
+            disabled={busy || aiBusy || !newName.trim()}
+            onClick={() => void runFileAction(createFile)}
             className="px-2.5 py-1 rounded-md bg-accent text-white text-sm hover:opacity-90"
           >
             Create
@@ -196,16 +190,25 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
         </div>
       )}
 
+      {(error || fileError) && (
+        <div role="alert" className="p-2 text-sm text-red-500">
+          {fileError || error}
+          {error && ready && <button onClick={() => void runFileAction(async () => {})} className="ml-2 underline">Retry save</button>}
+        </div>
+      )}
+
       {active ? (
         <>
           <textarea
             value={content}
-            onChange={(e) => setContent(e.target.value)}
-            placeholder="Write in Markdown…"
+            aria-label="Note content"
+            disabled={!ready || busy}
+            onChange={(e) => edit(e.target.value)}
+            placeholder={ready ? 'Write in Markdown…' : 'Loading note…'}
             className="flex-1 min-h-0 resize-none w-full bg-bg p-3 text-sm text-ink leading-relaxed outline-none font-mono"
           />
-          <div className="shrink-0 border-t border-line px-3 py-1 text-[11px] text-faint">
-            {savedAt ? 'Saved' : 'Autosaves as you type'} · {active}
+          <div role="status" className="shrink-0 border-t border-line px-3 py-1 text-[11px] text-faint">
+            {status} · {active}
           </div>
         </>
       ) : (
@@ -216,7 +219,7 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
         </div>
       )}
 
-      {active && (
+      {active && ready && (
         <div className="shrink-0 border-t border-line p-2 space-y-2">
           <div className="flex gap-1.5">
             <input
@@ -228,7 +231,7 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
             />
             <button
               onClick={askAi}
-              disabled={aiBusy}
+              disabled={aiBusy || busy || !instruction.trim()}
               className="px-2.5 py-1 rounded-md border border-accent/40 text-accent text-sm hover:bg-accent-soft disabled:opacity-50 flex items-center gap-1"
             >
               <SparkleIcon className="w-3.5 h-3.5" />
@@ -254,7 +257,7 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
                 </button>
                 <button
                   onClick={() => {
-                    setContent((c) => `${c}\n\n${proposal}`)
+                    edit(`${content}\n\n${proposal}`)
                     setProposal(null)
                   }}
                   className="px-2 py-1 rounded-md border border-line text-muted hover:bg-panel"
@@ -263,7 +266,7 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
                 </button>
                 <button
                   onClick={() => {
-                    setContent(proposal)
+                    edit(proposal)
                     setProposal(null)
                   }}
                   className="px-2.5 py-1 rounded-md bg-accent text-white hover:opacity-90"

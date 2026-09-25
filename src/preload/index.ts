@@ -94,6 +94,7 @@ const ai: AiApi = {
 }
 
 const notebook: NotebookApi = {
+  create: (name) => ipcRenderer.invoke('notebook:create', name),
   list: () => ipcRenderer.invoke('notebook:list'),
   read: (name) => ipcRenderer.invoke('notebook:read', name),
   write: (name, content) => ipcRenderer.invoke('notebook:write', name, content),

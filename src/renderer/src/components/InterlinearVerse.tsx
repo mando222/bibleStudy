@@ -33,7 +33,7 @@ export default function InterlinearVerse({
   }
 
   return (
-    <div className="mb-4">
+    <div className="mb-4" data-verse={v.verse}>
       <div dir={rtl ? 'rtl' : 'ltr'} className="flex flex-wrap gap-x-2.5 gap-y-3 items-start">
         <span className="text-xs font-sans font-semibold text-accent/70 pt-1.5 tabular-nums">
           {v.verse}

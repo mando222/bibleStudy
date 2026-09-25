@@ -16,6 +16,38 @@ Group changes under: **Added** (new features), **Changed** (changes to existing 
 
 _Nothing yet._
 
+## [0.3.1] - 2026-09-25
+
+This maintenance release makes everyday study more reliable, with particular care for notebook
+edits, verse navigation, and the results shown in the study pane.
+
+### Fixed
+
+- **Notebook edits survive quick file switches.** Changing notes now waits for the latest edits
+  to save, and a late file load cannot replace the note you are currently editing. Closing a
+  window also waits for pending edits; if saving fails, the draft stays open with an error.
+- **Creating a note no longer overwrites an existing one.** Reusing a note's name now asks you to
+  choose a different name instead of erasing the original text.
+- **Search and cross-references stay with your current selection.** Late results for an earlier
+  query or verse are ignored. Clearing a search clears its loading state too, and a failed lookup
+  offers a retry instead of appearing to have no results.
+- **Verse links reach the right passage.** Navigation waits for the destination chapter before
+  scrolling and highlighting the requested verse, including in the interlinear reader. Selected
+  verse context stays in sync, while notes, highlights, and open verse menus no longer carry over
+  into the wrong chapter.
+- **Inferred translation rows appear in the interlinear.** Word alignments for translations such
+  as the ASV, WEB, and Young's were available in the database but could be hidden by the reader.
+  The reader now displays those returned alignments.
+- **Closed drawers stay out of keyboard navigation.** Off-screen assistant and notebook controls
+  no longer receive keyboard focus or appear to assistive technology.
+
+### Changed
+
+- **Clearer notebook save feedback.** The editor distinguishes loading, unsaved changes, saving,
+  saved, and failed saves, and lets you retry a failed save without losing your draft.
+- **Better use of narrow reading panes.** Interlinear controls wrap to keep translation choices
+  reachable. Search counts show when only the first portion of the results is displayed.
+
 ## [0.3.0] - 2026-09-21
 
 ### Added

@@ -100,6 +100,10 @@ Audit (2026-08-09):
 
 ## 🧭 Backlog — candidate features (pull from here)
 
+See the [2026-09-25 app audit](APP_AUDIT.md) for verified reliability fixes, prioritized remaining
+gaps, and an Android-without-AI feasibility plan. Older entries below need reconciliation with
+features shipped since this roadmap was first written.
+
 Grouped by theme; unordered within a group. Add freely. For *content* features (commentaries,
 dictionaries, word-study, maps), see the **Logos parity — gap analysis** section below — it's the
 home for those, grouped by how license-clean each is.
@@ -214,8 +218,9 @@ ship**. Grouped by how reachable each is for us:
 - **NKJV / NASB & other © translations** — import-only (already a permanent constraint).
 
 ### 🔵 Out of scope by design (or big bets)
-- **Cloud sync + mobile + web** — we're deliberately **local-first / offline**; sync is a "bigger
-  bet" already in the backlog, mobile/web aren't planned.
+- **Cloud sync + web** — we're deliberately **local-first / offline**; sync is a "bigger bet"
+  already in the backlog. **Android without AI** is now a candidate; see the [app audit](APP_AUDIT.md)
+  for a proposal that preserves offline reading.
 - **Community / Faithlife, sharing, sermon marketplace, courses** — not our lane.
 - **Sentence diagramming / Canvas** — large effort, niche; possible far-future.
 - **Sermon / preaching builder, prayer lists, guided workflows** — could arrive later as "study

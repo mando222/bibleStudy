@@ -20,6 +20,7 @@ export function useEditions(): Edition[] {
 }
 
 interface State {
+  key?: string
   data: InterlinearContent | null
   loading: boolean
   error: string | null
@@ -34,27 +35,28 @@ export function useInterlinear(
 ): State {
   const [state, setState] = useState<State>({ data: null, loading: true, error: null })
   const stackKey = stack.join(',')
+  const key = `${book}:${chapter}:${edition}:${stackKey}:${parses}`
 
   useEffect(() => {
     if (!edition) {
-      setState({ data: null, loading: false, error: null })
+      setState({ key, data: null, loading: false, error: null })
       return
     }
     let cancelled = false
-    setState((s) => ({ ...s, loading: true, error: null }))
+    setState({ key, data: null, loading: true, error: null })
     window.api
       .getInterlinear(book, chapter, edition, stackKey ? stackKey.split(',') : [], parses)
       .then((data) => {
-        if (!cancelled) setState({ data, loading: false, error: null })
+        if (!cancelled) setState({ key, data, loading: false, error: null })
       })
       .catch((e: unknown) => {
         if (!cancelled)
-          setState({ data: null, loading: false, error: e instanceof Error ? e.message : String(e) })
+          setState({ key, data: null, loading: false, error: e instanceof Error ? e.message : String(e) })
       })
     return () => {
       cancelled = true
     }
-  }, [book, chapter, edition, stackKey, parses])
+  }, [book, chapter, edition, stackKey, parses, key])
 
-  return state
+  return state.key === key ? state : { data: null, loading: true, error: null }
 }

@@ -445,6 +445,7 @@ export interface NotebookFile {
   modified: number
 }
 export interface NotebookApi {
+  create(name: string): Promise<NotebookFile>
   list(): Promise<NotebookFile[]>
   read(name: string): Promise<string>
   write(name: string, content: string): Promise<NotebookFile>

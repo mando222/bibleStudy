@@ -16,6 +16,7 @@ import type {
   Highlight,
   InterlinearContent,
   Note,
+  NotebookApi,
   SearchResponse,
   UpdatesApi,
   VerseVariant
@@ -258,6 +259,36 @@ export async function installDevMock(): Promise<void> {
   }
 
   ;(window as unknown as { api: BibleApi }).api = mock
+
+  // Isolated, in-memory notebook so browser previews never touch real study notes.
+  const notebookFiles = new Map<string, { content: string; modified: number }>()
+  const noteName = (name: string): string => /\.md$/i.test(name) ? name : `${name}.md`
+  const notebook: NotebookApi = {
+    list: async () => [...notebookFiles].map(([name, file]) => ({ name, modified: file.modified })),
+    read: async (name) => notebookFiles.get(name)?.content ?? '',
+    create: async (name) => {
+      name = noteName(name.trim())
+      if (notebookFiles.has(name)) throw new Error('A note with that name already exists. Choose a different name.')
+      const modified = Date.now()
+      notebookFiles.set(name, { content: '', modified })
+      return { name, modified }
+    },
+    write: async (name, content) => {
+      name = noteName(name)
+      const modified = Date.now()
+      notebookFiles.set(name, { content, modified })
+      return { name, modified }
+    },
+    rename: async (oldName, newName) => {
+      const file = notebookFiles.get(oldName)
+      if (file) { notebookFiles.set(noteName(newName), file); notebookFiles.delete(oldName) }
+    },
+    delete: async (name) => { notebookFiles.delete(name) },
+    getFolder: async () => 'Browser preview — notes last until reload',
+    chooseFolder: async () => 'Browser preview — notes last until reload',
+    openWindow: async () => { window.open(`${window.location.origin}/?window=notebook`) }
+  }
+  ;(window as unknown as { notebook: NotebookApi }).notebook = notebook
 
   // Simulated assistant so the chat UI previews in the browser (real one runs on Ollama in-app).
   const tokenListeners = new Set<(e: AiTokenEvent) => void>()

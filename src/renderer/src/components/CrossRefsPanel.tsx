@@ -13,16 +13,23 @@ export default function CrossRefsPanel(): JSX.Element {
   const book = useAppStore((s) => s.book)
   const chapter = useAppStore((s) => s.chapter)
   const verse = useAppStore((s) => s.activeVerse)
-  const [refs, setRefs] = useState<CrossRef[]>([])
+  const key = `${book}:${chapter}:${verse}`
+  const [result, setResult] = useState<{ key: string; refs: CrossRef[] } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
+  const refs = result?.key === key ? result.refs : null
   const bookName = BOOK_BY_ID[book]?.name ?? book
 
   useEffect(() => {
-    if (verse == null) return setRefs([])
+    let cancelled = false
+    setError(null)
+    if (verse == null) return
     window.api
       .getCrossReferences(book, chapter, verse)
-      .then(setRefs)
-      .catch(() => setRefs([]))
-  }, [book, chapter, verse])
+      .then((refs) => { if (!cancelled) setResult({ key, refs }) })
+      .catch(() => { if (!cancelled) setError('Could not load cross-references.') })
+    return () => { cancelled = true }
+  }, [book, chapter, verse, key, attempt])
 
   if (verse == null) {
     return (
@@ -40,12 +47,18 @@ export default function CrossRefsPanel(): JSX.Element {
       <div className="text-[11px] uppercase tracking-wider text-faint">
         Cross-references · {bookName} {chapter}:{verse}
       </div>
-      {refs.length ? (
+      {error ? (
+        <div role="alert">
+          <p>{error}</p>
+          <button onClick={() => setAttempt((n) => n + 1)} className="text-accent underline">Try again</button>
+        </div>
+      ) : refs == null ? (
+        <p role="status" className="text-sm text-faint">Loading cross-references…</p>
+      ) : refs.length ? (
         <VerseRefs refs={refs.map((r) => r.ref)} groupByBook />
       ) : (
         <p className="text-sm text-faint">
-          No cross-references for this verse{' '}
-          <span className="text-faint">(the reference set is built by npm run db:build).</span>
+          No cross-references for this verse.
         </p>
       )}
     </div>
