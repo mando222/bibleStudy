@@ -81,7 +81,7 @@ jobs:
       - name: Build the Bible database (pipeline assertions gate the data)
         run: npm run db:build
       - name: DB integrity test
-        run: npx vitest run test/db.test.ts test/studySearch.test.ts test/assistantSources.test.ts test/sourceWordIntegrity.test.ts test/wordFrequency.test.ts test/lexiconDirectory.test.ts
+        run: npm run test:release-db
       - name: Package the app
         run: npx electron-vite build && npx electron-builder --publish never
         env:

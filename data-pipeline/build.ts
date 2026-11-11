@@ -7,6 +7,7 @@
  */
 import { DatabaseSync } from 'node:sqlite'
 import { createHash } from 'node:crypto'
+import { gunzipSync } from 'node:zlib'
 import wordSourceHashes from './assets/word-source-hashes.json'
 import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, renameSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -143,10 +144,6 @@ const TRANSLATIONS: TranslationSource[] = [
     scope: { books: 9, minVerses: 9000 }
   }
 ]
-
-// Julia Smith 1876 — clean DBS digital text served per-chapter on studybible.info.
-const JULIA_SMITH_BASE = 'https://studybible.info/JuliaSmith'
-const JULIA_SMITH_BOOK: Record<string, string> = { Song: 'Song of Songs' } // else use book.name
 
 // STEPBible Translators Amalgamated OT+NT (CC BY 4.0) — tagged original-language editions.
 const STEP_REPO = 'https://raw.githubusercontent.com/STEPBible/STEPBible-Data/f71b5e51f2d768ae72e3ed69743a7a9df25ef8b5'
@@ -607,81 +604,14 @@ interface JsVerse {
   text: string
 }
 
-const HTML_ENTITIES: Record<string, string> = {
-  '&amp;': '&',
-  '&lt;': '<',
-  '&gt;': '>',
-  '&quot;': '"',
-  '&#39;': "'",
-  '&nbsp;': ' ',
-  '&#8217;': '’',
-  '&#8216;': '‘',
-  '&#8220;': '“',
-  '&#8221;': '”',
-  '&#8212;': '—'
-}
-
-function cleanJsText(t: string): string {
-  return t
-    .replace(/<sup>[\s\S]*?<\/sup>/g, ' ') // footnote markers
-    .replace(/<[^>]+>/g, ' ') // tags
-    .replace(/&[#a-z0-9]+;/gi, (e) => HTML_ENTITIES[e] ?? ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-/** Scrape the public-domain Julia Smith text from studybible.info (cached in sources/). */
-async function fetchJuliaSmith(): Promise<JsVerse[]> {
-  const cache = join(HERE, 'sources', 'juliasmith.json')
-  if (existsSync(cache)) return JSON.parse(readFileSync(cache, 'utf8')) as JsVerse[]
-
-  const tasks: { book: string; sbName: string; ch: number }[] = []
-  for (const b of BOOKS) {
-    const sbName = JULIA_SMITH_BOOK[b.id] ?? b.name
-    for (let ch = 1; ch <= b.chapters; ch++) tasks.push({ book: b.id, sbName, ch })
+/** The audited public-domain 1876 text, sourced from the Digital Bible Society via studybible.info. */
+function readJuliaSmith(): JsVerse[] {
+  const bytes = gunzipSync(readFileSync(join(HERE, 'assets', 'julia-smith-1876.json.gz')))
+  const digest = createHash('sha256').update(bytes).digest('hex')
+  if (digest !== '5702fb61513f4e97a0bb1caf71d5892caa55f1b17dea8709666af42bab606de1') {
+    throw new Error('Julia Smith text failed the source integrity check')
   }
-
-  const boundRe = /<div|<a class="reference"|<sup><a class="version_info"|<\/article>/
-  const out: JsVerse[] = []
-  let idx = 0
-  let done = 0
-
-  async function worker(): Promise<void> {
-    while (idx < tasks.length) {
-      const t = tasks[idx++]
-      const url = `${JULIA_SMITH_BASE}/${encodeURIComponent(`${t.sbName} ${t.ch}`)}`
-      let h = ''
-      for (let attempt = 0; attempt < 3 && !h; attempt++) {
-        try {
-          const r = await fetch(url, { headers: { 'User-Agent': 'OpenBibleStudy/0.1 (+build)' } })
-          if (r.ok) h = await r.text()
-        } catch {
-          /* retry */
-        }
-      }
-      if (h) {
-        const anchor = /<sup><a class="verse_ref JuliaSmith"[^>]*>(\d+)<\/a><\/sup>/g
-        const ms = [...h.matchAll(anchor)]
-        for (let i = 0; i < ms.length; i++) {
-          const m = ms[i]
-          const s = (m.index ?? 0) + m[0].length
-          let e = i + 1 < ms.length ? ms[i + 1].index ?? h.length : h.length
-          if (i + 1 >= ms.length) {
-            const bm = boundRe.exec(h.slice(s))
-            if (bm) e = s + bm.index
-          }
-          const text = cleanJsText(h.slice(s, e))
-          if (text) out.push({ book: t.book, chapter: t.ch, verse: Number(m[1]), text })
-        }
-      }
-      if (++done % 100 === 0) process.stdout.write('.')
-    }
-  }
-
-  await Promise.all(Array.from({ length: 5 }, () => worker()))
-  mkdirSync(dirname(cache), { recursive: true })
-  writeFileSync(cache, JSON.stringify(out))
-  return out
+  return JSON.parse(bytes.toString('utf8')) as JsVerse[]
 }
 
 // helloao complete.json shapes we rely on
@@ -1572,9 +1502,8 @@ async function main(): Promise<void> {
     process.stdout.write(` ${verseCount} verses, ${chapterSet.size} chapters\n`)
   }
 
-  // Julia Smith 1876 (scraped from studybible.info, cached)
-  process.stdout.write('• Julia Smith: fetching')
-  const jsVerses = await fetchJuliaSmith()
+  process.stdout.write('• Julia Smith: loading bundled text…')
+  const jsVerses = readJuliaSmith()
   insTrans.run(
     'JuliaSmith',
     'Smith',
@@ -1821,10 +1750,8 @@ async function main(): Promise<void> {
   }
 
   for (const s of summary) {
-    // Julia Smith is scraped and may have minor gaps; assert it more loosely.
-    if (s.id === 'Smith') {
-      if (s.verses < 28000) errors.push(`Julia Smith: only ${s.verses} verses (expected ~31k)`)
-      continue
+    if (s.id === 'Smith' && s.verses !== 31102) {
+      errors.push(`Julia Smith: expected 31,102 verses, found ${s.verses}`)
     }
     const scope = TRANSLATIONS.find((x) => x.id === s.id)?.scope ?? 'full'
     if (typeof scope === 'object') {

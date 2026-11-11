@@ -1,7 +1,7 @@
 # Data sources & attribution
 
 The app bundles/derives text and lexical data from the following open sources. The build
-pipeline (`npm run db:build`) fetches these fresh; nothing here is redistributed in this repo.
+pipeline (`npm run db:build`) uses publisher downloads and the credited snapshots below.
 
 ## Bible text
 
@@ -19,8 +19,8 @@ pipeline (`npm run db:build`) fetches these fresh; nothing here is redistributed
   <https://ebible.org/Scriptures/details.php?id=engWycliffe> — Public Domain. The Pentateuch and
   the four Gospels only, in Middle English. (The complete modern-spelling editions are
   CC BY-NC-ND, which this project does not bundle.)
-- **Julia E. Smith Translation (1876)** — text via <https://studybible.info/JuliaSmith> — Public
-  Domain.
+- **Julia E. Smith Translation (1876)** — public-domain Digital Bible Society text from
+  <https://studybible.info/JuliaSmith>. The bundled snapshot contains 31,102 verses.
 
 ## Derived word mappings
 

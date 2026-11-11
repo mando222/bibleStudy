@@ -30,6 +30,7 @@ The Words tab now lets you follow a Hebrew, Aramaic, or Greek word from its dict
 ### Fixed
 
 - **Missing Hebrew dictionary cards.** Dictionary references with a leading zero now open the right entry: the **H02** link under *Abba* opens **H2**, Aramaic for “father.” Words, the interlinear, and vocabulary cards also show the bundled scholarly entry when a word or grammatical component has no historical Strong’s entry. Hebrew dictionary search accepts spellings without vowel points.
+- **Complete Julia Smith text on every platform.** Installers now use the same verified 31,102-verse text. The build checks that every expected verse is present before publishing.
 - **Source words.** All 45 lexical entries in Restore words use fixed source spellings. The reader shows YHWH for the verified four-letter name and the attested transliteration for other selected words. It keeps the published wording for pronouns, ambiguous meanings and forms whose prefixes or suffixes would duplicate the surrounding grammar. Copying a passage or asking the assistant about it uses the published translation.
 
 - **Missing Hebrew and Greek passages.** The original-language importer now reads alternate verse numbering, edition-specific readings and moved words. This restores Hebrew Psalm 51 and the closing verses of Romans. English and Septuagint parallels now align corresponding passages and show their native references.

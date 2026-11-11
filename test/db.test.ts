@@ -23,6 +23,14 @@ suite('bible.sqlite integrity', () => {
     expect(n("SELECT COUNT(*) n FROM verses WHERE translation_id='KJV'")).toBe(31102)
   })
 
+  it('Julia Smith contains text for every KJV verse at the same reference', () => {
+    expect(n("SELECT count(*) n FROM verses WHERE translation_id='JuliaSmith' AND length(trim(text))>0")).toBe(31102)
+    const refs = "SELECT book_id, chapter, verse FROM verses WHERE translation_id=?"
+    for (const [from, to] of [['KJV','JuliaSmith'], ['JuliaSmith','KJV']]) {
+      expect(all(`${refs} EXCEPT ${refs} LIMIT 1`, from, to)).toEqual([])
+    }
+  })
+
   it('KJV John 1:1 reads correctly', () => {
     const r = one("SELECT text FROM verses WHERE translation_id='KJV' AND book_id='John' AND chapter=1 AND verse=1")
     expect(String(r.text)).toMatch(/In the beginning was the Word/i)
