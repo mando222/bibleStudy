@@ -16,6 +16,20 @@ Group changes under: **Added** (new features), **Changed** (changes to existing 
 
 _Nothing yet._
 
+## [0.4.1] - 2026-11-11
+
+### Added
+
+- **Reading display.** Choose which publisher headings, chapter numbers, and verse numbers appear in the reader. Literary layout uses each translation’s recorded paragraphs and poetry. With two or more translations open, **Compare layout** shows how each edition presents the passage. You can save a different display choice for each translation.
+- **Speaker guides and passage outlines.** Optional guides identify the speaker and show the supporting passage or edition marking. Explore the generations in Matthew 1 or follow the speakers and the letter in Acts 15. The guides sit alongside the published text.
+- **Passage context and personal maps.** Select a verse or passage and open **Context** to see its people, places, events, and references. Open the atlas from a passage or a person’s profile. The first reviewed maps cover 26 people. Numbered stops trace journeys such as Paul’s in Acts 13 and Ruth and Naomi’s in Ruth 1. Optional dotted lines show the order of the stops.
+
+### Fixed
+
+- **The atlas now reaches all 1,274 places in its catalog.** Selecting Rome, Athens, or Corinth centers the map. All 22 places with unknown coordinates have searchable entries, so Nod still opens Genesis 4:16. Alternate names, cited references, and location notes help distinguish places with the same name and identify proposed sites.
+- **Map navigation and historical boundaries.** Pan and zoom follow the pointer across different window sizes. The historical slider moves directly from 1 BC to AD 1 and labels its hand-drawn boundaries as approximate.
+- **Parallel translation selection.** Choosing an edition already open in another column swaps the two columns, so each side of the comparison shows a distinct translation.
+
 ## [0.4.0] - 2026-11-11
 
 The Words tab now lets you follow a Hebrew, Aramaic, or Greek word from its dictionary entry to the exact forms and verses behind its frequency map.
