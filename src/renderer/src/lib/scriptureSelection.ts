@@ -1,0 +1,75 @@
+/** The selected portion of one displayed span, including partial word endpoints. */
+function overlapOf(span: HTMLElement, range: Range): Range {
+  const overlap = document.createRange()
+  overlap.selectNodeContents(span)
+  if (overlap.compareBoundaryPoints(Range.START_TO_START, range) < 0) {
+    overlap.setStart(range.startContainer, range.startOffset)
+  }
+  if (overlap.compareBoundaryPoints(Range.END_TO_END, range) > 0) {
+    overlap.setEnd(range.endContainer, range.endOffset)
+  }
+  return overlap
+}
+
+/** Extract the published text covered by a DOM range in one edition's reading column.
+ * A partial selection of a transliteration denotes its entire aligned English span.
+ * Unchanged text keeps the precise character offsets the reader selected.
+ */
+export function publishedSelection(container: HTMLElement, range: Range) {
+  const verses: { verse: number; text: string }[] = []
+  for (const row of container.querySelectorAll<HTMLElement>('[data-verse]')) {
+    if (!range.intersectsNode(row)) continue
+    let text = ''
+    for (const span of row.querySelectorAll<HTMLElement>('[data-scripture-part]')) {
+      if (!range.intersectsNode(span)) continue
+      const fragment = overlapOf(span, range).toString()
+      if (fragment) text += span.dataset.published ?? fragment
+    }
+    if (text) verses.push({ verse: Number(row.dataset.verse), text })
+  }
+  if (!verses.length) return null
+  return { text: verses.map(v => v.text).join(' '), v1: verses[0].verse, v2: verses[verses.length - 1].verse }
+}
+
+/** A selection can extend beyond the reader (including Select All). Keep headings and other
+ * selected UI text. Chromium's Selection string preserves rendered line breaks and spacing. */
+export function publishedCopy(reader: HTMLElement, selection: Selection): string | undefined {
+  if (!selection.rangeCount || selection.isCollapsed) return
+  const range = selection.getRangeAt(0)
+  const passageOf = (node: Node) => (node instanceof Element ? node : node.parentElement)
+    ?.closest<HTMLElement>('[data-scripture-passage]')
+  const start = passageOf(range.startContainer)
+  const end = passageOf(range.endContainer)
+  if (start && end && reader.contains(start) && reader.contains(end)) {
+    const passages = start === end ? [start] : [...reader.querySelectorAll<HTMLElement>('[data-scripture-passage]')]
+    return passages.filter(p => range.intersectsNode(p)).map(p => publishedSelection(p, range)?.text).filter(Boolean).join('\n')
+  }
+
+  const changes = [...reader.querySelectorAll<HTMLElement>('[data-scripture-part][data-published]')]
+    .filter(span => range.intersectsNode(span))
+    .map(span => ({ overlap: overlapOf(span, range), published: span.dataset.published! }))
+    .filter(({ overlap }) => overlap.toString().length > 0)
+  if (!changes.length || !selection.anchorNode || !selection.focusNode) return
+
+  const { anchorNode, anchorOffset, focusNode, focusOffset } = selection
+  const remaining = range.cloneRange()
+  const parts: string[] = []
+  function renderedText(part: Range): string {
+    if (part.collapsed) return ''
+    selection.removeAllRanges()
+    selection.addRange(part)
+    return selection.toString()
+  }
+  try {
+    for (const { overlap, published } of changes) {
+      const before = remaining.cloneRange()
+      before.setEnd(overlap.startContainer, overlap.startOffset)
+      parts.push(renderedText(before), published)
+      remaining.setStart(overlap.endContainer, overlap.endOffset)
+    }
+    parts.push(renderedText(remaining))
+    return parts.join('')
+  } finally {
+    selection.setBaseAndExtent(anchorNode, anchorOffset, focusNode, focusOffset)
+  }
+}

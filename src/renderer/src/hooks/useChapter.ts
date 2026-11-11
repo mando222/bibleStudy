@@ -9,11 +9,12 @@ interface ChapterState {
 }
 
 /** Fetch one chapter of one translation over IPC, re-fetching when the ref changes. */
-export function useChapter(translation: string, book: string, chapter: number): ChapterState {
+export function useChapter(translation: string, book: string, chapter: number, enabled = true): ChapterState {
   const key = `${translation}:${book}:${chapter}`
   const [state, setState] = useState<ChapterState>({ data: null, loading: true, error: null })
 
   useEffect(() => {
+    if (!enabled) return
     let cancelled = false
     setState({ key, data: null, loading: true, error: null })
     window.api
@@ -28,7 +29,7 @@ export function useChapter(translation: string, book: string, chapter: number): 
     return () => {
       cancelled = true
     }
-  }, [translation, book, chapter, key])
+  }, [translation, book, chapter, key, enabled])
 
   return state.key === key ? state : { data: null, loading: true, error: null }
 }

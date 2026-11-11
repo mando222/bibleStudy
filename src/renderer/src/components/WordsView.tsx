@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
-import type { LexBrowseEntry } from '@shared/types'
+import { useCallback, useState } from 'react'
+import { usePagedQuery } from '@/hooks/usePagedQuery'
+import ResultPages from './ResultPages'
 import { useAppStore } from '@/store/useAppStore'
 import LexiconCard from './LexiconCard'
 import { SearchIcon } from './icons'
@@ -9,33 +10,25 @@ export default function WordsView(): JSX.Element {
   const selected = useAppStore((s) => s.selectedStrongs)
   const selectStrongs = useAppStore((s) => s.selectStrongs)
 
-  const [lang, setLang] = useState<'greek' | 'hebrew'>('greek')
+  const [lang, setLang] = useState<'greek' | 'hebrew'>(() => selected?.startsWith('H') ? 'hebrew' : 'greek')
   const [q, setQ] = useState('')
-  const [res, setRes] = useState<{ total: number; entries: LexBrowseEntry[] } | null>(null)
-  const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    setLoading(true)
-    const t = setTimeout(() => {
-      window.api
-        .browseLexicon({ language: lang, query: q.trim(), limit: 250 })
-        .then(setRes)
-        .catch(() => setRes(null))
-        .finally(() => setLoading(false))
-    }, 200)
-    return () => clearTimeout(t)
-  }, [lang, q])
+  const query = q.trim()
+  const fetchPage = useCallback((offset: number) =>
+    window.api.browseLexicon({ language: lang, query, limit: 250, offset }), [lang, query])
+  const { data: res, error, loading, offset, setOffset, retry } =
+    usePagedQuery(JSON.stringify([lang, query]), fetchPage, 200)
 
   return (
     <div className="h-full flex bg-bg">
       {/* Browse list */}
-      <div className="w-[23rem] shrink-0 border-r border-line flex flex-col bg-panel">
+      <div className="w-[clamp(14rem,31%,23rem)] shrink-0 border-r border-line flex flex-col bg-panel">
         <div className="p-3 border-b border-line space-y-2">
           <h2 className="font-serif text-lg text-ink">Word study</h2>
           <div className="flex gap-1">
             {(['greek', 'hebrew'] as const).map((l) => (
               <button
                 key={l}
+                aria-pressed={lang === l}
                 onClick={() => setLang(l)}
                 className={`px-2.5 py-0.5 rounded text-xs border ${
                   lang === l
@@ -43,7 +36,7 @@ export default function WordsView(): JSX.Element {
                     : 'border-line text-muted hover:bg-elevated'
                 }`}
               >
-                {l === 'greek' ? 'Greek' : 'Hebrew'}
+                {l === 'greek' ? 'Greek' : 'Hebrew / Aramaic'}
               </button>
             ))}
             {res && (
@@ -57,19 +50,22 @@ export default function WordsView(): JSX.Element {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Number, transliteration, or meaning…"
+              aria-label="Search by number, original word, transliteration, or meaning"
+              placeholder="Number, word, transliteration, or meaning…"
               className="w-full bg-elevated border border-line rounded-md pl-8 pr-2 py-1.5 text-sm text-ink outline-none focus:border-accent placeholder:text-faint"
             />
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          {loading && !res ? (
+        {res && <div className="px-3"><ResultPages offset={offset} size={250} count={res.entries.length} total={res.total} onPage={setOffset} /></div>}
+        <div key={offset} className="flex-1 overflow-y-auto">
+          {error ? <p role="alert" className="p-3 text-sm">{error} <button onClick={retry}>Try again</button></p> : loading && !res ? (
             <p className="text-sm text-muted p-3">Loading…</p>
           ) : res && res.entries.length > 0 ? (
             res.entries.map((e) => (
               <button
                 key={e.id}
+                aria-pressed={selected === e.id}
                 onClick={() => selectStrongs(e.id)}
                 className={`w-full text-left px-3 py-2 border-b border-line/40 hover:bg-elevated ${
                   selected === e.id ? 'bg-accent-soft' : ''
@@ -78,6 +74,7 @@ export default function WordsView(): JSX.Element {
                 <div className="flex items-baseline gap-2">
                   <span className="text-[11px] font-mono text-accent shrink-0">{e.id}</span>
                   <span
+                    dir={lang === 'hebrew' ? 'rtl' : 'ltr'}
                     className={`${lang === 'hebrew' ? 'font-hebrew' : 'font-greek'} text-ink text-[15px]`}
                   >
                     {e.lemma}
@@ -96,8 +93,8 @@ export default function WordsView(): JSX.Element {
       {/* Full entry for the selected word */}
       <div className="flex-1 min-w-0 overflow-y-auto p-5">
         {selected ? (
-          <div className="max-w-2xl">
-            <LexiconCard id={selected} />
+          <div className="max-w-3xl">
+            <LexiconCard id={selected} inWords />
           </div>
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-center text-muted">

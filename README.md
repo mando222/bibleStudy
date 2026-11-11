@@ -19,10 +19,17 @@ Installers for **macOS, Windows, and Linux**.
   translations under each word, and a "best guess ⇄ all Scripture-attested parses" toggle.
 - 📚 **Lexicons** — Strong's plus scholarly **BDB · Abbott-Smith · LSJ**, with a full-verse
   **concordance** for every word.
-- 🔁 **Quick Replace** — render the *original* word in place of the English (LORD → Yahweh, love →
-  agape, Christ → Christos), grouped by theme and fully configurable.
-- 🅰️ **Words tab** — hand-browse the entire Greek & Hebrew lexicon by number, transliteration, or
-  meaning.
+- **Restore words** — choose which terms to show. The four-letter Hebrew name appears as YHWH.
+  Other spellings come from the Hebrew, Aramaic or Greek form aligned to that word in that verse.
+  For example, selecting Love shows *ēgapēsen* for “loved” in BSB John 3:16. Uncertain alignments
+  retain the published wording. Hover over a restored word to see what each translation prints,
+  or focus the word and press Down Arrow. The comparison shows the exact wording for verified
+  matches and the published verse for context elsewhere. Copies and assistant quotations use the published translation.
+- 🅰️ **Words tab** — browse the lexicon by number, transliteration, or meaning. Select an entry
+  and open **Word frequency** to see where its Hebrew, Aramaic, or Greek forms occur. Each use
+  counts once, even when the word occurs several times in a verse. Compare books by uses per
+  1,000 tagged words or by total uses, then select a book and chapter to see the matching text.
+  The map follows the selected original-language edition independently of your English translation.
 
 **Textual apparatus**
 - 🔀 **Variants** — where the Greek NT editions differ (Critical vs Textus Receptus), and the OT
@@ -39,6 +46,7 @@ Installers for **macOS, Windows, and Linux**.
   (accents and points optional — `θεος` finds `θεὸς`).
 - ✍️ **Notes & highlighting** — verse highlights and notes in a **separate** `user.sqlite`, so app
   updates never touch your data.
+- **Back up or move your study work** in **About → Study backup**. Save the `.obsbackup` file, then restore it on the destination computer. Restore opens a new profile and keeps a recovery copy of the previous work.
 - ✨ **AI assistant (opt-in, fully local)** — a grounded, offline study assistant that cites the
   verses it uses (clickable), links Greek/Hebrew words and Strong's numbers, answers "how do I…"
   questions about the app, lets you **select a passage and ask about it**, and does **RAG** over

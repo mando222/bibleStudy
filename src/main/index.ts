@@ -1,9 +1,10 @@
-import { app, BrowserWindow, shell, nativeImage, ipcMain } from 'electron'
+import { app, BrowserWindow, shell, nativeImage, ipcMain, type WebContents } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { registerIpc } from './ipc'
 import { registerAiIpc } from './ai/ipc'
-import { registerNotebookIpc } from './notebook'
+import { registerBackupIpc } from './studyBackup'
+import { bindDetachedNotebook, registerNotebookIpc } from './notebook'
 import { registerUpdateIpc } from './updates'
 import { openBibleDb } from './db/bible'
 import { openUserDb } from './db/user'
@@ -78,7 +79,7 @@ function createWindow(): void {
 // The detachable Notebook — its own movable window, part of the same app. One at a time; a second
 // request just focuses the existing one.
 let notebookWin: BrowserWindow | null = null
-function openNotebookWindow(): void {
+function openNotebookWindow(source: WebContents): void {
   if (notebookWin && !notebookWin.isDestroyed()) {
     notebookWin.focus()
     return
@@ -102,6 +103,7 @@ function openNotebookWindow(): void {
   notebookWin.on('closed', () => {
     notebookWin = null
   })
+  bindDetachedNotebook(source, notebookWin.webContents)
   hardenWindow(notebookWin)
   loadRenderer(notebookWin, 'notebook')
 }
@@ -122,8 +124,9 @@ if (!isSmokeTest && !app.requestSingleInstanceLock()) {
     registerIpc()
     registerAiIpc()
     registerNotebookIpc()
+    registerBackupIpc()
     registerUpdateIpc()
-    ipcMain.handle('notebook:openWindow', () => openNotebookWindow())
+    ipcMain.handle('notebook:openWindow', (e) => openNotebookWindow(e.sender))
     openBibleDb() // open the bundled DB if present; renderer shows a hint otherwise
     openUserDb() // create/open the writable user DB (notes + highlights)
 

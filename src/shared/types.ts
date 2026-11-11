@@ -1,4 +1,5 @@
 // Shared domain + IPC contract types, used by main, preload, and renderer.
+import type { WordFrequency, WordFrequencyQuery, WordFrequencyPassageQuery, WordFrequencyVerse } from './wordFrequency'
 
 export type TextDirection = 'ltr' | 'rtl'
 
@@ -17,8 +18,9 @@ export interface Translation {
 /** One word within a verse, for Strong's overlay + interlinear. */
 export interface VerseToken {
   /** True when the Strong's number was INFERRED rather than taken from scholarly tagging
-   *  (see derived_tags in schema.sql). ~92% accurate; the reader marks these visually. */
+   *  (see derived_tags in schema.sql). The reader marks these links visually. */
   derived?: boolean
+  sourceWord?: SourceWord
   position: number
   surface: string // the word as printed
   trailer: string // punctuation/whitespace that follows (for faithful re-rendering)
@@ -29,6 +31,24 @@ export interface VerseToken {
   gloss: string | null
   aligned?: Record<string, string> // interlinear: stacked translation id → aligned word(s)
   parses?: WordParse[] // interlinear "all parses": Scripture-attested analyses of this form
+}
+
+/** An occurrence in the Berean publisher's bilingual table. Positions bracket the intact English span. */
+export interface SourceWord {
+  edition: 'BSB'
+  language: 'Hebrew' | 'Aramaic' | 'Greek'
+  rowId: string // publisher's Heb Sort or Greek Sort, including fractional IDs
+  book: string
+  chapter: number
+  verse: number
+  text: string
+  translit: string
+  strongs: string
+  morph: string
+  english: string
+  startPosition: number
+  endPosition: number
+  evidence: 'aligned' | 'corroborated'
 }
 
 /** One Scripture-attested analysis of an original-language form (from the scholar-tagged text). */
@@ -51,6 +71,10 @@ export interface ChapterRef {
   chapter: number
 }
 
+export interface VerseRef extends ChapterRef {
+  verse: number
+}
+
 export interface ChapterContent extends ChapterRef {
   bookName: string
   direction: TextDirection
@@ -58,6 +82,10 @@ export interface ChapterContent extends ChapterRef {
 }
 
 export interface StrongsEntry {
+  /** A dictionary headword supplied only by a STEPBible lexicon. */
+  lexiconSource?: 'STEP'
+  /** Explicit language label in the dictionary, distinct from its catalog grouping. */
+  sourceLanguage?: 'Aramaic'
   id: string // "G26"
   language: 'greek' | 'hebrew'
   lemma: string
@@ -86,6 +114,7 @@ export interface LexiconGroup {
 export interface SearchQuery {
   text: string
   translation: string
+  greekEdition?: 'NA' | 'TR' | 'BYZ'
   testament?: 'OT' | 'NT' | 'all'
   book?: string | null
   limit?: number
@@ -93,6 +122,8 @@ export interface SearchQuery {
 }
 
 export interface SearchHit {
+  translation?: string // actual corpus, including the edition ID for an interlinear hit
+  edition?: string // a hit requiring the interlinear reader
   book: string
   bookName: string
   chapter: number
@@ -103,6 +134,7 @@ export interface SearchHit {
 export interface SearchResponse {
   total: number
   hits: SearchHit[]
+  notice?: string
 }
 
 /** A verse where a given Strong's number occurs (word-study concordance). */
@@ -127,6 +159,8 @@ export interface ConcordanceResponse {
 
 export interface ConcordanceOptions {
   translation?: string
+  testament?: SearchQuery['testament']
+  book?: string | null
   limit?: number
   offset?: number
 }
@@ -147,7 +181,7 @@ export interface InterlinearContent {
   verses: {
     verse: number
     tokens: VerseToken[]
-    lines?: { id: string; text: string }[] // untagged stacked translations, shown as a verse line
+    lines?: { id: string; text: string; ref?: string }[] // untagged stacked translations, shown as a verse line
   }[]
 }
 
@@ -207,10 +241,12 @@ export interface ChatMessage {
   content: string
 }
 export interface ChatCitation {
+  translation?: string
   book: string
   bookName: string
   chapter: number
   verse: number
+  endVerse?: number
   text: string
   source?: string // document name when the citation is from a user doc
 }
@@ -449,6 +485,8 @@ export interface NotebookApi {
   list(): Promise<NotebookFile[]>
   read(name: string): Promise<string>
   write(name: string, content: string): Promise<NotebookFile>
+  recover(name: string, content: string): Promise<NotebookFile>
+  onCheckpoint(flush: () => Promise<void>, resume: () => void): () => void
   rename(oldName: string, newName: string): Promise<void>
   delete(name: string): Promise<void>
   getFolder(): Promise<string>
@@ -496,8 +534,11 @@ export interface BibleApi {
   version(): Promise<string>
   listTranslations(): Promise<Translation[]>
   getChapter(ref: ChapterRef): Promise<ChapterContent>
+  getComparisonVerse(ref: VerseRef): Promise<Verse | null>
   getStrongs(id: string): Promise<StrongsEntry | null>
   browseLexicon(opts: LexBrowseOptions): Promise<LexBrowseResult>
+  getWordFrequency(query: WordFrequencyQuery): Promise<WordFrequency>
+  getWordFrequencyPassages(query: WordFrequencyPassageQuery): Promise<WordFrequencyVerse[]>
   getPeople(query?: string, limit?: number): Promise<PersonListItem[]>
   getPerson(id: number): Promise<PersonDetail | null>
   getAncestry(id: number): Promise<PersonRef[]>
@@ -559,4 +600,7 @@ export interface BibleApi {
 
   // Export notes & highlights to a Markdown file (returns the saved path, or null if cancelled)
   exportMarkdown(): Promise<string | null>
+  studyProfile(): Promise<{ id: string; initialState: string | null }>
+  createStudyBackup(readerState: string | null): Promise<string | null>
+  restoreStudyBackup(readerState: string | null): Promise<{ recovery: string; folder: string } | null>
 }

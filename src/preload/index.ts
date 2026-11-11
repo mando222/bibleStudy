@@ -5,8 +5,11 @@ const api: BibleApi = {
   version: () => ipcRenderer.invoke('app:version'),
   listTranslations: () => ipcRenderer.invoke('bible:listTranslations'),
   getChapter: (ref) => ipcRenderer.invoke('bible:getChapter', ref),
+  getComparisonVerse: (ref) => ipcRenderer.invoke('bible:getComparisonVerse', ref),
   getStrongs: (id) => ipcRenderer.invoke('bible:getStrongs', id),
   browseLexicon: (opts) => ipcRenderer.invoke('bible:browseLexicon', opts),
+  getWordFrequency: (query) => ipcRenderer.invoke('bible:getWordFrequency', query),
+  getWordFrequencyPassages: (query) => ipcRenderer.invoke('bible:getWordFrequencyPassages', query),
   getPeople: (query, limit) => ipcRenderer.invoke('bible:getPeople', query, limit),
   getPerson: (id) => ipcRenderer.invoke('bible:getPerson', id),
   getAncestry: (id) => ipcRenderer.invoke('bible:getAncestry', id),
@@ -58,7 +61,10 @@ const api: BibleApi = {
   setLearnProgress: (module, key, value) =>
     ipcRenderer.invoke('user:setLearnProgress', module, key, value),
 
-  exportMarkdown: () => ipcRenderer.invoke('user:exportMarkdown')
+  exportMarkdown: () => ipcRenderer.invoke('user:exportMarkdown'),
+  studyProfile: () => ipcRenderer.invoke('backup:profile'),
+  createStudyBackup: (readerState) => ipcRenderer.invoke('backup:create', readerState),
+  restoreStudyBackup: (readerState) => ipcRenderer.invoke('backup:restore', readerState)
 }
 
 const ai: AiApi = {
@@ -98,6 +104,23 @@ const notebook: NotebookApi = {
   list: () => ipcRenderer.invoke('notebook:list'),
   read: (name) => ipcRenderer.invoke('notebook:read', name),
   write: (name, content) => ipcRenderer.invoke('notebook:write', name, content),
+  recover: (name, content) => ipcRenderer.invoke('notebook:recover', name, content),
+  onCheckpoint: (flush, resume) => {
+    const save = async (_event: unknown, id: string): Promise<void> => {
+      try {
+        await flush()
+        ipcRenderer.send('backup:ready', id, null)
+      } catch (err) {
+        ipcRenderer.send('backup:ready', id, err instanceof Error ? err.message : String(err))
+      }
+    }
+    ipcRenderer.on('backup:checkpoint', save)
+    ipcRenderer.on('backup:resume', resume)
+    return () => {
+      ipcRenderer.removeListener('backup:checkpoint', save)
+      ipcRenderer.removeListener('backup:resume', resume)
+    }
+  },
   rename: (oldName, newName) => ipcRenderer.invoke('notebook:rename', oldName, newName),
   delete: (name) => ipcRenderer.invoke('notebook:delete', name),
   getFolder: () => ipcRenderer.invoke('notebook:getFolder'),

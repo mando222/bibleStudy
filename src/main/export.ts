@@ -1,7 +1,7 @@
 import { dialog, BrowserWindow } from 'electron'
 import { writeFileSync } from 'node:fs'
 import { BOOK_BY_ID, BOOKS } from '../shared/books'
-import { listAllNotes, listAllHighlights } from './db/user'
+import { listAllNotes, listAllHighlights, listImported } from './db/user'
 
 const BOOK_RANK: Record<string, number> = Object.fromEntries(BOOKS.map((b, i) => [b.id, i]))
 const bookName = (id: string): string => BOOK_BY_ID[id]?.name ?? id
@@ -10,6 +10,7 @@ const bookName = (id: string): string => BOOK_BY_ID[id]?.name ?? id
 function buildMarkdown(): string {
   const notes = listAllNotes()
   const highlights = listAllHighlights()
+  const importedNames = new Map(listImported().map(t => [t.id, t.name]))
   const lines: string[] = ['# Open Bible Study — Notes & Highlights', '']
 
   // Collect every referenced (book, chapter) in canonical order.
@@ -31,11 +32,12 @@ function buildMarkdown(): string {
     const chNotes = notes.filter((n) => n.book === book && n.chapter === chapter)
     const chHls = highlights.filter((h) => h.book === book && h.chapter === chapter)
     for (const n of chNotes) {
-      lines.push(`- **${bookName(book)} ${chapter}:${n.verse}** — ${n.body.replace(/\n+/g, ' ')}`)
+      lines.push(`- **${bookName(book)} ${chapter}:${n.verse}** — ${n.body.replace(/\r?\n/g, '\n  ')}`)
     }
     for (const h of chHls) {
       const span = h.startToken != null ? ` (tokens ${h.startToken}–${h.endToken ?? h.startToken})` : ''
-      lines.push(`- _highlight_ ${bookName(book)} ${chapter}:${h.verse}${span} — ${h.color}`)
+      const edition = importedNames.get(h.translation) ?? h.translation
+      lines.push(`- _highlight_ ${bookName(book)} ${chapter}:${h.verse} (${edition})${span} — ${h.color}`)
     }
     lines.push('')
   }

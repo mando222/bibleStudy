@@ -1,4 +1,7 @@
-import { retrieveByKeywords } from '../db/bible'
+import { bibleDb, retrieveByKeywords } from '../db/bible'
+import { getImportedPassage } from '../db/user'
+import { readPassage } from '../db/passage'
+import { citationLabel, namedPassages, type ScripturePassage } from '../../shared/refs'
 import { BOOK_BY_ID } from '../../shared/books'
 import { chatTurn, embed } from './provider'
 import { retrieveDocs } from './documents'
@@ -29,7 +32,7 @@ function keywords(q: string): string[] {
 }
 
 const citeKey = (c: ChatCitation): string =>
-  c.source ? `doc:${c.source}:${c.text.slice(0, 48)}` : `${c.book}:${c.chapter}:${c.verse}`
+  c.source ? `doc:${c.source}:${c.text.slice(0, 48)}` : `${c.translation ?? ''}:${c.book}:${c.chapter}:${c.verse}:${c.endVerse ?? c.verse}`
 
 /**
  * Hybrid Bible retrieval: keyword (FTS) always; semantic (embeddings) when the index exists.
@@ -42,6 +45,7 @@ export async function retrieveBible(
   qvec?: number[]
 ): Promise<ChatCitation[]> {
   const fts: ChatCitation[] = retrieveByKeywords(translation, keywords(question), 8).map((h) => ({
+    translation,
     book: h.book,
     bookName: h.bookName,
     chapter: h.chapter,
@@ -52,6 +56,7 @@ export async function retrieveBible(
   try {
     if (qvec && hasBibleIndex(translation)) {
       sem = searchBible(translation, qvec, 8).map((m) => ({
+        translation,
         book: m.book,
         bookName: BOOK_BY_ID[m.book]?.name ?? m.book,
         chapter: m.chapter,
@@ -97,6 +102,28 @@ function assembleContext(cites: ChatCitation[], maxChars = 6000): ChatCitation[]
   return out
 }
 
+function passageInEdition(translation: string, ref: ScripturePassage): ChatCitation[] {
+  if (translation.startsWith('imp_')) return getImportedPassage(translation, ref)
+  const db = bibleDb()
+  return db ? readPassage(db, 'verses', translation, ref) : []
+}
+
+// Older saved turns could contain a custom display word under a Bible reference.
+// Validate a selected excerpt against the named edition every time it is cited.
+function publishedSelection(selection: ChatCitation, fallback?: string): ChatCitation[] {
+  if (selection.source) return [selection]
+  const translation = selection.translation ?? fallback
+  if (!translation || !BOOK_BY_ID[selection.book]) return []
+  const { book, chapter, verse, endVerse } = selection
+  const rows = passageInEdition(translation, {
+    book, chapter, lastChapter: chapter, firstVerse: verse, lastVerse: endVerse ?? verse
+  })
+  if (rows.length && selection.text.length && rows.map(row => row.text).join(' ').includes(selection.text)) {
+    return [{ ...selection, translation, bookName: BOOK_BY_ID[book].name }]
+  }
+  return rows
+}
+
 /** Stream a grounded answer: yields citations first, then content tokens. */
 export async function* answer(
   conversationId: string,
@@ -140,12 +167,37 @@ export async function* answer(
     text: h.text,
     source: h.source
   }))
-  const bibleCites =
-    grounding && lastUser ? await retrieveBible(lastUser, grounding.translation, qvec) : []
-  const citations = assembleContext([...extraContext, ...guideCites, ...docCites, ...bibleCites])
+  const explicit = grounding ? namedPassages(lastUser) : []
+  const readerReference = lastUser.match(/\b(?:this|current|selected|open)\s+(verse|chapter|passage|text)\b/i)
+  if (grounding && !explicit.length && !extraContext.length && activeContext && readerReference) {
+    const current = namedPassages(activeContext)[0]
+    if (current) {
+      explicit.push(readerReference[1].toLowerCase() === 'chapter'
+        ? { book: current.book, chapter: current.chapter, lastChapter: current.chapter }
+        : current)
+    }
+  }
+  // A question naming a passage gets that translation's actual text, including verse ranges.
+  // Missing verses in a partial edition stay missing; ranked hits must not impersonate them.
+  const passages = grounding ? explicit.map(ref => passageInEdition(grounding.translation, ref)) : []
+  const referenced = passages.flat()
+  const bibleCites = grounding && lastUser && !explicit.length
+    ? await retrieveBible(lastUser, grounding.translation, qvec) : []
+  const selections = extraContext.flatMap(item => publishedSelection(item, grounding?.translation))
+  const citations = assembleContext([...referenced, ...selections, ...guideCites, ...docCites, ...bibleCites])
   yield { citations }
 
   const blocks: string[] = []
+  for (const [index, rows] of passages.entries()) {
+    if (rows.length) continue
+    const { book, chapter, firstVerse } = explicit[index]
+    const start = `${BOOK_BY_ID[book].name} ${chapter}${firstVerse == null ? '' : ':' + firstVerse}`
+    blocks.push(`The requested passage starting at ${start} is unavailable in the selected translation. Tell the reader.`)
+  }
+  const included = new Set(citations.map(citeKey))
+  if (referenced.some(c => !included.has(citeKey(c)))) {
+    blocks.push('The provided text covers only part of the requested passages. Tell the reader which part is covered.')
+  }
   if (activeContext?.trim()) blocks.push(`Reader's current context:\n${activeContext.trim()}`)
   if (citations.length)
     blocks.push(
@@ -154,7 +206,7 @@ export async function* answer(
           .map((c) =>
             c.source
               ? `[${c.source}] ${c.text}`
-              : `(${c.bookName} ${c.chapter}:${c.verse}) ${c.text}`
+              : `(${citationLabel(c)}) ${c.text}`
           )
           .join('\n')
     )

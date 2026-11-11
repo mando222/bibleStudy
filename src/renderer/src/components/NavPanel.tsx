@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { BOOKS, BOOKS_CHRONO, type BookMeta } from '@shared/books'
-import { useAppStore } from '@/store/useAppStore'
+import { readerChapter } from '@/lib/passage'
+import { readingEdition, useAppStore } from '@/store/useAppStore'
 import { SearchIcon, ChevronRight } from './icons'
 
 export default function NavPanel(): JSX.Element {
@@ -18,7 +19,12 @@ export default function NavPanel(): JSX.Element {
   const ot = matches.filter((b) => b.testament === 'OT')
   const nt = matches.filter((b) => b.testament === 'NT')
 
-  const rowProps = { openBook, setOpenBook, current: book, currentChapter: chapter, goTo }
+  const edition = useAppStore(readingEdition)
+  const sourceEdition = useAppStore((s) => s.referenceEdition || s.primary)
+  const verse = useAppStore((s) => s.activeVerse)
+  const current = readerChapter(book, chapter, verse, sourceEdition, edition)
+  useEffect(() => { setOpenBook(book) }, [book])
+  const rowProps = { edition, openBook, setOpenBook, current: current?.book ?? '', currentChapter: current?.chapter ?? 0, goTo }
   const segBtn = (active: boolean): string =>
     `flex-1 py-1 transition-colors ${
       active ? 'bg-accent-soft text-accent font-medium' : 'text-muted hover:bg-elevated'
@@ -81,6 +87,7 @@ function SectionLabel({ children }: { children: React.ReactNode }): JSX.Element 
 
 interface RowProps {
   b: BookMeta
+  edition: string
   openBook: string | null
   setOpenBook: (id: string | null) => void
   current: string
@@ -88,13 +95,16 @@ interface RowProps {
   goTo: (book: string, chapter: number) => void
 }
 
-function BookRow({ b, openBook, setOpenBook, current, currentChapter, goTo }: RowProps): JSX.Element {
+function BookRow({ b, edition, openBook, setOpenBook, current, currentChapter, goTo }: RowProps): JSX.Element {
+  // Swete includes Psalm 151 after the canonical 150.
+  const chapters = edition === 'LXX' && b.id === 'Ps' ? 151 : b.chapters
   const open = openBook === b.id
   const isCurrent = current === b.id
   return (
     <div>
       <button
         onClick={() => setOpenBook(open ? null : b.id)}
+        aria-expanded={open}
         className={`w-full flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-left hover:bg-elevated rounded-md ${
           isCurrent ? 'text-accent font-medium' : 'text-ink'
         }`}
@@ -104,11 +114,12 @@ function BookRow({ b, openBook, setOpenBook, current, currentChapter, goTo }: Ro
       </button>
       {open && (
         <div className="grid grid-cols-6 gap-1 px-3 pb-2 pt-0.5">
-          {Array.from({ length: b.chapters }, (_, i) => i + 1).map((c) => {
+          {Array.from({ length: chapters }, (_, i) => i + 1).map((c) => {
             const active = isCurrent && currentChapter === c
             return (
               <button
                 key={c}
+                aria-current={active ? 'page' : undefined}
                 onClick={() => goTo(b.id, c)}
                 className={`h-7 rounded text-xs tabular-nums transition-colors ${
                   active

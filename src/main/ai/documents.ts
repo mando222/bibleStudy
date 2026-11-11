@@ -1,15 +1,20 @@
 import { readFileSync } from 'node:fs'
 import { basename, extname } from 'node:path'
 import { embed } from './provider'
-import { addChunks, upsertDocument } from './vectors'
+import { addChunks, searchChunks, upsertDocument } from './vectors'
 import type { AiDoc } from '../../shared/types'
 
 async function extractText(path: string): Promise<string> {
   const ext = extname(path).toLowerCase()
   if (ext === '.pdf') {
-    const mod = (await import('pdf-parse')) as unknown as { default: (b: Buffer) => Promise<{ text: string }> }
-    const data = await mod.default(readFileSync(path))
-    return data.text
+    const { PDFParse } = await import('pdf-parse')
+    const parser = new PDFParse({ data: readFileSync(path) })
+    try {
+      const result = await parser.getText()
+      return result.pages.map(page => page.text).join('\n\n')
+    } finally {
+      await parser.destroy()
+    }
   }
   // .txt / .md / .markdown / .csv / other plain text
   return readFileSync(path, 'utf8')
@@ -72,7 +77,6 @@ export async function retrieveDocs(
   try {
     const v = qvec ?? (await embed([query], 'query'))[0]
     if (!v) return []
-    const { searchChunks } = await import('./vectors')
     return searchChunks(v, k)
   } catch {
     return []

@@ -2,21 +2,26 @@ import { DatabaseSync } from 'node:sqlite'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
+import { greekNtEditions, greekScript, hebrewScript, scopedBooks, searchText } from './search'
+import { mapPassage } from '../../shared/passageMapping'
 import { foldLatinHomoglyphs } from '../../shared/originalText'
+import { lexiconId } from '../../shared/lexiconId'
 import { splitVerseUnits, unpackTags } from '../../shared/verseUnits'
+import { isSourceForm, SOURCE_WORD_ALIGNMENT_VERSION } from '../../shared/sourceWords'
 import type {
   Translation,
   ChapterRef,
+  VerseRef,
   ChapterContent,
   Verse,
   VerseToken,
+  SourceWord,
   StrongsEntry,
   SearchQuery,
   SearchResponse,
   SearchHit,
   ConcordanceOptions,
   ConcordanceResponse,
-  ConcordanceHit,
   Edition,
   InterlinearContent,
   VariantItem,
@@ -31,6 +36,7 @@ import type {
 } from '../../shared/types'
 
 let db: DatabaseSync | null = null
+let hasVerifiedSourceWords = false
 
 function resolveDbPath(): string | null {
   // app.getAppPath() is the app root when launched as `electron .`, but the SCRIPT'S directory when
@@ -54,6 +60,8 @@ export function openBibleDb(): boolean {
   if (!path) return false
   db = new DatabaseSync(path, { readOnly: true })
   db.exec('PRAGMA foreign_keys = OFF;')
+  hasVerifiedSourceWords = hasTable('source_word_spans') && hasTable('meta') &&
+    db.prepare("SELECT value FROM meta WHERE key = 'source_word_alignment_version'").get()?.value === SOURCE_WORD_ALIGNMENT_VERSION
   return true
 }
 
@@ -110,32 +118,11 @@ export function getChapter(ref: ChapterRef): ChapterContent {
     )
     .all(ref.translation, ref.book, ref.chapter) as { verse: number; text: string }[]
 
-  const tokenRows = d
-    .prepare(
-      `SELECT verse, position, surface, trailer, strongs, lemma, translit, morph, gloss
-       FROM verse_tokens WHERE translation_id = ? AND book_id = ? AND chapter = ? ORDER BY verse, position`
-    )
-    .all(ref.translation, ref.book, ref.chapter) as Record<string, unknown>[]
-
-  const tokensByVerse = new Map<number, VerseToken[]>()
-  for (const t of tokenRows) {
-    const v = t.verse as number
-    if (!tokensByVerse.has(v)) tokensByVerse.set(v, [])
-    tokensByVerse.get(v)!.push({
-      position: t.position as number,
-      surface: t.surface as string,
-      trailer: (t.trailer as string) ?? ' ',
-      strongs: (t.strongs as string) ?? null,
-      lemma: (t.lemma as string) ?? null,
-      translit: (t.translit as string) ?? null,
-      morph: (t.morph as string) ?? null,
-      gloss: (t.gloss as string) ?? null
-    })
-  }
+  const tokensByVerse = taggedTokens(ref)
 
   // Translations with no scholarly tagging get inferred tags instead (see derived_tags in
   // schema.sql), materialised into the same token shape and marked `derived`.
-  if (tokenRows.length === 0) {
+  if (tokensByVerse.size === 0) {
     for (const [verse, toks] of derivedTokens(ref.translation, ref.book, ref.chapter, verseRows)) {
       tokensByVerse.set(verse, toks)
     }
@@ -155,6 +142,82 @@ export function getChapter(ref: ChapterRef): ChapterContent {
     direction: (transRow?.direction as 'ltr' | 'rtl') ?? 'ltr',
     verses
   }
+}
+
+/** Look up a comparison using this edition's native address. Only the two aligned
+ * translations need token evidence. All other editions return just their printed text. */
+export function getComparisonVerse(ref: VerseRef): Verse | null {
+  if (!Number.isSafeInteger(ref.verse) || ref.verse < 1) return null
+  const row = required().prepare(
+    'SELECT text FROM verses WHERE translation_id = ? AND book_id = ? AND chapter = ? AND verse = ?'
+  ).get(ref.translation, ref.book, ref.chapter, ref.verse)
+  if (!row) return null
+  const withEvidence = hasVerifiedSourceWords && (ref.translation === 'KJV' || ref.translation === 'BSB')
+  const tokens = withEvidence ? taggedTokens(ref, ref.verse).get(ref.verse) : null
+  return { verse: ref.verse, text: String(row.text), tokens: tokens ?? null }
+}
+
+/** Shared scholarly token/span assembly for the reader and a single-verse comparison. */
+function taggedTokens(ref: ChapterRef, verseNumber?: number): Map<number, VerseToken[]> {
+  const d = required()
+  const params = [ref.translation, ref.book, ref.chapter]
+  if (verseNumber !== undefined) params.push(verseNumber)
+  const tokenRows = d
+    .prepare(
+      `SELECT verse, position, surface, trailer, strongs, lemma, translit, morph, gloss
+       FROM verse_tokens WHERE translation_id = ? AND book_id = ? AND chapter = ?
+       ${verseNumber === undefined ? '' : 'AND verse = ?'} ORDER BY verse, position`
+    )
+    .all(...params) as Record<string, unknown>[]
+
+  const tokensByVerse = new Map<number, VerseToken[]>()
+  for (const t of tokenRows) {
+    const v = t.verse as number
+    if (!tokensByVerse.has(v)) tokensByVerse.set(v, [])
+    tokensByVerse.get(v)!.push({
+      position: t.position as number,
+      surface: t.surface as string,
+      trailer: (t.trailer as string) ?? ' ',
+      strongs: (t.strongs as string) ?? null,
+      lemma: (t.lemma as string) ?? null,
+      translit: (t.translit as string) ?? null,
+      morph: (t.morph as string) ?? null,
+      gloss: (t.gloss as string) ?? null
+    })
+  }
+
+  if (hasVerifiedSourceWords && tokenRows.length && (ref.translation === 'KJV' || ref.translation === 'BSB')) {
+    const spans = d.prepare(`SELECT s.verse, s.start_position, s.end_position, s.source_row, s.language,
+        b.lemma AS text, b.translit, b.strongs, b.morph
+      FROM source_word_spans s JOIN verse_tokens b ON b.translation_id='BSB'
+        AND b.book_id=s.book_id AND b.chapter=s.chapter AND b.verse=s.verse AND b.position=s.bsb_position
+      WHERE s.translation_id=? AND s.book_id=? AND s.chapter=?
+        ${verseNumber === undefined ? '' : 'AND s.verse = ?'}`).all(...params)
+    for (const span of spans) {
+      const verse = Number(span.verse)
+      const endPosition = Number(span.end_position)
+      const tokens = tokensByVerse.get(verse)
+      const token = tokens?.[endPosition]
+      if (!tokens || !token || token.position !== endPosition || !token.strongs || token.strongs !== span.strongs ||
+          typeof span.text !== 'string' || typeof span.translit !== 'string' || !span.translit.trim()) continue
+      const startPosition = Number(span.start_position)
+      if (!Number.isInteger(startPosition) || startPosition < 0 || startPosition > endPosition) continue
+      const english = tokens.slice(startPosition, endPosition).map(t => t.surface + t.trailer).join('') + token.surface
+      // The publisher sometimes includes sof pasuq and the open/closed section marker in
+      // the same field as the Hebrew word. They are typography, not part of its spelling.
+      const text = span.language === 'Greek' ? span.text :
+        span.text.replace(/׃[פס]$/u, '').replace(/^[־׀׃]+|[־׀׃]+$/gu, '')
+      const language = span.language as SourceWord['language']
+      if (!isSourceForm(language, text)) continue
+      token.sourceWord = {
+        edition: 'BSB', language, rowId: String(span.source_row),
+        book: ref.book, chapter: ref.chapter, verse, startPosition, endPosition,
+        english, text, strongs: token.strongs, morph: String(span.morph ?? ''),
+        translit: span.translit, evidence: ref.translation === 'BSB' ? 'aligned' : 'corroborated'
+      }
+    }
+  }
+  return tokensByVerse
 }
 
 /**
@@ -181,32 +244,36 @@ function derivedTokens(
   for (const row of packed) {
     const text = verseRows.find((v) => v.verse === row.verse)?.text
     if (!text) continue
-    const units = splitVerseUnits(text)
-    const tags = unpackTags(row.strongs)
-    const toks: VerseToken[] = []
-    for (let i = 0; i < units.length; ) {
-      let j = i + 1
-      while (j < units.length && tags[j]?.continues) j++
-      let surface = ''
-      for (let k = i; k < j; k++) {
-        surface += k === j - 1 ? units[k].surface : units[k].surface + units[k].trailer
-      }
-      toks.push({
-        position: toks.length,
-        surface,
-        trailer: units[j - 1].trailer,
-        strongs: tags[i]?.strongs ?? null,
-        lemma: null,
-        translit: null,
-        morph: null,
-        gloss: null,
-        derived: true
-      })
-      i = j
-    }
-    out.set(row.verse, toks)
+    out.set(row.verse, decodeDerivedTokens(text, row.strongs))
   }
   return out
+}
+
+function decodeDerivedTokens(text: string, packed: string): VerseToken[] {
+  const units = splitVerseUnits(text)
+  const tags = unpackTags(packed)
+  const toks: VerseToken[] = []
+  for (let i = 0; i < units.length; ) {
+    let j = i + 1
+    while (j < units.length && tags[j]?.continues) j++
+    let surface = ''
+    for (let k = i; k < j; k++) {
+      surface += k === j - 1 ? units[k].surface : units[k].surface + units[k].trailer
+    }
+    toks.push({
+      position: toks.length,
+      surface,
+      trailer: units[j - 1].trailer,
+      strongs: tags[i]?.strongs ?? null,
+      lemma: null,
+      translit: null,
+      morph: null,
+      gloss: null,
+      derived: true
+    })
+    i = j
+  }
+  return toks
 }
 
 /** Does this translation carry scholarly word tagging of its own? */
@@ -216,52 +283,34 @@ function hasRealTagging(translation: string): boolean {
     .get(translation)
 }
 
-/**
- * A chapter's tagged words for a translation, from whichever source it has — scholarly tagging or
- * inferred. Used by the interlinear to align a stacked translation word-for-word; before this,
- * inferred translations fell through to a flat verse line even though their tags existed.
- */
-function taggedWordsForChapter(
-  translation: string,
-  book: string,
-  chapter: number
-): { verse: number; surface: string; strongs: string }[] {
-  if (hasRealTagging(translation)) {
-    return required()
-      .prepare(
-        `SELECT verse, surface, strongs FROM verse_tokens
-         WHERE translation_id = ? AND book_id = ? AND chapter = ? AND strongs IS NOT NULL
-         ORDER BY verse, position`
-      )
-      .all(translation, book, chapter) as { verse: number; surface: string; strongs: string }[]
-  }
-  const verseRows = required()
-    .prepare('SELECT verse, text FROM verses WHERE translation_id = ? AND book_id = ? AND chapter = ?')
-    .all(translation, book, chapter) as { verse: number; text: string }[]
-  const out: { verse: number; surface: string; strongs: string }[] = []
-  for (const [verse, toks] of derivedTokens(translation, book, chapter, verseRows)) {
-    for (const tk of toks) if (tk.strongs) out.push({ verse, surface: tk.surface, strongs: tk.strongs })
-  }
-  return out.sort((a, b) => a.verse - b.verse)
-}
-
 export function getStrongs(id: string): StrongsEntry | null {
   const d = required()
+  id = lexiconId(id)
   const row = d
     .prepare(
       'SELECT id, language, lemma, translit, pronunciation, definition, kjv_def, derivation FROM strongs_lexicon WHERE id = ?'
     )
-    .get(id.toUpperCase()) as Record<string, unknown> | undefined
-  if (!row) return null
+    .get(id) as Record<string, unknown> | undefined
+  if (!row) {
+    const entry = d.prepare('SELECT headword, translit FROM lexicon_entries WHERE strongs=? ORDER BY lexicon,sort,id LIMIT 1')
+      .get(id)
+    if (!entry) return null
+    return { id, language: id.startsWith('H') ? 'hebrew' : 'greek', lemma: String(entry.headword ?? ''),
+      translit: String(entry.translit ?? ''), pronunciation: null, definition: '', kjvDef: null,
+      occurrences: Number(d.prepare('SELECT COUNT(*) AS n FROM verse_tokens WHERE strongs=?').get(id)?.n ?? 0),
+      lexiconSource: 'STEP' }
+  }
   const occ = d
     .prepare('SELECT COUNT(*) n FROM verse_tokens WHERE strongs = ?')
-    .get(id.toUpperCase()) as { n: number }
+    .get(id) as { n: number }
   const definition = [row.definition, row.derivation]
     .filter(Boolean)
     .join(' — ')
   return {
     id: row.id as string,
     language: row.language as 'greek' | 'hebrew',
+    ...(row.language === 'hebrew' && /^\s*\(Aramaic\)/i.test(String(row.derivation ?? ''))
+      ? { sourceLanguage: 'Aramaic' as const } : {}),
     lemma: (row.lemma as string) ?? '',
     translit: (row.translit as string) ?? '',
     pronunciation: (row.pronunciation as string) ?? null,
@@ -362,7 +411,7 @@ export function getGrammarLesson(id: number): GrammarLesson | null {
   return r ? mapLesson(r) : null
 }
 
-/** Browse the Strong's lexicon by hand: filter by language, search by number/translit/lemma/gloss. */
+/** Browse the historical and extended dictionaries together, one row per headword ID. */
 export function browseLexicon(opts: LexBrowseOptions): LexBrowseResult {
   const d = required()
   const filters: string[] = []
@@ -373,24 +422,27 @@ export function browseLexicon(opts: LexBrowseOptions): LexBrowseResult {
   }
   const query = (opts.query ?? '').trim()
   if (query) {
-    filters.push('(id LIKE ? OR translit LIKE ? OR lemma LIKE ? OR kjv_def LIKE ? OR definition LIKE ?)')
+    const script = hebrewScript.test(query) ? normHebrewWord(query) : greekScript.test(query) ? normGreekWord(query) : ''
+    filters.push('(id LIKE ? OR translit LIKE ? OR lemma LIKE ? OR gloss LIKE ? OR definition LIKE ?' +
+      (script ? ' OR lookup_form LIKE ?)' : ')'))
     const like = `%${query}%`
-    params.push(like, like, like, like, like)
+    params.push('%' + lexiconId(query) + '%', like, like, like, like)
+    if (script) params.push('%' + script + '%')
   }
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : ''
-  const total = (d.prepare(`SELECT COUNT(*) n FROM strongs_lexicon ${where}`).get(...params) as {
+  const total = (d.prepare(`SELECT COUNT(*) n FROM lexicon_headwords ${where}`).get(...params) as {
     n: number
   }).n
   const limit = Math.min(opts.limit ?? 120, 400)
   const offset = opts.offset ?? 0
   const rows = d
     .prepare(
-      `SELECT id, language, lemma, translit, kjv_def, definition FROM strongs_lexicon ${where}
+      `SELECT id, language, lemma, translit, gloss, definition FROM lexicon_headwords ${where}
        ORDER BY language, CAST(substr(id, 2) AS INTEGER) LIMIT ? OFFSET ?`
     )
     .all(...params, limit, offset) as Record<string, unknown>[]
   const entries = rows.map((r) => {
-    const gloss = ((r.kjv_def as string) || (r.definition as string) || '')
+    const gloss = ((r.gloss as string) || (r.definition as string) || '')
       .replace(/<[^>]+>/g, '')
       .replace(/\s+/g, ' ')
       .trim()
@@ -455,7 +507,7 @@ export function getLexiconByWord(word: string): string | null {
 
 /** Scholarly-lexicon entries (BDB / Abbott-Smith / LSJ) for a Strong's number, grouped by lexicon. */
 export function getLexiconEntries(strongs: string): LexiconGroup[] {
-  const id = strongs.toUpperCase()
+  const id = lexiconId(strongs)
   const lang: 'greek' | 'hebrew' = id.startsWith('H') ? 'hebrew' : 'greek'
   const rows = required()
     .prepare(
@@ -485,131 +537,57 @@ export function getLexiconEntries(strongs: string): LexiconGroup[] {
   return [...groups.values()].sort((a, b) => LEX_META[a.lexicon].order - LEX_META[b.lexicon].order)
 }
 
-/** Every verse where a Strong's number occurs, in canonical order (word-study concordance). */
+/** Return the exact tagged occurrences, even when two different lemmas share an English spelling. */
 export function getConcordance(strongs: string, opts: ConcordanceOptions = {}): ConcordanceResponse {
   const d = required()
-  const sid = strongs.toUpperCase()
-  const wanted = opts.translation ?? 'KJV'
-  // Inferred tags are searchable too, so a reader of the ASV sees ASV verses rather than none.
-  // A translation with no tagging at all falls back to the KJV — the caller is told which it got.
-  if (!hasRealTagging(wanted)) {
-    const derived = derivedConcordance(sid, wanted, opts)
-    if (derived) return derived
-    return { ...getConcordance(sid, { ...opts, translation: 'KJV' }), translation: 'KJV', derived: false }
-  }
-  const translation = wanted
+  const sid = lexiconId(strongs)
+  const requested = opts.translation ?? 'KJV'
+  const original = ['MT', 'LXX', 'NA', 'TR', 'BYZ'].includes(requested)
+  const tagged = !original && hasRealTagging(requested)
+  const inferred = !original && !tagged && hasTable('derived_tags') &&
+    !!d.prepare('SELECT 1 FROM derived_tags WHERE translation_id = ? LIMIT 1').get(requested)
+  // The lexicon labels its KJV fallback for translations without word tagging.
+  const translation = original || inferred || tagged ? requested : 'KJV'
+  const books = scopedBooks(opts)
+  const result: ConcordanceResponse = { translation, derived: inferred, total: 0, hits: [] }
+  if (books?.length === 0) return result
 
-  const total = (
-    d
-      .prepare(
-        `SELECT COUNT(*) n FROM (
-           SELECT 1 FROM verse_tokens WHERE translation_id = ? AND strongs = ?
-           GROUP BY book_id, chapter, verse
-         )`
-      )
-      .get(translation, sid) as { n: number }
-  ).n
-
-  const limit = Math.min(opts.limit ?? 300, 1000)
-  const offset = opts.offset ?? 0
-  const rows = d
-    .prepare(
-      // group_concat(DISTINCT …) can't take a separator, so it joins on ',' — which corrupted
-      // surfaces that themselves contain a comma ("had 44,760"). Join on US (U+001F), which can
-      // never occur in verse text, and de-duplicate in JS instead.
-      `SELECT vt.book_id, vt.chapter, vt.verse,
-              group_concat(vt.surface, char(31)) AS surfaces,
-              v.text AS text, b.name AS book_name
-       FROM verse_tokens vt
-       JOIN verses v ON v.translation_id = vt.translation_id AND v.book_id = vt.book_id
-                    AND v.chapter = vt.chapter AND v.verse = vt.verse
-       JOIN books b ON b.id = vt.book_id
-       WHERE vt.translation_id = ? AND vt.strongs = ?
-       GROUP BY vt.book_id, vt.chapter, vt.verse
-       ORDER BY b.sort_order, vt.chapter, vt.verse
-       LIMIT ? OFFSET ?`
-    )
-    .all(translation, sid, limit, offset) as Record<string, unknown>[]
-
-  const hits: ConcordanceHit[] = rows.map((r) => {
-    const surfaces = [...new Set(((r.surfaces as string) ?? '').split('\u001f').filter(Boolean))]
-    return {
-      book: r.book_id as string,
-      bookName: r.book_name as string,
-      chapter: r.chapter as number,
-      verse: r.verse as number,
-      surface: surfaces[0] ?? '',
-      snippet: markSurfaces(r.text as string, surfaces)
+  const source = inferred ? 'derived_tags' : original ? 'original_tokens' : 'verse_tokens'
+  const editionColumn = original ? 'edition' : 'translation_id'
+  const match = inferred ? "' ' || t.strongs || ' ' LIKE ?" : 't.strongs = ?'
+  const params = [translation, inferred ? `% ${sid} %` : sid, ...(books ?? [])]
+  const scope = books ? ` AND t.book_id IN (${books.map(() => '?').join(',')})` : ''
+  const refs = `SELECT DISTINCT t.book_id, t.chapter, t.verse FROM ${source} t
+    WHERE t.${editionColumn} = ? AND ${match}${scope}`
+  result.total = Number(d.prepare(`SELECT COUNT(*) AS n FROM (${refs})`).get(...params)?.n)
+  const page = d.prepare(`SELECT r.*, b.name FROM (${refs}) r JOIN books b ON b.id=r.book_id
+    ORDER BY b.sort_order, r.chapter, r.verse LIMIT ? OFFSET ?`)
+    .all(...params, Math.max(0, Math.min(opts.limit ?? 300, 1000)), Math.max(0, opts.offset ?? 0))
+  const verseWords = original ? 'original AS surface, strongs' : 'surface, trailer, strongs'
+  const read = inferred
+    ? d.prepare(`SELECT v.text, t.strongs FROM derived_tags t JOIN verses v
+          USING (translation_id,book_id,chapter,verse)
+          WHERE t.translation_id=? AND t.book_id=? AND t.chapter=? AND t.verse=?`)
+    : d.prepare(`SELECT ${verseWords} FROM ${source} WHERE ${editionColumn}=? AND book_id=?
+          AND chapter=? AND verse=? ORDER BY position`)
+  for (const ref of page) {
+    const key = [translation, ref.book_id, ref.chapter, ref.verse]
+    let tokens: { surface: string; trailer?: string; strongs: string | null }[]
+    if (inferred) {
+      const row = read.get(...key)
+      if (!row) continue
+      tokens = decodeDerivedTokens(String(row.text), String(row.strongs))
+    } else {
+      tokens = read.all(...key) as typeof tokens
     }
-  })
-  return { total, hits, translation, derived: false }
-}
-
-/**
- * Concordance over a translation's inferred tags. The packed rows hold a space-separated slot per
- * word, so a whole-slot LIKE finds the candidate verses; the tokens are then materialised through
- * the shared helper so the marked surfaces match exactly what the reader shows.
- * Returns null when the translation has no inferred tags either.
- */
-function derivedConcordance(
-  sid: string,
-  translation: string,
-  opts: ConcordanceOptions
-): ConcordanceResponse | null {
-  if (!hasTable('derived_tags')) return null
-  const d = required()
-  const rows = d
-    .prepare(
-      `SELECT d.book_id, d.chapter, d.verse, d.strongs AS packed, v.text, b.name AS book_name
-         FROM derived_tags d
-         JOIN verses v ON v.translation_id = d.translation_id AND v.book_id = d.book_id
-                      AND v.chapter = d.chapter AND v.verse = d.verse
-         JOIN books b ON b.id = d.book_id
-        WHERE d.translation_id = ? AND ' ' || d.strongs || ' ' LIKE ?
-        ORDER BY b.sort_order, d.chapter, d.verse`
-    )
-    .all(translation, `% ${sid} %`) as {
-    book_id: string
-    chapter: number
-    verse: number
-    packed: string
-    text: string
-    book_name: string
-  }[]
-  if (!rows.length) return null
-
-  const limit = Math.min(opts.limit ?? 300, 1000)
-  const offset = opts.offset ?? 0
-  const hits: ConcordanceHit[] = []
-  for (const r of rows.slice(offset, offset + limit)) {
-    const toks = derivedTokens(translation, r.book_id, r.chapter, [
-      { verse: r.verse, text: r.text }
-    ]).get(r.verse)
-    const surfaces = [...new Set((toks ?? []).filter((t) => t.strongs === sid).map((t) => t.surface))]
-    if (!surfaces.length) continue
-    hits.push({
-      book: r.book_id,
-      bookName: r.book_name,
-      chapter: r.chapter,
-      verse: r.verse,
-      surface: surfaces[0],
-      snippet: markSurfaces(r.text, surfaces)
-    })
+    const snippet = tokens.map((t, i) =>
+      (t.strongs === sid ? `{{${t.surface}}}` : t.surface) + (t.trailer ?? (i + 1 < tokens.length ? ' ' : ''))
+    ).join('')
+    result.hits.push({ book: String(ref.book_id), bookName: String(ref.name),
+      chapter: Number(ref.chapter), verse: Number(ref.verse), snippet,
+      surface: tokens.find(t => t.strongs === sid)?.surface ?? '' })
   }
-  return { total: rows.length, hits, translation, derived: true }
-}
-
-/** Wrap whole-word occurrences of each surface in {{…}} for emphasis in the UI. */
-function markSurfaces(text: string, surfaces: string[]): string {
-  // Longest first, so a multi-word surface wins over its own constituent words.
-  const uniq = [...surfaces].sort((a, b) => b.length - a.length)
-  let out = text
-  for (const s of uniq) {
-    const esc = s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    // \b doesn't fire next to punctuation inside a surface, so anchor on the edges instead.
-    out = out.replace(new RegExp(`(?<![\\p{L}\\p{N}])(${esc})(?![\\p{L}\\p{N}])`, 'giu'), '{{$1}}')
-  }
-  return out
+  return result
 }
 
 export function listEditions(): Edition[] {
@@ -663,42 +641,42 @@ export function getInterlinear(
     })
   }
 
-  // Stack translations. Strong's-tagged ones (KJV, BSB) align word-for-word by matching Strong's
-  // within a verse; untagged ones (WEB, YLT, Julia Smith, …) show as a verse line beneath the grid.
-  const linesByVerse = new Map<number, { id: string; text: string }[]>()
+  // Compare the corresponding native verses. A single LXX chapter can span two English chapters.
+  const linesByVerse = new Map<number, NonNullable<InterlinearContent['verses'][number]['lines']>>()
   for (const tid of translations) {
-    // Scholarly tagging where it exists, inferred tags otherwise — an inferred translation aligns
-    // word-for-word just like a tagged one; only a translation with NO tags falls back to a line.
-    const trows = taggedWordsForChapter(tid, book, chapter)
-    if (trows.length > 0) {
-      const queues = new Map<number, Map<string, string[]>>()
-      for (const r of trows) {
-        let q = queues.get(r.verse)
-        if (!q) {
-          q = new Map()
-          queues.set(r.verse, q)
-        }
-        const arr = q.get(r.strongs)
-        if (arr) arr.push(r.surface)
-        else q.set(r.strongs, [r.surface])
+    const chapters = new Map<string, Map<number, Verse>>()
+    for (const [verse, tokens] of byVerse) {
+      const target = mapPassage({ book, chapter, verse }, edition, tid)
+      if (!target) continue
+      const key = `${target.book}.${target.chapter}`
+      let verses = chapters.get(key)
+      if (!verses) {
+        const data = getChapter({ ...target, translation: tid })
+        verses = new Map(data.verses.map(v => [v.verse, v]))
+        chapters.set(key, verses)
       }
-      for (const [verse, tokens] of byVerse) {
-        const q = queues.get(verse)
-        if (!q) continue
-        for (const tok of tokens) {
-          if (!tok.strongs) continue
-          const w = q.get(tok.strongs)?.shift()
-          if (w) tok.aligned = { ...(tok.aligned ?? {}), [tid]: w }
+      const text = verses.get(target.verse)
+      if (!text) continue
+      const words = new Map<string, string[]>()
+      for (const t of text.tokens ?? []) {
+        if (!t.strongs) continue
+        const queue = words.get(t.strongs)
+        if (queue) queue.push(t.surface)
+        else words.set(t.strongs, [t.surface])
+      }
+      let aligned = false
+      for (const tok of tokens) {
+        const word = tok.strongs ? words.get(tok.strongs)?.shift() : undefined
+        if (word) {
+          tok.aligned = { ...tok.aligned, [tid]: word }
+          aligned = true
         }
       }
-    } else {
-      const vrows = d
-        .prepare('SELECT verse, text FROM verses WHERE translation_id = ? AND book_id = ? AND chapter = ?')
-        .all(tid, book, chapter) as { verse: number; text: string }[]
-      for (const r of vrows) {
-        const arr = linesByVerse.get(r.verse) ?? []
-        arr.push({ id: tid, text: r.text })
-        linesByVerse.set(r.verse, arr)
+      if (!aligned) {
+        const lines = linesByVerse.get(verse) ?? []
+        const ref = target.chapter !== chapter || target.verse !== verse ? `${target.chapter}:${target.verse}` : undefined
+        lines.push({ id: tid, text: text.text, ref })
+        linesByVerse.set(verse, lines)
       }
     }
   }
@@ -846,85 +824,24 @@ export function getChapterApparatus(book: string, chapter: number): VerseVariant
 }
 
 export function search(q: SearchQuery): SearchResponse {
-  const d = required()
   const term = q.text.trim()
-  if (!term) return { total: 0, hits: [] }
-
-  // A Strong's number (e.g. "G26", "H0430", "g26") → every occurrence, via the concordance.
-  const sm = /^([GgHh])0*(\d{1,5})[a-zA-Z]?$/.exec(term)
-  if (sm) {
-    const { total, hits } = getConcordance(`${sm[1].toUpperCase()}${Number(sm[2])}`, {
-      limit: q.limit ?? 150,
-      offset: q.offset
-    })
-    return {
-      total,
-      hits: hits.map((h) => ({
-        book: h.book,
-        bookName: h.bookName,
-        chapter: h.chapter,
-        verse: h.verse,
-        snippet: h.snippet
-      }))
+  const strongs = /^([GH])0*(\d{1,5})[a-z]?$/i.exec(term)
+  if (strongs) {
+    const sid = strongs[1].toUpperCase() + Number(strongs[2])
+    const result = getConcordance(sid, { ...q, limit: q.limit ?? 150 })
+    if (result.translation !== q.translation) {
+      return { total: 0, hits: [], notice: 'This translation has no Strong’s word tags.' }
     }
+    const edition = greekNtEditions.has(result.translation) ? result.translation : undefined
+    return { total: result.total, hits: result.hits.map(h => ({ ...h, translation: result.translation, edition })) }
   }
-
-  // Greek or Hebrew script in the query → search the matching original-language edition (Septuagint
-  // / Masoretic) regardless of the current translation, so original-word search "just works". The
-  // query is accent/point-folded to match the folded original-language FTS index.
-  const isGreek = /[Ͱ-Ͽἀ-῿]/.test(term)
-  const isHebrew = /[֐-׿]/.test(term)
-  const translation = isGreek ? 'LXX' : isHebrew ? 'MT' : q.translation
-  const ftsTerm =
-    isGreek || isHebrew
-      ? term
-          .normalize('NFD')
-          .replace(/[̀-֑ͯ-ׇ]/g, '')
-          .toLowerCase()
-          .replace(/ς/g, 'σ')
-      : term
-
-  const filters: string[] = ['verses_fts MATCH ?', 'translation_id = ?']
-  const params: string[] = [ftsQuery(ftsTerm), translation]
-  if (q.book) {
-    filters.push('book_id = ?')
-    params.push(q.book)
-  } else if (q.testament && q.testament !== 'all') {
-    filters.push('book_id IN (SELECT id FROM books WHERE testament = ?)')
-    params.push(q.testament)
+  let translations = [q.translation]
+  if (greekScript.test(term) && q.translation !== 'LXX' && !greekNtEditions.has(q.translation)) {
+    translations = ['LXX', q.greekEdition && greekNtEditions.has(q.greekEdition) ? q.greekEdition : 'NA']
+  } else if (hebrewScript.test(term)) {
+    translations = ['MT']
   }
-  const where = filters.join(' AND ')
-
-  const total = (
-    d.prepare(`SELECT COUNT(*) n FROM verses_fts WHERE ${where}`).get(...params) as { n: number }
-  ).n
-
-  const limit = Math.min(q.limit ?? 100, 300)
-  const offset = q.offset ?? 0
-  const rows = d
-    .prepare(
-      `SELECT book_id, chapter, verse,
-              snippet(verses_fts, 0, '{{', '}}', '…', 12) AS snip
-       FROM verses_fts WHERE ${where}
-       ORDER BY rank LIMIT ? OFFSET ?`
-    )
-    .all(...params, limit, offset) as Record<string, unknown>[]
-
-  const names = new Map(
-    (d.prepare('SELECT id, name, sort_order FROM books').all() as {
-      id: string
-      name: string
-      sort_order: number
-    }[]).map((b) => [b.id, b])
-  )
-  const hits: SearchHit[] = rows.map((r) => ({
-    book: r.book_id as string,
-    bookName: names.get(r.book_id as string)?.name ?? (r.book_id as string),
-    chapter: r.chapter as number,
-    verse: r.verse as number,
-    snippet: r.snip as string
-  }))
-  return { total, hits }
+  return searchText(required(), 'verses_fts', translations, q)
 }
 
 /** How many verses a translation actually has. Editions differ (MT 21,178 · LXX 22,694 · KJV
@@ -975,17 +892,4 @@ export function retrieveByKeywords(
     verse: r.verse as number,
     snippet: r.snip as string
   }))
-}
-
-/**
- * Turn a user query into a safe FTS5 MATCH expression, prefix-matching the final term so a search
- * for "love" also finds "loved"/"loveth" (the way readers expect) while earlier terms stay exact.
- * Quotes and `*` are stripped from the input, so the expression can't be injected.
- */
-function ftsQuery(input: string): string {
-  const terms = input
-    .replace(/["*]/g, ' ')
-    .split(/\s+/)
-    .filter(Boolean)
-  return terms.map((t, i) => (i === terms.length - 1 ? `"${t}"*` : `"${t}"`)).join(' ')
 }

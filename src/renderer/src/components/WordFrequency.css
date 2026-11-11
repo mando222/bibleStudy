@@ -1,0 +1,29 @@
+/* Shared, fixed color scale for book and chapter tiles in both themes. */
+.frequency-color {
+  --heat: #935020;
+  --heat-ink: #fffdf8;
+  --paper: rgb(var(--panel));
+  color: rgb(var(--ink));
+}
+.dark .frequency-color {
+  --heat: #e3a469;
+  --heat-ink: #23170c;
+}
+.frequency-color[data-level='0'] { background: color-mix(in srgb, rgb(var(--ink)) 7%, var(--paper)); }
+.frequency-color[data-level='1'] { background: color-mix(in srgb, var(--heat) 17%, var(--paper)); }
+.frequency-color[data-level='2'] { background: color-mix(in srgb, var(--heat) 32%, var(--paper)); }
+.frequency-color[data-level='3'] { background: color-mix(in srgb, var(--heat) 46%, var(--paper)); }
+.frequency-color[data-level='4'] { background: color-mix(in srgb, var(--heat) 88%, var(--paper)); color: var(--heat-ink); }
+.frequency-color[data-level='5'] { background: var(--heat); color: var(--heat-ink); }
+.frequency-color[data-level='unknown'] {
+  background: repeating-linear-gradient(135deg, transparent 0 4px, rgb(var(--line) / .55) 4px 5px);
+  color: rgb(var(--muted));
+}
+.frequency-tile {
+  text-align: start;
+  border: 1px solid transparent;
+  border-radius: .3rem;
+  padding: .3rem .45rem;
+}
+.frequency-tile:hover { border-color: currentColor; }
+.frequency-tile[aria-pressed='true'] { box-shadow: inset 0 0 0 2px currentColor; }

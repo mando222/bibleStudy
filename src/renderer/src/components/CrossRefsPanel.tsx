@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { mapPassage } from '@shared/passageMapping'
 import type { CrossRef } from '@shared/types'
 import { useAppStore } from '@/store/useAppStore'
 import { BOOK_BY_ID } from '@shared/books'
@@ -13,7 +14,12 @@ export default function CrossRefsPanel(): JSX.Element {
   const book = useAppStore((s) => s.book)
   const chapter = useAppStore((s) => s.chapter)
   const verse = useAppStore((s) => s.activeVerse)
-  const key = `${book}:${chapter}:${verse}`
+  const edition = useAppStore((s) => s.referenceEdition || s.primary)
+  const canonical = verse == null ? null : mapPassage({ book, chapter, verse }, edition, 'KJV')
+  const refBook = canonical?.book
+  const refChapter = canonical?.chapter
+  const refVerse = canonical?.verse
+  const key = `${refBook}:${refChapter}:${refVerse}`
   const [result, setResult] = useState<{ key: string; refs: CrossRef[] } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
@@ -23,13 +29,13 @@ export default function CrossRefsPanel(): JSX.Element {
   useEffect(() => {
     let cancelled = false
     setError(null)
-    if (verse == null) return
+    if (!refBook || refChapter == null || refVerse == null) return
     window.api
-      .getCrossReferences(book, chapter, verse)
+      .getCrossReferences(refBook, refChapter, refVerse)
       .then((refs) => { if (!cancelled) setResult({ key, refs }) })
       .catch(() => { if (!cancelled) setError('Could not load cross-references.') })
     return () => { cancelled = true }
-  }, [book, chapter, verse, key, attempt])
+  }, [refBook, refChapter, refVerse, key, attempt])
 
   if (verse == null) {
     return (
@@ -42,10 +48,12 @@ export default function CrossRefsPanel(): JSX.Element {
     )
   }
 
+  if (!canonical) return <p className="text-sm text-muted">No verified cross-reference equivalent for {bookName} {chapter}:{verse} ({edition}).</p>
+
   return (
     <div className="space-y-2">
       <div className="text-[11px] uppercase tracking-wider text-faint">
-        Cross-references · {bookName} {chapter}:{verse}
+        Cross-references · {bookName} {chapter}:{verse}{edition === 'LXX' ? ` (LXX) · ${BOOK_BY_ID[canonical.book]?.name ?? canonical.book} ${canonical.chapter}:${canonical.verse} (English)` : ''}
       </div>
       {error ? (
         <div role="alert">

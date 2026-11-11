@@ -1,4 +1,4 @@
-import { app } from 'electron'
+import { studyProfile } from '../studyProfile'
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import identity from './prompts/identity.md?raw'
@@ -15,7 +15,7 @@ import general from './prompts/general.md?raw'
 /** A `<userData>/system-prompt.md`, if present, overrides the whole prompt (no rebuild needed). */
 function overridePrompt(): string | null {
   try {
-    const p = join(app.getPath('userData'), 'system-prompt.md')
+    const p = join(studyProfile().root, 'system-prompt.md')
     if (existsSync(p)) return readFileSync(p, 'utf8').trim() || null
   } catch {
     /* app not ready or file unreadable — fall back to the bundled prompt */

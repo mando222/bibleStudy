@@ -56,8 +56,20 @@ export async function installDevMock(): Promise<void> {
           }
         ]
       } as ChapterContent),
+    getComparisonVerse: async (ref) => {
+      const chapter = data.chapters[`${ref.translation}/${ref.book}/${ref.chapter}`]
+      const verse = chapter?.verses.find(v => v.verse === ref.verse)
+      if (!verse) return null
+      return ref.translation === 'BSB' || ref.translation === 'KJV' ? verse : { ...verse, tokens: null }
+    },
     getStrongs: async (id) => (data.strongs[id.toUpperCase()] as never) ?? null,
     browseLexicon: async () => ({ total: 0, entries: [] }),
+    getWordFrequency: async ({ id, edition }) => ({
+      id, edition, language: edition === 'MT' ? 'Hebrew / Aramaic' : 'Greek', coverage: 'unavailable',
+      notice: 'The original-language frequency index is available in the desktop app.',
+      occurrences: 0, alternateOccurrences: 0, verses: 0, tagged: 0, forms: [], books: []
+    }),
+    getWordFrequencyPassages: async () => [],
     getPeople: async () => [],
     getPerson: async () => null,
     getAncestry: async () => [],
@@ -255,7 +267,10 @@ export async function installDevMock(): Promise<void> {
     srsStats: async () => ({ total: 0, due: 0, learned: 0 }),
     getLearnProgress: async () => ({}),
     setLearnProgress: async () => undefined,
-    exportMarkdown: async () => null
+    exportMarkdown: async () => null,
+    studyProfile: async () => ({ id: '', initialState: null }),
+    createStudyBackup: async () => { throw new Error('Study backups are available in the desktop app.') },
+    restoreStudyBackup: async () => { throw new Error('Study backups are available in the desktop app.') }
   }
 
   ;(window as unknown as { api: BibleApi }).api = mock
@@ -279,6 +294,11 @@ export async function installDevMock(): Promise<void> {
       notebookFiles.set(name, { content, modified })
       return { name, modified }
     },
+    recover: async (name, content) => {
+      const file = await notebook.create(name.replace(/\.md$/i, '') + ' (recovered ' + Date.now() + ').md')
+      return notebook.write(file.name, content)
+    },
+    onCheckpoint: () => () => {},
     rename: async (oldName, newName) => {
       const file = notebookFiles.get(oldName)
       if (file) { notebookFiles.set(noteName(newName), file); notebookFiles.delete(oldName) }

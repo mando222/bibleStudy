@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAppStore } from '@/store/useAppStore'
+import StudyBackupControls from './StudyBackupControls'
 import { BookIcon } from './icons'
 
 interface Source {
@@ -23,7 +24,9 @@ const TRANSLATIONS: Source[] = [
 
 const ORIGINALS: Source[] = [
   { what: 'Masoretic Hebrew (TAHOT)', detail: 'Amalgamated Hebrew OT', license: 'CC BY 4.0 — STEPBible / Tyndale House', url: 'https://github.com/STEPBible/STEPBible-Data' },
-  { what: 'Greek NT editions (TAGNT)', detail: 'Critical / Textus Receptus / Byzantine', license: 'CC BY 4.0 — STEPBible / Tyndale House', url: 'https://github.com/STEPBible/STEPBible-Data' },
+  { what: 'Word frequency and grammatical forms', detail: 'Original TAGNT and TAHOT word records; abbreviated grammar labels from TEGMC and TEHMC', license: 'CC BY 4.0 — STEPBible / Tyndale House', url: 'https://github.com/STEPBible/STEPBible-Data' },
+  { what: 'Greek NT editions (TAGNT)', detail: 'NA28, Scrivener 1894 and Robinson–Pierpont 2005 readings represented in TAGNT', license: 'CC BY 4.0 — STEPBible / Tyndale House', url: 'https://github.com/STEPBible/STEPBible-Data' },
+  { what: 'Verse numbering', detail: 'Swete and English passage correspondences from TVTMS', license: 'CC BY 4.0 — STEPBible / Tyndale House', url: 'https://github.com/STEPBible/STEPBible-Data/tree/master/Versification' },
   { what: 'Septuagint (Greek OT)', detail: 'Swete — via Open Greek and Latin / First1KGreek', license: 'CC BY-SA 4.0 — nathans/lxx-swete', url: 'https://github.com/nathans/lxx-swete' },
   { what: "Strong's Greek & Hebrew lexicons", detail: 'Strong (1890/1894), JSON', license: 'CC BY-SA — OpenScriptures', url: 'https://github.com/openscriptures/strongs' },
   { what: 'Lexicons: BDB · Abbott-Smith · LSJ', detail: 'TBESH / TBESG / TFLSJ, keyed to Strong’s', license: 'CC BY 4.0 — STEPBible / Tyndale House', url: 'https://github.com/STEPBible/STEPBible-Data' },
@@ -35,7 +38,7 @@ const DERIVED: Source[] = [
   {
     what: 'Inferred word mappings',
     detail:
-      'Translations without scholarly tagging (ASV, WEB, YLT, Smith, Tyndale, Geneva, Wycliffe) get word→Strong’s links inferred from the Berean alignment — ~95% accurate, and marked in the text as inferred rather than scholarship',
+      'Translations without scholarly tagging (ASV, WEB, YLT, Smith, Tyndale, Geneva, Wycliffe) get word→Strong’s links inferred from the Berean alignment and are marked as inferred in the reader',
     license: 'Computed at build time by this project',
     url: 'https://berean.bible'
   }
@@ -51,7 +54,7 @@ const STUDY_DATA: Source[] = [
 ]
 
 const LEARN: Source[] = [
-  { what: 'Greek grammar course', detail: 'Original "read real Greek early" lessons; readings rendered from the tagged Greek NT', license: 'Lessons: this project · Greek text: Nestle 1904 (PD) / STEPBible (CC BY)', url: 'https://github.com/STEPBible/STEPBible-Data' },
+  { what: 'Greek grammar course', detail: 'Original "read real Greek early" lessons; readings rendered from the tagged Greek NT', license: 'Lessons: this project · Greek readings: STEPBible TAGNT (CC BY 4.0)', url: 'https://github.com/STEPBible/STEPBible-Data' },
   { what: 'Vocabulary & drills', detail: 'Frequency-ranked from the tagged Greek NT & Hebrew OT', license: 'CC BY — STEPBible / Tyndale House', url: 'https://github.com/STEPBible/STEPBible-Data' }
 ]
 
@@ -135,6 +138,7 @@ export default function AboutModal(): JSX.Element | null {
           </p>
 
           <UpdateSetting />
+          <StudyBackupControls />
 
           <div className="mt-5 rounded-lg border border-line bg-elevated p-3">
             <div className="flex items-center justify-between gap-3">
@@ -184,7 +188,7 @@ export default function AboutModal(): JSX.Element | null {
             )}
           </div>
 
-          <QuickReplaceNote />
+          <SourceWordNote />
 
           <Section title="Translations">
             {TRANSLATIONS.map((s) => (
@@ -232,58 +236,18 @@ export default function AboutModal(): JSX.Element | null {
   )
 }
 
-/**
- * Quick Replace alters the words of Scripture on screen, so it owes the reader a plain account of
- * what it does and why — in ordinary language, not the reasoning behind the implementation.
- */
-function QuickReplaceNote(): JSX.Element {
+function SourceWordNote(): JSX.Element {
   return (
     <div className="mt-5 rounded-lg border border-line bg-elevated p-3">
-      <div className="text-sm font-medium text-ink">
-        How &ldquo;Quick Replace&rdquo; changes what you read
-      </div>
+      <div className="text-sm font-medium text-ink">Source word restoration</div>
       <p className="mt-1 text-xs text-muted">
-        With Quick Replace on, the reader shows the original Hebrew or Greek word where English
-        normally uses a stand-in &mdash; so &ldquo;the LORD&rdquo; reads &ldquo;Yahweh&rdquo;. That
-        is a deliberate choice about how the text is displayed, so here is exactly what it does.
+        Restore words shows YHWH where a verified alignment identifies the four Hebrew letters
+        יהוה. You can also enable other terms to see the source spelling in Latin letters.
+        Each form comes from the word used at that location in the Berean word table.
+        Hover over a restored word to compare what the translations print. A verified link shows
+        the exact wording. Other translations show the verse for context. Copy and assistant selections
+        quote the published translation.
       </p>
-      <ul className="mt-2 space-y-1.5 text-xs text-muted">
-        <li>
-          <span className="text-ink">Why it exists.</span> Most English Bibles print LORD in small
-          capitals wherever the Hebrew has the personal name יהוה. That substitution is a very old
-          tradition rather than a translation. This puts the name back on the page.
-        </li>
-        <li>
-          <span className="text-ink">Only the name changes.</span> Every other word stays as the
-          translators wrote it. &ldquo;The day of the LORD&rdquo; becomes &ldquo;the day of
-          Yahweh&rdquo; &mdash; the &ldquo;of&rdquo; belongs to the sentence, not to the name, so it
-          stays put.
-        </li>
-        <li>
-          <span className="text-ink">One word does get dropped.</span> Hebrew never puts
-          &ldquo;the&rdquo; in front of this name, so &ldquo;the LORD&rdquo; becomes
-          &ldquo;Yahweh&rdquo;, not &ldquo;the Yahweh&rdquo;. Words that Hebrew <em>does</em> write
-          with &ldquo;the&rdquo; keep it &mdash; &ldquo;the God&rdquo; becomes &ldquo;the
-          Elohim&rdquo;.
-        </li>
-        <li>
-          <span className="text-ink">Nothing is rewritten.</span> The translation stored in the app
-          is never edited; this only affects what is drawn on screen. Switch Quick Replace off and
-          you have the translators&rsquo; own words back. Hover a replaced word to see what stood
-          there.
-        </li>
-        <li>
-          <span className="text-ink">It is yours to set.</span> Every term can be turned off on its
-          own, or given a spelling you prefer. Divine names start on; everything else starts off.
-        </li>
-        <li>
-          <span className="text-ink">Where the word links come from.</span> The KJV and the Berean
-          Standard Bible carry scholarly word-by-word tagging. Other translations get their links
-          inferred by this project and are marked in the text with a dotted underline &mdash;
-          accurate most of the time, but not scholarship, and worth double-checking before you lean
-          on one.
-        </li>
-      </ul>
     </div>
   )
 }

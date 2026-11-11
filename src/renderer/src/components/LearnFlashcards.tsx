@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { VocabItem, SrsStats } from '@shared/types'
 import type { LearnLanguage } from '@/store/useAppStore'
 
@@ -21,45 +21,70 @@ export default function LearnFlashcards({ language }: { language: LearnLanguage 
   const [stats, setStats] = useState<SrsStats | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const load = async (): Promise<void> => {
-    setLoading(true)
-    // The whole frequency-ranked list, not a top-N slice: a card that comes due is looked up here,
-    // so slicing silently dropped every review scheduled beyond the slice.
-    const [deck, due, seen, s] = await Promise.all([
-      window.api.getVocab(language, 20000),
-      window.api.listDueCards(language, 500),
-      window.api.seenCards(language),
-      window.api.srsStats(language)
-    ])
-    const byStrongs = new Map(deck.map((v) => [v.strongs, v]))
-    const seenSet = new Set(seen)
-    const dueVocab = due.map((d) => byStrongs.get(d.strongs)).filter((v): v is VocabItem => !!v)
-    // Reviews first, then the most frequent words not studied yet — capped so a session stays
-    // finite rather than queueing all ~8k lemmas.
-    const fresh = deck.filter((v) => !seenSet.has(v.strongs)).slice(0, NEW_PER_SESSION)
-    setQueue([...dueVocab, ...fresh])
-    setStats(s)
-    setI(0)
-    setRevealed(false)
-    setLoading(false)
-  }
+  const [round, setRound] = useState(0)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const reviewPending = useRef(false)
+  const session = useRef(0)
 
   useEffect(() => {
-    load().catch(() => setLoading(false))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [language])
+    const current = ++session.current
+    setLoading(true)
+    setError(null)
+    setSaving(false)
+    reviewPending.current = false
+    Promise.all([
+      window.api.getVocab(language, 20000), window.api.listDueCards(language, 500),
+      window.api.seenCards(language), window.api.srsStats(language)
+    ]).then(([deck, due, seen, s]) => {
+      if (session.current !== current) return
+      const byStrongs = new Map(deck.map((v) => [v.strongs, v]))
+      const seenSet = new Set(seen)
+      const reviews = due.map((d) => byStrongs.get(d.strongs)).filter((v): v is VocabItem => !!v)
+      const fresh = deck.filter((v) => !seenSet.has(v.strongs)).slice(0, NEW_PER_SESSION)
+      setQueue([...reviews, ...fresh])
+      setStats(s)
+      setI(0)
+      setRevealed(false)
+      setLoading(false)
+    }).catch((e: unknown) => {
+      if (session.current !== current) return
+      setLoading(false)
+      setQueue([])
+      setError(e instanceof Error ? e.message : 'Could not load vocabulary.')
+    })
+    return () => { session.current++ }
+  }, [language, round])
 
   const card = queue[i]
 
   const grade = async (g: number): Promise<void> => {
-    if (!card) return
-    await window.api.reviewCard(card.strongs, language, g)
-    window.api.srsStats(language).then(setStats).catch(() => undefined)
-    setRevealed(false)
-    setI((n) => n + 1)
+    if (!card || reviewPending.current) return
+    const current = session.current
+    reviewPending.current = true
+    setSaving(true)
+    setError(null)
+    try {
+      await window.api.reviewCard(card.strongs, card.language, g)
+      if (session.current !== current) return
+      setRevealed(false)
+      setI((n) => n + 1)
+      window.api.srsStats(language).then((s) => { if (session.current === current) setStats(s) }).catch(() => {})
+    } catch (e) {
+      if (session.current === current) setError(e instanceof Error ? e.message : 'Could not save the review.')
+    } finally {
+      if (session.current === current) {
+        reviewPending.current = false
+        setSaving(false)
+      }
+    }
   }
 
   if (loading) return <div className="p-8 text-center text-muted text-sm">Loading…</div>
+
+  if (!queue.length && error) return <div role="alert" className="p-8 text-center">{error} <button onClick={() => setRound((n) => n + 1)}>Try again</button></div>
+
+  if (!queue.length && stats?.learned) return <p className="p-8 text-center text-muted">All caught up. No vocabulary reviews are due.</p>
 
   if (!queue.length) {
     return (
@@ -79,7 +104,7 @@ export default function LearnFlashcards({ language }: { language: LearnLanguage 
         {/* Reload rather than replay: the cards just graded are no longer due, and a fresh
             batch of new words should come in. */}
         <button
-          onClick={() => void load()}
+          onClick={() => setRound((n) => n + 1)}
           className="mt-4 px-4 py-2 rounded-md bg-accent text-white text-sm hover:opacity-90"
         >
           Study again
@@ -120,11 +145,13 @@ export default function LearnFlashcards({ language }: { language: LearnLanguage 
           </button>
         )}
       </div>
+      {error && <p role="alert" className="text-sm mt-2">{error}</p>}
       {revealed && (
         <div className="grid grid-cols-4 gap-2 mt-4">
           {GRADES.map((g) => (
             <button
               key={g.grade}
+              disabled={saving}
               onClick={() => grade(g.grade)}
               className={`py-2 rounded-md text-white text-sm hover:opacity-90 ${g.cls}`}
             >

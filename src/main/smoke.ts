@@ -14,6 +14,7 @@ import {
 import { getPeople, getPerson, getPlaces, getEvents } from './db/graph'
 import { aiDb } from './ai/vectors'
 import { openUserDb } from './db/user'
+import { getWordFrequency, getWordFrequencyPassages } from './db/wordFrequency'
 
 /**
  * Post-package smoke test (run with `--smoke-test`). Exercises the REAL packaged code paths a
@@ -31,6 +32,16 @@ export async function runSmokeTest(): Promise<void> {
       }
     ],
     ['Strong’s lexicon (G26)', () => { if (!getStrongs('G26')) throw new Error('no G26') }],
+    ['Extended Hebrew suffix has a published dictionary entry', () => {
+      if (getStrongs('H9033')?.lexiconSource !== 'STEP' || !getLexiconEntries('H9033')[0]?.entries[0]?.body)
+        throw new Error('missing Hebrew suffix entry')
+    }],
+    ['Word frequency totals resolve to source occurrences', () => {
+      const f = getWordFrequency({ id: 'G26', edition: 'NA' })
+      const verses = getWordFrequencyPassages({ id: 'G26', edition: 'NA', book: '1John', chapter: 4 })
+      if (f.occurrences !== 116 || f.forms.length !== 5 || verses.find(v => v.verse === 16)?.occurrences !== 3)
+        throw new Error('Greek word frequency index missing or inconsistent')
+    }],
     ['scholarly lexicons (Abbott-Smith on G26)', () => { if (!getLexiconEntries('G26').length) throw new Error('no lexicon entries') }],
     ['interlinear editions present', () => { if (listEditions().length < 5) throw new Error('editions missing') }],
     [

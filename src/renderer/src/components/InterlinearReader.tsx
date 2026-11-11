@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import { useEditions, useInterlinear } from '@/hooks/useInterlinear'
 import { useVerseNavigation } from '@/hooks/useVerseNavigation'
 import { useAppStore } from '@/store/useAppStore'
+import { readerChapter } from '@/lib/passage'
 import { BOOK_BY_ID } from '@shared/books'
 import InterlinearVerse from './InterlinearVerse'
 import { BookIcon } from './icons'
@@ -22,6 +23,8 @@ export default function InterlinearReader({
   const parses = useAppStore((s) => s.interlinearParses)
   const toggleParses = useAppStore((s) => s.toggleInterlinearParses)
 
+  const fromEdition = useAppStore((s) => s.referenceEdition || s.primary)
+  const activeVerse = useAppStore((s) => s.activeVerse)
   const testament = BOOK_BY_ID[book]?.testament ?? 'NT'
   const applicable = editions.filter((e) => e.testament === testament)
   // Use the stored choice if it applies to this testament, else the default (first applicable).
@@ -31,20 +34,21 @@ export default function InterlinearReader({
   // show as a verse line beneath the grid.
   const stackable = translations.filter((t) => t.language !== 'imported')
   const labels = Object.fromEntries(stackable.map((t) => [t.id, t.abbrev]))
-  const { data, loading, error } = useInterlinear(book, chapter, effective, stack, parses)
+  const native = effective ? readerChapter(book, chapter, activeVerse, fromEdition, effective) : null
+  const { data, loading, error } = useInterlinear(native?.book ?? book, native?.chapter ?? chapter, native ? effective : '', stack, parses)
   // Inferred alignments are returned too, even when metadata says hasStrongs=false.
   const wordStack = stack.filter((id) =>
     data?.verses.some((v) => v.tokens.some((t) => t.aligned?.[id]))
   )
   const container = useRef<HTMLDivElement>(null)
-  useVerseNavigation(container, `${book}:${chapter}:${effective}`, !loading && !!data)
+  useVerseNavigation(container, `${native?.book}:${native?.chapter}:${effective}`, !loading && !!data, true, effective)
 
   return (
     <div ref={container} className="h-full overflow-y-auto">
       <div className="max-w-5xl mx-auto px-8 py-6">
         <div className="flex flex-wrap items-center gap-3 mb-5">
           <span className="text-[11px] uppercase tracking-wider text-faint">
-            Interlinear · base text
+            Interlinear · {native && `${BOOK_BY_ID[native.book]?.name ?? native.book} ${native.chapter} · `}base text
           </span>
           <select
             aria-label="Interlinear base text"
@@ -105,7 +109,7 @@ export default function InterlinearReader({
           </p>
         )}
 
-        {loading ? (
+        {effective && !native ? <p className="text-sm text-muted">No verified equivalent in {effective}.</p> : loading ? (
           <div className="animate-pulse space-y-4 mt-2">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="h-8 rounded bg-line/50" style={{ width: `${80 - (i % 3) * 12}%` }} />
@@ -124,6 +128,7 @@ export default function InterlinearReader({
             <InterlinearVerse
               key={v.verse}
               v={{ verse: v.verse, text: '', tokens: v.tokens }}
+              onSelectVerse={() => useAppStore.getState().focusVerse(data.book, data.chapter, v.verse, effective)}
               rtl={data.direction === 'rtl'}
               stack={wordStack}
               labels={labels}

@@ -24,17 +24,18 @@ pipeline (`npm run db:build`) fetches these fresh; nothing here is redistributed
 
 ## Derived word mappings
 
-- **Inferred word→Strong's tags** for translations with no scholarly tagging of their own (ASV,
-  WEB, YLT, Julia Smith, Tyndale, Geneva, Wycliffe). Not a third-party source: these are computed
-  at build time by aligning each verse to the Berean Standard Bible's word alignment, then
-  resolving leftovers against the Strong's numbers that verse contains. They are **inferred, not
-  scholarship** — measured at ~95% agreement against the KJV's independent tagging — and the
-  reader marks them as such. See `derived_tags` in `data-pipeline/schema.sql`.
+- Word frequency uses the original word and component records in STEPBible TAHOT and TAGNT. The English translations and inferred Septuagint tags do not contribute to these counts. Grammatical labels expand the publisher’s exact codes from [TEHMC and TEGMC](https://github.com/STEPBible/STEPBible-Data/tree/f71b5e51f2d768ae72e3ed69743a7a9df25ef8b5/Morphology%20codes), **CC BY 4.0**, STEPBible / Tyndale House. The app shortens the explanations and retains an unrecognized code as written.
+
+- The word-to-Strong’s mappings for ASV, WEB, YLT, Julia Smith, Tyndale, Geneva and Wycliffe are computed from the Berean alignment and the lexical candidates for each verse. The reader marks these links as inferred. The KJV benchmark scores agreement conditional on both sides having a tag. It uses KJV records in its lookup tables. See the [paired evaluation](SCRIPTURE_ACCURACY_AUDIT.md#word-level-accuracy) for the denominators.
+- Source word restoration uses the inflected form and transliteration on the Berean row aligned to the selected English word. YHWH represents the four Hebrew consonants. KJV restorations also require independent English tagging and an original-language witness. For terms other than YHWH, the KJV and BSB verse wording must agree exactly, and the Masoretic Hebrew/Aramaic or Textus Receptus Greek witness must confirm the specific form. [Berean alignment source](https://bereanbible.com/bsb_tables.tsv)
 
 ## Original languages & lexicons
 
+The 0.4.0 word index uses the [July 18 snapshot of STEPBible](https://github.com/STEPBible/STEPBible-Data/tree/f71b5e51f2d768ae72e3ed69743a7a9df25ef8b5). The build checks the publisher files, including the Berean alignment table, against the [recorded SHA-256 digests](../data-pipeline/assets/word-source-hashes.json).
+
 - **STEPBible TAHOT / TAGNT** — <https://github.com/STEPBible/STEPBible-Data> — amalgamated tagged
-  Hebrew OT and Greek NT editions. **CC BY 4.0** (STEPBible / Tyndale House, Cambridge).
+  Hebrew OT and Greek NT editions. The critical interlinear follows the NA28 readings identified in TAGNT, alongside its Scrivener 1894 and Robinson–Pierpont 2005 readings. The Greek interlinear uses KJV reference keys and retains edition-local references on the tokens. ASV and BSB reverse the contents of Philippians 1:16–17 relative to these study keys. The app maps this verified exception when comparing passages. **CC BY 4.0** (STEPBible / Tyndale House, Cambridge).
+- **STEPBible Translators Versification Traditions (TVTMS)** — the app uses the source’s verse equivalences and checks its numbering conditions against the bundled Swete/KJV inventories. Merged, ambiguous and absent passages can have no single equivalent. **CC BY 4.0**, STEPBible / Tyndale House. [Source data](https://github.com/STEPBible/STEPBible-Data/tree/5de0a47f35f0fc13dfe1430d104e5db8a4285f9c/Versification)
 - **Septuagint (Swete)** — <https://github.com/nathans/lxx-swete> via Open Greek and Latin /
   First1KGreek — **CC BY-SA 4.0**.
 - **OpenScriptures Strong's Greek & Hebrew dictionaries** —
@@ -68,8 +69,7 @@ pipeline (`npm run db:build`) fetches these fresh; nothing here is redistributed
 - **Greek grammar course** — the interactive "read real Greek early" lessons (explanations,
   vocabulary, exercises) are **authored for this project**. Each lesson's *reading* is a reference
   into the bundled tagged Greek New Testament and is rendered live from that data — the Greek text is
-  **Nestle 1904 (Public Domain)** with **STEPBible (CC BY 4.0)** tagging, not copied from any
-  copyrighted textbook.
+  the NA28 reading as represented by **STEPBible TAGNT (CC BY 4.0)**.
 - **Vocabulary & drills** derive word lists from the STEPBible tagged Greek NT and Hebrew OT
   (**CC BY 4.0**, credited above). Alphabet data is authored for this project.
 

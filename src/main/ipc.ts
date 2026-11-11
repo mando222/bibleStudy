@@ -1,10 +1,12 @@
 import { ipcMain, dialog, BrowserWindow, app } from 'electron'
 import * as bible from './db/bible'
+import { getWordFrequency, getWordFrequencyPassages } from './db/wordFrequency'
 import * as graph from './db/graph'
 import * as user from './db/user'
 import { exportMarkdown } from './export'
 import type {
   ChapterRef,
+  VerseRef,
   SearchQuery,
   HighlightInput,
   NoteInput
@@ -20,8 +22,13 @@ export function registerIpc(): void {
   ipcMain.handle('bible:getChapter', (_e, ref: ChapterRef) =>
     user.isImported(ref.translation) ? user.getImportedChapter(ref) : bible.getChapter(ref)
   )
+  ipcMain.handle('bible:getComparisonVerse', (_e, ref: VerseRef) =>
+    user.isImported(ref.translation) ? user.getImportedComparisonVerse(ref) : bible.getComparisonVerse(ref)
+  )
   ipcMain.handle('bible:getStrongs', (_e, id: string) => bible.getStrongs(id))
   ipcMain.handle('bible:browseLexicon', (_e, opts) => bible.browseLexicon(opts))
+  ipcMain.handle('bible:getWordFrequency', (_e, query) => getWordFrequency(query))
+  ipcMain.handle('bible:getWordFrequencyPassages', (_e, query) => getWordFrequencyPassages(query))
   ipcMain.handle('bible:getPeople', (_e, q: string, limit: number) => graph.getPeople(q, limit))
   ipcMain.handle('bible:getPerson', (_e, id: number) => graph.getPerson(id))
   ipcMain.handle('bible:getAncestry', (_e, id: number) => graph.getAncestry(id))
@@ -54,7 +61,9 @@ export function registerIpc(): void {
   ipcMain.handle('bible:getChapterApparatus', (_e, book: string, chapter: number) =>
     bible.getChapterApparatus(book, chapter)
   )
-  ipcMain.handle('bible:search', (_e, q: SearchQuery) => bible.search(q))
+  ipcMain.handle('bible:search', (_e, q: SearchQuery) =>
+    user.isImported(q.translation) ? user.searchImported(q) : bible.search(q)
+  )
 
   ipcMain.handle('user:listHighlights', (_e, ref: ChapterRef) => user.listHighlights(ref))
   ipcMain.handle('user:saveHighlight', (_e, input: HighlightInput) => user.saveHighlight(input))

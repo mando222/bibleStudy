@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { mapChapter, mapPassage } from '@shared/passageMapping'
 import type { Highlight, Note } from '@shared/types'
 import { useAppStore } from '@/store/useAppStore'
 
@@ -31,33 +32,41 @@ export function useHighlights(
   return result?.key === key ? result.map : new Map()
 }
 
-/** All notes for a book+chapter, plus a per-verse index. */
-export function useNotes(
-  book: string,
-  chapter: number
-): { notes: Note[]; byVerse: Map<number, Note[]> } {
+/** Notes use canonical references. One native chapter can span more than one canonical chapter. */
+export function useNotes(book: string, chapter: number, edition = 'KJV', verses?: { verse: number }[]) {
   const nonce = useAppStore((s) => s.userDataNonce)
-  const key = `${book}:${chapter}`
-  const [result, setResult] = useState<{ key: string; notes: Note[] } | null>(null)
+  const [attempt, setAttempt] = useState(0)
+  const chapters = useMemo(() => {
+    const refs = verses?.length && edition === 'LXX'
+      ? verses.map((v) => mapPassage({ book, chapter, verse: v.verse }, edition, 'KJV'))
+      : [mapChapter({ book, chapter }, edition, 'KJV')]
+    return [...new Set(refs.flatMap((r) => r ? [JSON.stringify([r.book, r.chapter])] : []))]
+  }, [book, chapter, edition, verses])
+  const key = JSON.stringify([chapters, nonce, attempt])
+  const [result, setResult] = useState<{ key: string; notes: Note[]; error?: string } | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    window.api
-      .listNotes({ book, chapter })
-      .then((rows) => {
-        if (!cancelled) setResult({ key, notes: rows })
-      })
-      .catch(() => undefined)
-    return () => {
-      cancelled = true
-    }
-  }, [book, chapter, nonce, key])
+    Promise.all(chapters.map((id) => {
+      const [book, chapter] = JSON.parse(id) as [string, number]
+      return window.api.listNotes({ book, chapter })
+    })).then((rows) => {
+      if (!cancelled) setResult({ key, notes: rows.flat() })
+    }).catch((e: unknown) => {
+      if (!cancelled) setResult({ key, notes: [], error: e instanceof Error ? e.message : 'Could not load notes.' })
+    })
+    return () => { cancelled = true }
+  }, [key, chapters])
 
-  const notes = result?.key === key ? result.notes : []
   const byVerse = new Map<number, Note[]>()
-  for (const n of notes) {
-    if (!byVerse.has(n.verse)) byVerse.set(n.verse, [])
-    byVerse.get(n.verse)!.push(n)
+  if (result?.key === key) {
+    for (const note of result.notes) {
+      const native = mapPassage(note, 'KJV', edition)
+      if (!native || native.book !== book || native.chapter !== chapter) continue
+      if (!byVerse.has(native.verse)) byVerse.set(native.verse, [])
+      byVerse.get(native.verse)!.push(note)
+    }
   }
-  return { notes, byVerse }
+  return { byVerse, notes: [...byVerse.values()].flat(), loading: result?.key !== key,
+    error: result?.key === key ? result.error : undefined, retry: () => setAttempt((n) => n + 1) }
 }

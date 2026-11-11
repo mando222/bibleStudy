@@ -1,5 +1,8 @@
 import { useState } from 'react'
 import { useAppStore } from '@/store/useAppStore'
+import { useChapter } from '@/hooks/useChapter'
+import { mapPassage } from '@shared/passageMapping'
+import type { Note } from '@shared/types'
 import { useNotes } from '@/hooks/useUserData'
 import { BOOK_BY_ID } from '@shared/books'
 import { PenIcon } from './icons'
@@ -8,7 +11,9 @@ export default function NotesPanel(): JSX.Element {
   const book = useAppStore((s) => s.book)
   const chapter = useAppStore((s) => s.chapter)
   const bump = useAppStore((s) => s.bumpUserData)
-  const { notes } = useNotes(book, chapter)
+  const edition = useAppStore((s) => s.referenceEdition || s.primary)
+  const native = useChapter(edition, book, chapter, edition === 'LXX')
+  const { notes, loading, error, retry } = useNotes(book, chapter, edition, native.data?.verses)
   const bookName = BOOK_BY_ID[book]?.name ?? book
 
   const [editing, setEditing] = useState<number | null>(null)
@@ -42,7 +47,8 @@ export default function NotesPanel(): JSX.Element {
     setEditing(id)
     setText(body)
   }
-  const saveEdit = async (id: number, verse: number): Promise<void> => {
+  const saveEdit = async (note: Note): Promise<void> => {
+    const { id, book, chapter, verse } = note
     const body = text.trim()
     if (body) await window.api.saveNote({ id, book, chapter, verse, body })
     else await window.api.deleteNote(id)
@@ -54,6 +60,8 @@ export default function NotesPanel(): JSX.Element {
     bump()
   }
 
+  if (error) return <div>{ExportBar}<p role="alert">{error} <button onClick={retry}>Try again</button></p></div>
+  if (loading || (edition === 'LXX' && native.loading)) return <p role="status">Loading notes…</p>
   if (notes.length === 0) {
     return (
       <div>
@@ -79,7 +87,7 @@ export default function NotesPanel(): JSX.Element {
       {notes.map((n) => (
         <div key={n.id} className="rounded-md border border-line bg-elevated p-2.5">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-accent tabular-nums">verse {n.verse}</span>
+            <span className="text-xs font-semibold text-accent tabular-nums">verse {mapPassage(n, 'KJV', edition)?.verse ?? n.verse}</span>
             {editing !== n.id && (
               <div className="flex gap-2 text-[11px]">
                 <button onClick={() => startEdit(n.id, n.body)} className="text-muted hover:text-accent">
@@ -104,7 +112,7 @@ export default function NotesPanel(): JSX.Element {
                   Cancel
                 </button>
                 <button
-                  onClick={() => saveEdit(n.id, n.verse)}
+                  onClick={() => saveEdit(n)}
                   className="px-2.5 py-1 text-xs rounded-md bg-accent text-white hover:opacity-90"
                 >
                   Save

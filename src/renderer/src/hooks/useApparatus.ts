@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import type { VerseVariant } from '@shared/types'
 
-export function useApparatus(book: string, chapter: number): { data: VerseVariant[]; loading: boolean } {
+export function useApparatus(book: string, chapter: number, enabled = true): { data: VerseVariant[]; loading: boolean } {
   const [data, setData] = useState<VerseVariant[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!enabled) return
     let cancelled = false
     setLoading(true)
     window.api
@@ -25,7 +26,7 @@ export function useApparatus(book: string, chapter: number): { data: VerseVarian
     return () => {
       cancelled = true
     }
-  }, [book, chapter])
+  }, [book, chapter, enabled])
 
   return { data, loading }
 }

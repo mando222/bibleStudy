@@ -19,13 +19,15 @@ export default function LearnReading({ refKey, note }: { refKey: string; note?: 
   const [showAll, setShowAll] = useState(false)
 
   useEffect(() => {
+    let cancelled = false
     setTokens(null)
     setSel(null)
     setShowAll(false)
     window.api
       .getInterlinear(book, chapter, edition, [], false)
-      .then((il) => setTokens(il.verses.find((v) => v.verse === verse)?.tokens ?? []))
-      .catch(() => setTokens([]))
+      .then((il) => { if (!cancelled) setTokens(il.verses.find((v) => v.verse === verse)?.tokens ?? []) })
+      .catch(() => { if (!cancelled) setTokens([]) })
+    return () => { cancelled = true }
   }, [book, chapter, verse, edition])
 
   const name = meta?.name ?? book
@@ -57,7 +59,7 @@ export default function LearnReading({ refKey, note }: { refKey: string; note?: 
         </div>
       ) : (
         <div
-          className={`flex flex-wrap gap-x-2 gap-y-3 text-lg leading-loose ${rtl ? 'flex-row-reverse' : ''}`}
+          className="flex flex-wrap gap-x-2 gap-y-3 text-lg leading-loose"
           dir={rtl ? 'rtl' : 'ltr'}
         >
           {tokens.map((t, i) => (

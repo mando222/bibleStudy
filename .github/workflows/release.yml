@@ -66,7 +66,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14 # Apple Silicon (macOS CI bills 10×; Intel/macos-13 dropped to stay cheap)
+          - os: macos-15 # Apple Silicon
           - os: windows-latest
           - os: ubuntu-latest
     runs-on: ${{ matrix.os }}
@@ -81,7 +81,7 @@ jobs:
       - name: Build the Bible database (pipeline assertions gate the data)
         run: npm run db:build
       - name: DB integrity test
-        run: npx vitest run test/db.test.ts
+        run: npx vitest run test/db.test.ts test/studySearch.test.ts test/assistantSources.test.ts test/sourceWordIntegrity.test.ts test/wordFrequency.test.ts test/lexiconDirectory.test.ts
       - name: Package the app
         run: npx electron-vite build && npx electron-builder --publish never
         env:
@@ -110,7 +110,7 @@ jobs:
   # Publish the Release only after every platform built + passed its smoke test.
   release:
     needs: [check, build]
-    if: needs.check.outputs.is_new == 'true'
+    if: github.event_name == 'push' && needs.check.outputs.is_new == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

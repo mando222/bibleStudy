@@ -11,6 +11,8 @@ export function useNotebookDocument(active: string | null, visible: boolean) {
   const draft = useRef<Draft | null>(null)
   const writes = useRef(Promise.resolve())
   const pending = useRef(0)
+  const locked = useRef(false)
+  const [checkpoint, setCheckpoint] = useState(false)
   const [content, setContent] = useState('')
   const [loaded, setLoaded] = useState<string | null>(null)
   const [status, setStatus] = useState('')
@@ -47,6 +49,25 @@ export function useNotebookDocument(active: string | null, visible: boolean) {
     }
   }, [])
 
+  const recover = async (): Promise<string> => {
+    const doc = draft.current
+    if (!doc) throw new Error('Select a note first.')
+    await writes.current.catch(() => undefined)
+    const file = await window.notebook.recover(doc.name, doc.content)
+    doc.saved = doc.content
+    setError(null)
+    return file.name
+  }
+
+  useEffect(() => window.notebook.onCheckpoint?.(async () => {
+    locked.current = true
+    setCheckpoint(true)
+    await flush()
+  }, () => {
+    locked.current = false
+    setCheckpoint(false)
+  }), [flush])
+
   useEffect(() => {
     let cancelled = false
     draft.current = null
@@ -72,7 +93,7 @@ export function useNotebookDocument(active: string | null, visible: boolean) {
 
   const edit = useCallback((text: string): void => {
     const doc = draft.current
-    if (!doc) return
+    if (!doc || locked.current) return
     doc.content = text
     setContent(text)
     setStatus(doc.content === doc.saved ? 'Saved' : 'Unsaved changes')
@@ -106,5 +127,5 @@ export function useNotebookDocument(active: string | null, visible: boolean) {
     }
   }, [flush])
 
-  return { content, edit, flush, ready: active != null && loaded === active, status, error }
+  return { content, edit, flush, recover, checkpoint, ready: active != null && loaded === active, status, error }
 }

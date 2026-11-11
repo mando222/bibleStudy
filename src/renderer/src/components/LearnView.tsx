@@ -53,7 +53,7 @@ export default function LearnView(): JSX.Element {
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div key={language} className="flex-1 min-h-0 overflow-y-auto">
         {module === 'alphabet' && <LearnAlphabet language={language} />}
         {module === 'flashcards' && <LearnFlashcards language={language} />}
         {module === 'drills' && <LearnDrills language={language} />}

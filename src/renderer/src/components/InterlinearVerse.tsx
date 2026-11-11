@@ -9,13 +9,15 @@ export default function InterlinearVerse({
   stack = [],
   labels = {},
   lines = [],
+  onSelectVerse,
   showParses = false
 }: {
   v: Verse
   rtl?: boolean
   stack?: string[]
   labels?: Record<string, string>
-  lines?: { id: string; text: string }[]
+  lines?: { id: string; text: string; ref?: string }[]
+  onSelectVerse?: () => void
   showParses?: boolean
 }): JSX.Element {
   const selectStrongs = useAppStore((s) => s.selectStrongs)
@@ -33,11 +35,11 @@ export default function InterlinearVerse({
   }
 
   return (
-    <div className="mb-4" data-verse={v.verse}>
+    <div className="mb-4" data-verse={v.verse} tabIndex={-1}>
       <div dir={rtl ? 'rtl' : 'ltr'} className="flex flex-wrap gap-x-2.5 gap-y-3 items-start">
-        <span className="text-xs font-sans font-semibold text-accent/70 pt-1.5 tabular-nums">
+        <button onClick={onSelectVerse} aria-label={`Select verse ${v.verse}`} className="text-xs font-sans font-semibold text-accent/70 pt-1.5 tabular-nums">
           {v.verse}
-        </span>
+        </button>
         {(v.tokens ?? []).map((tok) => {
         const isHeb = tok.strongs?.startsWith('H') ?? false
         const isSel = selected != null && selected === tok.strongs
@@ -110,7 +112,7 @@ export default function InterlinearVerse({
           {lines.map((ln) => (
             <div key={ln.id} className="text-sm text-muted leading-snug">
               <span className="text-[10px] uppercase text-faint mr-2 tabular-nums">
-                {labels[ln.id] ?? ln.id}
+                {labels[ln.id] ?? ln.id} {ln.ref}
               </span>
               {ln.text}
             </div>

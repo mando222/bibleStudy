@@ -93,3 +93,8 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgb(var(--faint));
 }
+
+/* Reader controls are visible and have accessible names, but do not become part of a quotation. */
+.reader-marker::before {
+  content: attr(data-label);
+}

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useAppStore } from '@/store/useAppStore'
 import { BOOKS, BOOK_BY_ID } from '@shared/books'
 
@@ -33,7 +34,14 @@ export default function VerseRefs({
   limit?: number
   groupByBook?: boolean
 }): JSX.Element {
-  const show = limit ? refs.slice(0, limit) : refs
+  const [page, setPage] = useState<{ refs: string[]; count: number } | null>(null)
+  const count = page?.refs === refs ? page.count : limit ?? refs.length
+  const show = limit ? refs.slice(0, count) : refs
+  const more = limit && count < refs.length ? (
+    <button className="text-[11px] text-accent underline" onClick={() => setPage({ refs, count: count + limit })}>
+      Show more ({refs.length - count} remaining)
+    </button>
+  ) : null
 
   if (groupByBook) {
     const groups = new Map<string, string[]>()
@@ -65,9 +73,7 @@ export default function VerseRefs({
             </div>
           </div>
         ))}
-        {limit && refs.length > limit && (
-          <span className="text-[11px] text-faint">+{refs.length - limit} more</span>
-        )}
+        {more}
       </div>
     )
   }
@@ -77,9 +83,7 @@ export default function VerseRefs({
       {show.map((r, i) => (
         <VerseChip key={i} refKey={r} />
       ))}
-      {limit && refs.length > limit && (
-        <span className="text-[11px] text-faint self-center">+{refs.length - limit} more</span>
-      )}
+      {more}
     </div>
   )
 }

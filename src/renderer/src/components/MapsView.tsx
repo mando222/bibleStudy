@@ -203,11 +203,14 @@ export default function MapsView(): JSX.Element {
   }, [focusPlaceId, places, clearFocus])
   useEffect(() => {
     setActivePlace(sel ? { id: sel.id, name: sel.name } : null)
-    if (!sel) return setVerses([])
+    setVerses([])
+    if (!sel) return
+    let cancelled = false
     window.api
       .getPlaceVerses(sel.id)
-      .then(setVerses)
-      .catch(() => setVerses([]))
+      .then((rows) => { if (!cancelled) setVerses(rows) })
+      .catch(() => { if (!cancelled) setVerses([]) })
+    return () => { cancelled = true }
   }, [sel, setActivePlace])
 
   const types = useMemo(
@@ -490,7 +493,7 @@ export default function MapsView(): JSX.Element {
             drag to pan · scroll to zoom
           </div>
         </div>
-        <div className="shrink-0 border-t border-line p-4 min-h-[6rem]">
+        <div className="shrink-0 border-t border-line p-4 min-h-[6rem] max-h-[40%] overflow-y-auto">
           {sel ? (
             <>
               <div className="text-sm font-medium text-ink">

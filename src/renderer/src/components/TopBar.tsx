@@ -1,4 +1,5 @@
-import { useAppStore } from '@/store/useAppStore'
+import { readingEdition, useAppStore } from '@/store/useAppStore'
+import { readerChapter } from '@/lib/passage'
 import { BOOK_BY_ID } from '@shared/books'
 import HistoryPanel from './HistoryPanel'
 import {
@@ -18,9 +19,9 @@ export default function TopBar(): JSX.Element {
   const toggleTheme = useAppStore((s) => s.toggleTheme)
   const strongsVisible = useAppStore((s) => s.strongsVisible)
   const toggleStrongs = useAppStore((s) => s.toggleStrongs)
-  const quickReplace = useAppStore((s) => s.quickReplace)
-  const toggleQuickReplace = useAppStore((s) => s.toggleQuickReplace)
-  const setQuickReplaceModalOpen = useAppStore((s) => s.setQuickReplaceModalOpen)
+  const restoring = useAppStore((s) => s.restoreSourceWords)
+  const toggleSourceWords = useAppStore((s) => s.toggleSourceWords)
+  const setSourceWordSettingsOpen = useAppStore((s) => s.setSourceWordSettingsOpen)
   const interlinear = useAppStore((s) => s.interlinear)
   const toggleInterlinear = useAppStore((s) => s.toggleInterlinear)
   const setAboutOpen = useAppStore((s) => s.setAboutOpen)
@@ -29,7 +30,11 @@ export default function TopBar(): JSX.Element {
   const book = useAppStore((s) => s.book)
   const chapter = useAppStore((s) => s.chapter)
 
-  const bookName = BOOK_BY_ID[book]?.name ?? book
+  const edition = useAppStore(readingEdition)
+  const fromEdition = useAppStore((s) => s.referenceEdition || s.primary)
+  const activeVerse = useAppStore((s) => s.activeVerse)
+  const native = readerChapter(book, chapter, activeVerse, fromEdition, edition)
+  const bookName = BOOK_BY_ID[native?.book ?? book]?.name ?? book
 
   return (
     <header className="h-12 shrink-0 border-b border-line bg-panel flex items-center gap-2 px-3">
@@ -43,7 +48,7 @@ export default function TopBar(): JSX.Element {
       <div className="h-5 w-px bg-line mx-1.5" />
 
       <div className="font-serif text-[15px] text-ink px-1 whitespace-nowrap">
-        {bookName} <span className="text-accent">{chapter}</span>
+        {bookName} <span className="text-accent">{native?.chapter ?? chapter}</span>{(native ? edition : fromEdition) === 'LXX' && ' (LXX)'}
       </div>
 
       <div className="flex-1" />
@@ -63,25 +68,26 @@ export default function TopBar(): JSX.Element {
 
       <div
         className={`flex items-stretch rounded-md border transition-colors whitespace-nowrap ${
-          quickReplace ? 'bg-accent-soft border-accent text-accent' : 'border-line text-muted'
+          restoring ? 'bg-accent-soft border-accent text-accent' : 'border-line text-muted'
         }`}
       >
         <button
-          onClick={toggleQuickReplace}
+          onClick={toggleSourceWords}
+          aria-pressed={restoring}
           className={`flex items-center gap-1.5 px-2.5 py-1 text-sm rounded-l-md ${
-            quickReplace ? '' : 'hover:bg-elevated'
+            restoring ? '' : 'hover:bg-elevated'
           }`}
-          title="Quick Replace: show the original word in place of the English (LORD → Yahweh, love → agape, Christ → Christos). Needs a Strong's-tagged translation (KJV/BSB)."
+          title="Show verified source words in the reading text"
         >
           <span className="text-[13px] leading-none">⇄</span>
-          Quick Replace
+          Restore words
         </button>
         <button
-          onClick={() => setQuickReplaceModalOpen(true)}
+          onClick={() => setSourceWordSettingsOpen(true)}
           className={`px-1.5 flex items-center border-l rounded-r-md ${
-            quickReplace ? 'border-accent/40 hover:bg-accent/10' : 'border-line hover:bg-elevated'
+            restoring ? 'border-accent/40 hover:bg-accent/10' : 'border-line hover:bg-elevated'
           }`}
-          title="Customize Quick Replace"
+          title="Choose words to restore"
         >
           <PenIcon className="w-3.5 h-3.5" />
         </button>

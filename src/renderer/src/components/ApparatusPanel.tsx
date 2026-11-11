@@ -1,5 +1,6 @@
 import { useAppStore } from '@/store/useAppStore'
 import { useApparatus } from '@/hooks/useApparatus'
+import { readerChapter } from '@/lib/passage'
 import { BOOK_BY_ID } from '@shared/books'
 import ScriptureRef from './ScriptureRef'
 import { CompareIcon } from './icons'
@@ -10,15 +11,21 @@ const QERE = 'text-emerald-600 dark:text-emerald-400'
 const KETIV = 'text-amber-600 dark:text-amber-400'
 
 export default function ApparatusPanel(): JSX.Element {
-  const book = useAppStore((s) => s.book)
-  const chapter = useAppStore((s) => s.chapter)
+  const sourceBook = useAppStore((s) => s.book)
+  const sourceChapter = useAppStore((s) => s.chapter)
+  const sourceEdition = useAppStore((s) => s.referenceEdition || s.primary)
+  const verse = useAppStore((s) => s.activeVerse)
+  const native = readerChapter(sourceBook, sourceChapter, verse, sourceEdition, 'KJV')
+  const book = native?.book ?? sourceBook
+  const chapter = native?.chapter ?? sourceChapter
   const selectStrongs = useAppStore((s) => s.selectStrongs)
-  const { data, loading } = useApparatus(book, chapter)
+  const { data, loading } = useApparatus(book, chapter, !!native)
 
   const meta = BOOK_BY_ID[book]
   const bookName = meta?.name ?? book
   const isOT = meta?.testament === 'OT'
 
+  if (!native) return <p className="text-sm text-muted">No verified equivalent in the textual apparatus.</p>
   if (loading) return <p className="text-sm text-muted">Comparing editions…</p>
 
   if (data.length === 0) {
@@ -91,11 +98,11 @@ export default function ApparatusPanel(): JSX.Element {
     )
   }
 
-  // ---- NT: Critical (NA/SBL) vs Textus Receptus ----
+  // ---- NT: Critical (NA28) vs Textus Receptus ----
   return (
     <div>
       <p className="text-sm text-muted leading-relaxed mb-3">
-        Words that differ between the <span className={CRITICAL}>Critical text (NA/SBL)</span> and
+        Words that differ between the <span className={CRITICAL}>Critical text (NA28)</span> and
         the <span className={TR}>Textus Receptus</span> in {bookName} {chapter}. Click a word for its
         lexicon entry.
       </p>

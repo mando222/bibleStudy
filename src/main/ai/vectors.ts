@@ -1,3 +1,4 @@
+import { studyProfile } from '../studyProfile'
 import { DatabaseSync } from 'node:sqlite'
 import * as sqliteVec from 'sqlite-vec'
 import { app } from 'electron'
@@ -9,7 +10,7 @@ import type { AiDoc } from '../../shared/types'
 let db: DatabaseSync | null = null
 
 /** In a packaged app the loadable extension is unpacked from the asar; point at that copy. */
-function vecLoadablePath(): string {
+export function vecLoadablePath(): string {
   const p = sqliteVec.getLoadablePath()
   return p.includes(`app.asar.unpacked${sep}`)
     ? p
@@ -18,7 +19,7 @@ function vecLoadablePath(): string {
 
 export function aiDb(): DatabaseSync {
   if (db) return db
-  db = new DatabaseSync(join(app.getPath('userData'), 'ai.sqlite'), { allowExtension: true })
+  db = new DatabaseSync(join(studyProfile().root, 'ai.sqlite'), { allowExtension: true })
   db.loadExtension(vecLoadablePath())
   db.exec(`
     CREATE TABLE IF NOT EXISTS documents (

@@ -12,10 +12,10 @@ we start it.
 - **Reader** — KJV, BSB, WEB, YLT, Julia Smith; parallel columns; book/chapter nav; chronological
   (book-level) toggle; notes + highlighting; FTS search.
 - **Original languages** — interlinear (word-by-word); selectable editions **Masoretic (WLC),
-  Septuagint (Swete), Textus Receptus, Byzantine, Critical (NA/SBL)**; Hebrew RTL + fonts.
+  Septuagint (Swete), Textus Receptus, Byzantine, Critical (NA28)**; Hebrew RTL + fonts.
 - **Study tools** — Strong's toggle + lexicon card + concordance; **multi-lexicon** (BDB /
-  Abbott-Smith / LSJ); click any word (even untagged) → lexicon-by-form; **word-replace / original
-  overlay** ("agape" mode); **Divine Names** toggle (per-name config, custom renderings);
+  Abbott-Smith / LSJ); click any word (even untagged) → lexicon-by-form; **source word restoration**
+  (fixed YHWH or occurrence-specific transliteration from the Berean word table);
   **TR-vs-Critical apparatus**; **"best guess ⇄ all parses"** (Scripture-attested ambiguity).
 - **Septuagint** — Swete Greek OT (CC-BY-SA), 36 protocanon books, tagged to Strong's at ~84% by
   surface-matching the NT (no CATSS).

@@ -1,11 +1,18 @@
+import { studyProfile } from '../studyProfile'
 import { DatabaseSync } from 'node:sqlite'
+import { randomUUID } from 'node:crypto'
 import { join, basename } from 'node:path'
-import { app } from 'electron'
 import { BOOKS, BOOK_BY_ID } from '../../shared/books'
 import { schedule, newCard } from './srs'
+import { readPassage } from './passage'
+import type { ScripturePassage } from '../../shared/refs'
+import { searchImportedText } from './search'
+import type { SearchQuery, SearchResponse } from '../../shared/types'
 import type {
   ChapterRef,
   ChapterContent,
+  Verse,
+  VerseRef,
   Highlight,
   HighlightInput,
   HighlightColor,
@@ -22,7 +29,7 @@ import type {
 let db: DatabaseSync | null = null
 
 // Bump when the user schema changes, and add exactly one migration step per bump below.
-const USER_SCHEMA_VERSION = 2
+export const USER_SCHEMA_VERSION = 2
 
 /**
  * Evolve an existing user.sqlite in place across app updates, so notes/highlights/imports are
@@ -35,6 +42,9 @@ function migrate(d: DatabaseSync): void {
     | { value: string }
     | undefined
   let v = row ? Number(row.value) : 0
+  if (!Number.isInteger(v) || v < 0 || v > USER_SCHEMA_VERSION) {
+    throw new Error('This study database uses an unsupported schema version.')
+  }
   // steps[n] upgrades a v=n database to v=n+1 (non-destructively). v1 is the baseline (no-op).
   const steps: (() => void)[] = [
     () => {}, // 0 -> 1: baseline tables already created above
@@ -94,9 +104,11 @@ function migrate(d: DatabaseSync): void {
  *  Kept separate from bible.sqlite so app updates never touch user content. */
 export function openUserDb(): void {
   if (db) return
-  const path = join(app.getPath('userData'), 'user.sqlite')
-  db = new DatabaseSync(path)
-  db.exec(`
+  const path = join(studyProfile().root, 'user.sqlite')
+  const connection = new DatabaseSync(path)
+  try {
+    connection.exec(`
+    BEGIN;
     CREATE TABLE IF NOT EXISTS highlights (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       translation TEXT NOT NULL,
@@ -137,7 +149,17 @@ export function openUserDb(): void {
       PRIMARY KEY (translation_id, book_id, chapter, verse)
     );
   `)
-  migrate(db)
+    migrate(connection)
+    connection.exec('COMMIT')
+    db = connection
+  } catch (err) {
+    connection.close() // Closing rolls back all uncommitted migration steps.
+    throw err
+  }
+}
+
+export function snapshotUserDatabase(path: string): void {
+  required().prepare('VACUUM INTO ?').run(path)
 }
 
 function required(): DatabaseSync {
@@ -286,15 +308,6 @@ function stripHtml(s: string): string {
     .trim()
 }
 
-function uniqueImportedId(abbrev: string): string {
-  const base = `imp_${abbrev.replace(/[^A-Za-z0-9]/g, '').slice(0, 10) || 'mod'}`
-  const d = required()
-  let id = base
-  let n = 2
-  while (d.prepare('SELECT 1 FROM imported_translations WHERE id = ?').get(id)) id = `${base}${n++}`
-  return id
-}
-
 /** Import a translation from a MySword/e-Sword SQLite module. Throws on unrecognized files. */
 export function importFromSqlite(filePath: string): ImportedTranslation {
   const src = new DatabaseSync(filePath, { readOnly: true })
@@ -340,31 +353,40 @@ export function importFromSqlite(filePath: string): ImportedTranslation {
 
     const rows = src
       .prepare(`SELECT Book AS b, Chapter AS c, Verse AS v, ${textCol} AS s FROM "${table}"`)
-      .all() as { b: number; c: number; v: number; s: string }[]
+      .iterate()
 
     const d = required()
-    const id = uniqueImportedId(abbrev)
-    d.prepare(
-      'INSERT OR REPLACE INTO imported_translations (id, abbrev, name, direction, added_at) VALUES (?,?,?,?,?)'
-    ).run(id, abbrev, title, rtl ? 'rtl' : 'ltr', Date.now())
-
-    const ins = d.prepare(
-      'INSERT OR REPLACE INTO imported_verses (translation_id, book_id, chapter, verse, text) VALUES (?,?,?,?,?)'
-    )
-    let count = 0
+    const id = `imp_${randomUUID()}`
     d.exec('BEGIN')
-    for (const r of rows) {
-      if (r.b < 1 || r.b > 66) continue
-      const book = BOOKS[r.b - 1]?.id
-      if (!book) continue
-      const text = stripHtml(r.s)
-      if (!text) continue
-      ins.run(id, book, r.c, r.v, text)
-      count++
-    }
-    d.exec('COMMIT')
+    try {
+      d.prepare(
+        'INSERT OR REPLACE INTO imported_translations (id, abbrev, name, direction, added_at) VALUES (?,?,?,?,?)'
+      ).run(id, abbrev, title, rtl ? 'rtl' : 'ltr', Date.now())
 
-    return { id, abbrev, name: title, direction: rtl ? 'rtl' : 'ltr', verseCount: count }
+      const ins = d.prepare(
+        'INSERT OR REPLACE INTO imported_verses (translation_id, book_id, chapter, verse, text) VALUES (?,?,?,?,?)'
+      )
+      for (const r of rows) {
+        const book = BOOKS[Number(r.b) - 1]?.id
+        if (!book) continue
+        const chapter = Number(r.c)
+        const verse = Number(r.v)
+        if (!Number.isSafeInteger(chapter) || chapter < 1 || !Number.isSafeInteger(verse) || verse < 1 || typeof r.s !== 'string') {
+          throw new Error('Invalid verse in module. Check its chapter, verse number and text.')
+        }
+        const text = stripHtml(r.s)
+        if (!text) continue
+        ins.run(id, book, chapter, verse, text)
+      }
+      const count = Number(d.prepare('SELECT COUNT(*) AS n FROM imported_verses WHERE translation_id=?').get(id)?.n)
+      if (!count) throw new Error('No readable verses found in this module.')
+      d.exec('COMMIT')
+
+      return { id, abbrev, name: title, direction: rtl ? 'rtl' : 'ltr', verseCount: count }
+    } catch (err) {
+      d.exec('ROLLBACK')
+      throw err
+    }
   } finally {
     src.close()
   }
@@ -391,6 +413,14 @@ export function isImported(id: string): boolean {
   return !!required().prepare('SELECT 1 FROM imported_translations WHERE id = ?').get(id)
 }
 
+export function getImportedPassage(translation: string, ref: ScripturePassage) {
+  return readPassage(required(), 'imported_verses', translation, ref)
+}
+
+export function searchImported(q: SearchQuery): SearchResponse {
+  return searchImportedText(required(), q)
+}
+
 export function getImportedChapter(ref: ChapterRef): ChapterContent {
   const d = required()
   const meta = d
@@ -411,10 +441,25 @@ export function getImportedChapter(ref: ChapterRef): ChapterContent {
   }
 }
 
+export function getImportedComparisonVerse(ref: VerseRef): Verse | null {
+  if (!Number.isSafeInteger(ref.verse) || ref.verse < 1) return null
+  const row = required().prepare(
+    'SELECT text FROM imported_verses WHERE translation_id = ? AND book_id = ? AND chapter = ? AND verse = ?'
+  ).get(ref.translation, ref.book, ref.chapter, ref.verse)
+  return row ? { verse: ref.verse, text: String(row.text), tokens: null } : null
+}
+
 export function deleteImported(id: string): void {
   const d = required()
-  d.prepare('DELETE FROM imported_verses WHERE translation_id = ?').run(id)
-  d.prepare('DELETE FROM imported_translations WHERE id = ?').run(id)
+  d.exec('BEGIN')
+  try {
+    d.prepare('DELETE FROM imported_verses WHERE translation_id = ?').run(id)
+    d.prepare('DELETE FROM imported_translations WHERE id = ?').run(id)
+    d.exec('COMMIT')
+  } catch (err) {
+    d.exec('ROLLBACK')
+    throw err
+  }
 }
 
 // ---- Bookmarks & reading history (v2) ----

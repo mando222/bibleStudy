@@ -1,23 +1,28 @@
 import { useState } from 'react'
 import type { StrongsEntry } from '@shared/types'
 import { useStrongs } from '@/hooks/useStrongs'
-import { useConcordance } from '@/hooks/useConcordance'
+import ResultPages from './ResultPages'
+import { CONCORDANCE_PAGE_SIZE, useConcordance } from '@/hooks/useConcordance'
 import { useLexicons } from '@/hooks/useLexicons'
-import { useAppStore } from '@/store/useAppStore'
+import { useAppStore, type SelectedOccurrence } from '@/store/useAppStore'
+import { BOOK_BY_ID } from '@shared/books'
 import { HashIcon } from './icons'
 import StrongsText from './StrongsText'
 import Snippet from './Snippet'
+import WordFrequency, { useFrequencySettings } from './WordFrequency'
 
-export default function LexiconCard({ id }: { id: string | null }): JSX.Element {
-  const { entry, loading } = useStrongs(id)
+export default function LexiconCard({ id, inWords = false }: { id: string | null; inWords?: boolean }): JSX.Element {
+  const { entry, loading, error, retry } = useStrongs(id)
+  const occurrence = useAppStore(s => s.selectedStrongs === id ? s.selectedOccurrence : null)
+  const [section, setSection] = useState('Definition')
+  const frequencySettings = useFrequencySettings()
 
   if (!id) {
     return (
       <div className="mt-10 flex flex-col items-center text-center text-muted">
         <HashIcon className="w-8 h-8 text-faint mb-3" />
         <p className="text-sm max-w-[16rem] leading-relaxed">
-          Click any word or Strong&rsquo;s number in the KJV to see its Greek or Hebrew lexicon
-          entry and full concordance here.
+          Select a linked word or Strong&rsquo;s number to see its dictionary entry and concordance.
         </p>
       </div>
     )
@@ -34,6 +39,7 @@ export default function LexiconCard({ id }: { id: string | null }): JSX.Element 
     )
   }
 
+  if (error) return <p role="alert" className="text-sm text-muted">Couldn’t load {id}. {error} <button className="text-accent underline" onClick={retry}>Try again</button></p>
   if (!entry) {
     return <p className="text-sm text-muted">No lexicon entry found for {id}.</p>
   }
@@ -47,13 +53,15 @@ export default function LexiconCard({ id }: { id: string | null }): JSX.Element 
           {entry.id}
         </span>
         <span className="text-[11px] uppercase tracking-wider text-faint">
-          {isHeb ? 'Hebrew' : 'Greek'}
+          {entry.sourceLanguage ?? (isHeb ? 'Hebrew / Aramaic lexicon' : 'Greek')}
         </span>
       </div>
 
+      {occurrence && <Occurrence details={occurrence} />}
+      <div className="mt-3 text-[11px] uppercase tracking-wider text-faint">Dictionary headword</div>
       <div
         dir={isHeb ? 'rtl' : 'ltr'}
-        className={`mt-3 text-4xl leading-tight text-ink ${isHeb ? 'font-hebrew' : 'font-greek'}`}
+        className={`mt-1 text-4xl leading-tight text-ink ${isHeb ? 'font-hebrew' : 'font-greek'}`}
       >
         {entry.lemma}
       </div>
@@ -62,68 +70,58 @@ export default function LexiconCard({ id }: { id: string | null }): JSX.Element 
         {entry.pronunciation && <span className="text-faint"> · {entry.pronunciation}</span>}
       </div>
 
-      <ReplaceControls id={entry.id} lemma={entry.lemma} translit={entry.translit} />
-
-      <Lexicons entry={entry} />
-
-      <Concordance id={entry.id} occurrences={entry.occurrences} />
+      {inWords && (
+        <div role="group" aria-label="Word study tools" className="flex flex-wrap gap-x-4 mt-4 border-b border-line">
+          {['Definition', 'Concordance', 'Word frequency'].map((label) => (
+            <button key={label} type="button" aria-pressed={section === label} onClick={() => setSection(label)}
+              className={`text-sm pb-2 border-b-2 ${section === label ? 'text-ink font-semibold border-accent' : 'text-muted border-transparent hover:text-ink'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {(!inWords || section === 'Definition') && <Lexicons entry={entry} />}
+      {(!inWords || section === 'Concordance') && (
+        <Concordance id={entry.id} occurrences={entry.occurrences} translation={occurrence?.translation} />
+      )}
+      {inWords && section === 'Word frequency' && <WordFrequency id={entry.id} settings={frequencySettings} />}
     </div>
   )
 }
 
-/** "Agape" word-replace: swap every occurrence of this Strong's with the Greek/Hebrew word
- *  (or its transliteration) directly in the reading text. */
-function ReplaceControls({
-  id,
-  lemma,
-  translit
-}: {
-  id: string
-  lemma: string
-  translit: string
-}): JSX.Element {
-  const active = useAppStore((s) => s.replacements[id])
-  const setReplacement = useAppStore((s) => s.setReplacement)
-  const clearReplacement = useAppStore((s) => s.clearReplacement)
-
-  const chip = (on: boolean): string =>
-    `px-2 py-0.5 rounded-md text-sm border transition-colors ${
-      on ? 'bg-accent text-white border-accent' : 'border-line hover:bg-elevated text-ink'
-    }`
-
+function Occurrence({ details }: { details: SelectedOccurrence }): JSX.Element {
+  const { translation, book, chapter, verse, surface, sourceWord } = details
+  const ref = `${BOOK_BY_ID[book]?.name ?? book} ${chapter}:${verse}`
+  const rtl = sourceWord?.language === 'Hebrew' || sourceWord?.language === 'Aramaic'
   return (
-    <div className="mt-3 flex items-center gap-2 flex-wrap">
-      <span className="text-[11px] uppercase tracking-wider text-faint">Replace in text</span>
-      {lemma && (
-        <button onClick={() => setReplacement(id, lemma)} className={chip(active === lemma)}>
-          {lemma}
-        </button>
-      )}
-      {translit && (
-        <button onClick={() => setReplacement(id, translit)} className={chip(active === translit)}>
-          {translit}
-        </button>
-      )}
-      {active && (
-        <button
-          onClick={() => clearReplacement(id)}
-          className="text-xs text-muted hover:text-accent underline"
-        >
-          Reset
-        </button>
-      )}
-    </div>
+    <section className="mt-3 border-b border-line pb-3" aria-label="Selected word">
+      <div className="text-xs text-muted">{translation} · {ref}</div>
+      <p className="mt-1 text-ink">{surface}</p>
+      {sourceWord ? (
+        <>
+          <div className="mt-2 text-xs text-muted">{sourceWord.language} form in this verse</div>
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            <bdi dir={rtl ? 'rtl' : 'ltr'} className={`text-2xl ${rtl ? 'font-hebrew' : 'font-greek'}`}>{sourceWord.text}</bdi>
+            <span className="text-sm text-muted">Publisher transliteration · <i>{sourceWord.translit}</i></span>
+          </div>
+          <p className="mt-1 text-xs text-muted">
+            {sourceWord.evidence === 'corroborated' ? 'Corroborated by Berean aligned text' : 'Berean aligned text'}
+            {' · '}{BOOK_BY_ID[sourceWord.book]?.name ?? sourceWord.book} {sourceWord.chapter}:{sourceWord.verse} · row {sourceWord.rowId}
+          </p>
+        </>
+      ) : <p className="mt-1 text-xs text-muted">{details.derived ? 'Inferred Strong’s link. ' : ''}An exact source form is unavailable for this selection.</p>}
+    </section>
   )
 }
 
 /** Tabbed lexicon panel: Strong's plus the scholarly lexicons that apply to this word. */
 function Lexicons({ entry }: { entry: StrongsEntry }): JSX.Element {
-  const { groups, loading } = useLexicons(entry.id)
+  const { groups, loading, error, retry } = useLexicons(entry.id)
   const [tab, setTab] = useState<string>('strongs')
   const isHeb = entry.language === 'hebrew'
 
-  // Fall back to Strong's whenever the selected lexicon isn't available for this word.
-  const active = tab !== 'strongs' && groups.some((g) => g.lexicon === tab) ? tab : 'strongs'
+  const hasStrongs = entry.lexiconSource !== 'STEP'
+  const active = groups.some((g) => g.lexicon === tab) ? tab : hasStrongs ? 'strongs' : groups[0]?.lexicon
   const tabBtn = (on: boolean): string =>
     `px-2 py-1 text-xs rounded-md border transition-colors ${
       on ? 'bg-accent-soft text-accent border-accent/40' : 'border-line text-muted hover:bg-elevated'
@@ -133,9 +131,9 @@ function Lexicons({ entry }: { entry: StrongsEntry }): JSX.Element {
     <div className="mt-4 border-t border-line pt-3">
       <div className="flex items-center gap-1.5 flex-wrap mb-2">
         <span className="text-[11px] uppercase tracking-wider text-faint mr-1">Lexicons</span>
-        <button onClick={() => setTab('strongs')} className={tabBtn(active === 'strongs')}>
+        {hasStrongs && <button onClick={() => setTab('strongs')} className={tabBtn(active === 'strongs')}>
           Strong&rsquo;s
-        </button>
+        </button>}
         {groups.map((g) => (
           <button
             key={g.lexicon}
@@ -149,6 +147,8 @@ function Lexicons({ entry }: { entry: StrongsEntry }): JSX.Element {
         {loading && <span className="text-[11px] text-faint">…</span>}
       </div>
 
+      {error && <p role="alert" className="text-sm text-muted">Couldn’t load the scholarly lexicons. {error} <button onClick={retry} className="text-accent underline">Try again</button></p>}
+      {!loading && !error && !active && <p className="text-sm text-muted">No scholarly definition is available for {entry.id}.</p>}
       {active === 'strongs' ? (
         <div className="space-y-3">
           {entry.definition && (
@@ -201,11 +201,11 @@ function LexBody({ body }: { body: string }): JSX.Element {
   )
 }
 
-function Concordance({ id, occurrences }: { id: string; occurrences: number }): JSX.Element {
+function Concordance({ id, occurrences, translation }: { id: string; occurrences: number; translation?: string }): JSX.Element {
   // Follow the translation being read, so an ASV reader sees ASV verses rather than none.
   const primary = useAppStore((s) => s.primary)
-  const { data, loading } = useConcordance(id, primary)
-  const goToVerse = useAppStore((s) => s.goToVerse)
+  const { data, loading, error, retry, offset, setOffset } = useConcordance(id, translation ?? primary)
+  const openSearchHit = useAppStore((s) => s.openSearchHit)
 
   return (
     <div className="mt-4 border-t border-line pt-3">
@@ -225,7 +225,8 @@ function Concordance({ id, occurrences }: { id: string; occurrences: number }): 
         </span>
       </div>
 
-      {loading ? (
+      {data && <ResultPages offset={offset} size={CONCORDANCE_PAGE_SIZE} count={data.hits.length} total={data.total} onPage={setOffset} />}
+      {error ? <p role="alert">{error} <button onClick={retry}>Try again</button></p> : loading ? (
         <p className="text-sm text-muted">Loading occurrences…</p>
       ) : data && data.hits.length > 0 ? (
         <>
@@ -233,7 +234,7 @@ function Concordance({ id, occurrences }: { id: string; occurrences: number }): 
             {data.hits.map((h) => (
               <li key={`${h.book}-${h.chapter}-${h.verse}`}>
                 <button
-                  onClick={() => goToVerse(h.book, h.chapter, h.verse)}
+                  onClick={() => openSearchHit({ ...h, translation: data.translation })}
                   className="w-full text-left rounded-md px-2 py-1.5 hover:bg-elevated"
                 >
                   <span className="text-xs font-semibold text-accent whitespace-nowrap">
@@ -246,11 +247,7 @@ function Concordance({ id, occurrences }: { id: string; occurrences: number }): 
               </li>
             ))}
           </ul>
-          {data.total > data.hits.length && (
-            <p className="text-xs text-faint px-2 pt-1">
-              Showing first {data.hits.length.toLocaleString()} of {data.total.toLocaleString()}.
-            </p>
-          )}
+
         </>
       ) : (
         <p className="text-sm text-muted">No tagged occurrences.</p>

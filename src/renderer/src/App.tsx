@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { readerChapter } from '@/lib/passage'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import { useAppStore } from '@/store/useAppStore'
 import TopBar from '@/components/TopBar'
@@ -7,7 +8,7 @@ import NavPanel from '@/components/NavPanel'
 import ReadingPanel from '@/components/ReadingPanel'
 import StudyPanel from '@/components/StudyPanel'
 import AboutModal from '@/components/AboutModal'
-import QuickReplaceModal from '@/components/QuickReplaceModal'
+import SourceWordSettings from '@/components/SourceWordSettings'
 import ChatDrawer from '@/components/ChatDrawer'
 import NotebookDrawer from '@/components/NotebookDrawer'
 import ActivityRail from '@/components/ActivityRail'
@@ -24,31 +25,23 @@ export default function App(): JSX.Element {
   const book = useAppStore((s) => s.book)
   const chapter = useAppStore((s) => s.chapter)
 
+  const edition = useAppStore((s) => s.referenceEdition || s.primary)
+  const activeVerse = useAppStore((s) => s.activeVerse)
+  const canonical = readerChapter(book, chapter, activeVerse, edition, 'KJV')
+  const historyBook = canonical?.book
+  const historyChapter = canonical?.chapter
+
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
   }, [theme])
 
   // Record each chapter the reader visits, for the History & bookmarks menu.
   useEffect(() => {
-    window.api?.addHistory(book, chapter).catch(() => undefined)
-  }, [book, chapter])
+    if (historyBook && historyChapter) window.api?.addHistory(historyBook, historyChapter).catch(() => undefined)
+  }, [historyBook, historyChapter])
 
-  // Load the available translations once, and repair any stale/invalid selection. Every column is
-  // checked, not just the primary — a deleted imported translation left in a secondary column used
-  // to render as a permanently empty "Not available" panel.
   useEffect(() => {
-    window.api
-      .listTranslations()
-      .then((list) => {
-        setTranslations(list)
-        if (!list.length) return
-        const st = useAppStore.getState()
-        const available = new Set(list.map((t) => t.id))
-        const kept = st.parallels.filter((id) => available.has(id))
-        if (!kept.length) st.setParallels([list[0].id])
-        else if (kept.length !== st.parallels.length) st.setParallels(kept)
-      })
-      .catch(() => undefined)
+    window.api.listTranslations().then(setTranslations).catch(() => undefined)
   }, [setTranslations])
 
   return (
@@ -67,7 +60,7 @@ export default function App(): JSX.Element {
         </div>
       </div>
       <AboutModal />
-      <QuickReplaceModal />
+      <SourceWordSettings />
       <ChatDrawer />
       <NotebookDrawer />
     </div>

@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
-import type { SearchResponse } from '@shared/types'
+import { useCallback, useState } from 'react'
+import { usePagedQuery } from '@/hooks/usePagedQuery'
+import ResultPages from './ResultPages'
 import { useAppStore } from '@/store/useAppStore'
 import { SearchIcon } from './icons'
 import Snippet from './Snippet'
@@ -8,40 +9,18 @@ type Scope = 'all' | 'OT' | 'NT'
 
 export default function SearchPanel(): JSX.Element {
   const primary = useAppStore((s) => s.primary)
-  const goToVerse = useAppStore((s) => s.goToVerse)
+  const openSearchHit = useAppStore((s) => s.openSearchHit)
 
   const [q, setQ] = useState('')
   const [scope, setScope] = useState<Scope>('all')
-  const [res, setRes] = useState<SearchResponse | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [attempt, setAttempt] = useState(0)
-
-  // Debounced search whenever the query, scope, or translation changes.
-  useEffect(() => {
-    const text = q.trim()
-    let cancelled = false
-    setRes(null)
-    setError(null)
-    if (!text) {
-      setLoading(false)
-      return
-    }
-    setLoading(true)
-    const t = setTimeout(() => {
-      window.api
-        .search({ text, translation: primary, testament: scope, limit: 150 })
-        .then((r) => { if (!cancelled) setRes(r) })
-        .catch((e: unknown) => {
-          if (!cancelled) setError(e instanceof Error ? e.message : 'Please try again.')
-        })
-        .finally(() => { if (!cancelled) setLoading(false) })
-    }, 250)
-    return () => {
-      cancelled = true
-      clearTimeout(t)
-    }
-  }, [q, scope, primary, attempt])
+  const originalEdition = useAppStore((s) => s.interlinearEdition)
+  const greekEdition = originalEdition === 'TR' || originalEdition === 'BYZ' ? originalEdition : 'NA'
+  const text = q.trim()
+  const fetchPage = useCallback((offset: number) =>
+    window.api.search({ text, translation: primary, testament: scope, greekEdition, limit: 150, offset }),
+    [text, primary, scope, greekEdition])
+  const { data: res, loading, error, offset, setOffset, retry } =
+    usePagedQuery(JSON.stringify([text, primary, scope, greekEdition]), fetchPage, 250, !!text)
 
   return (
     <div className="flex flex-col h-full">
@@ -72,31 +51,31 @@ export default function SearchPanel(): JSX.Element {
           ))}
           {res && (
             <span className="ml-auto self-center text-xs text-faint tabular-nums">
-              {res.hits.length < res.total ? `${res.hits.length} of ` : ''}
               {res.total.toLocaleString()} result{res.total === 1 ? '' : 's'}
             </span>
           )}
         </div>
+        {res && <ResultPages offset={offset} size={150} count={res.hits.length} total={res.total} onPage={setOffset} />}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2" aria-busy={loading}>
+      <div key={offset} className="flex-1 overflow-y-auto p-2" aria-busy={loading}>
         {error ? (
           <div role="alert" className="text-sm text-muted p-2 space-y-2">
             <p>Search couldn’t finish. {error}</p>
-            <button onClick={() => setAttempt((n) => n + 1)} className="text-accent underline">Try again</button>
+            <button onClick={retry} className="text-accent underline">Try again</button>
           </div>
         ) : loading ? (
           <p role="status" className="text-sm text-muted p-2">Searching…</p>
         ) : res && res.hits.length > 0 ? (
           <ul className="space-y-1">
             {res.hits.map((h) => (
-              <li key={`${h.book}-${h.chapter}-${h.verse}`}>
+              <li key={`${h.edition ?? h.translation ?? primary}-${h.book}-${h.chapter}-${h.verse}`}>
                 <button
-                  onClick={() => goToVerse(h.book, h.chapter, h.verse)}
+                  onClick={() => openSearchHit(h)}
                   className="w-full text-left rounded-md px-2 py-1.5 hover:bg-elevated"
                 >
                   <div className="text-xs font-semibold text-accent">
-                    {h.bookName} {h.chapter}:{h.verse}
+                    {h.bookName} {h.chapter}:{h.verse} {h.edition ?? (h.translation !== primary ? h.translation : '')}
                   </div>
                   <div className="text-sm text-ink leading-snug">
                     <Snippet text={h.snippet} />
@@ -105,6 +84,8 @@ export default function SearchPanel(): JSX.Element {
               </li>
             ))}
           </ul>
+        ) : res?.notice ? (
+          <p role="status" className="text-sm text-muted p-2">{res.notice}</p>
         ) : res ? (
           <p className="text-sm text-muted p-2">No results for “{q}”.</p>
         ) : (

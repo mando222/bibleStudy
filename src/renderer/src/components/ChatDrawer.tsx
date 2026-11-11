@@ -1,21 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AiDoc, AiIndexStatus, AiSetupProgress, AiStatus, ChatCitation } from '@shared/types'
-import { useAppStore } from '@/store/useAppStore'
+import { useAppStore, type ChatMsg as Msg } from '@/store/useAppStore'
+import { mapPassage, mapChapter } from '@shared/passageMapping'
 import { BOOK_BY_ID } from '@shared/books'
+import { citationLabel } from '@shared/refs'
 import { SparkleIcon, SendIcon, FileIcon } from './icons'
 import LinkedScripture from './LinkedScripture'
-
-interface Msg {
-  role: 'user' | 'assistant'
-  content: string
-  citations?: ChatCitation[]
-}
 
 export default function ChatDrawer(): JSX.Element {
   const open = useAppStore((s) => s.assistantOpen)
   const setOpen = useAppStore((s) => s.setAssistantOpen)
   const primary = useAppStore((s) => s.primary)
   const goToVerse = useAppStore((s) => s.goToVerse)
+  const openSearchHit = useAppStore((s) => s.openSearchHit)
+  const openCitation = (c: ChatCitation): void => {
+    if (c.source) return
+    if (c.translation) openSearchHit({ ...c, snippet: c.text })
+    else goToVerse(c.book, c.chapter, c.verse)
+  }
   const pendingContext = useAppStore((s) => s.pendingContext)
   const clearPendingContext = useAppStore((s) => s.clearPendingContext)
   const savedChat = useAppStore((s) => s.chatMessages)
@@ -29,10 +31,16 @@ export default function ChatDrawer(): JSX.Element {
   const activePerson = useAppStore((s) => s.activePerson)
   const activeEvent = useAppStore((s) => s.activeEvent)
 
+  const referenceEdition = useAppStore(s => s.referenceEdition || s.primary)
   const buildActiveContext = (): string | undefined => {
     const parts: string[] = []
-    const bookName = BOOK_BY_ID[book]?.name ?? book
-    parts.push(`Open passage: ${bookName} ${chapter}${activeVerse ? `:${activeVerse}` : ''}`)
+    const ref = activeVerse != null
+      ? mapPassage({ book, chapter, verse: activeVerse }, referenceEdition, primary)
+      : mapChapter({ book, chapter }, referenceEdition, primary)
+    if (ref) {
+      const bookName = BOOK_BY_ID[ref.book]?.name ?? ref.book
+      parts.push(`Open passage: ${bookName} ${ref.chapter}${'verse' in ref ? ':' + ref.verse : ''} (${primary})`)
+    }
     if (activity === 'maps' && activePlace) parts.push(`Selected place: ${activePlace.name}`)
     if (activity === 'genealogies' && activePerson)
       parts.push(`Selected person: ${activePerson.name}`)
@@ -193,6 +201,9 @@ export default function ChatDrawer(): JSX.Element {
     let idx = messages.length - 1
     while (idx >= 0 && messages[idx].role !== 'user') idx--
     if (idx < 0) return
+    const context = messages[idx].questionContext ?? {
+      grounding: ground ? { translation: primary } : null, selection: [], active: buildActiveContext()
+    }
     const history = messages.slice(0, idx + 1).map((m) => ({ role: m.role, content: m.content }))
     setMessages([...messages.slice(0, idx + 1), { role: 'assistant', content: '' }])
     setBusy(true)
@@ -200,9 +211,9 @@ export default function ChatDrawer(): JSX.Element {
       await window.ai.chat(
         convId,
         history,
-        ground ? { translation: primary } : null,
-        [],
-        buildActiveContext()
+        context.grounding,
+        context.selection,
+        context.active
       )
     } catch (e) {
       setBusy(false)
@@ -223,29 +234,17 @@ export default function ChatDrawer(): JSX.Element {
       role: 'user' as const,
       content: q
     }]
-    setMessages((prev) => [...prev, { role: 'user', content: q }, { role: 'assistant', content: '' }])
+    const selection: ChatCitation[] = pendingContext ? [{ ...pendingContext, translation: pendingContext.translation ?? primary }] : []
+    const context = {
+      grounding: ground ? { translation: pendingContext?.translation ?? primary } : null,
+      selection,
+      active: buildActiveContext()
+    }
+    setMessages((prev) => [...prev, { role: 'user', content: q, questionContext: context }, { role: 'assistant', content: '' }])
     setBusy(true)
-    // Include the selected passage (if any) as extra context, then consume it.
-    const extra = pendingContext
-      ? [
-          {
-            book: pendingContext.book,
-            bookName: pendingContext.bookName,
-            chapter: pendingContext.chapter,
-            verse: pendingContext.verse,
-            text: pendingContext.text
-          }
-        ]
-      : []
     clearPendingContext()
     try {
-      await window.ai.chat(
-        convId,
-        history,
-        ground ? { translation: primary } : null,
-        extra,
-        buildActiveContext()
-      )
+      await window.ai.chat(convId, history, context.grounding, selection, context.active)
     } catch (e) {
       setBusy(false)
       setMessages((prev) => {
@@ -438,7 +437,7 @@ export default function ChatDrawer(): JSX.Element {
                 <Bubble
                   key={i}
                   m={m}
-                  goToVerse={goToVerse}
+                  openCitation={openCitation}
                   onRegenerate={
                     m.role === 'assistant' && i === messages.length - 1 && !busy
                       ? regenerate
@@ -513,11 +512,11 @@ export default function ChatDrawer(): JSX.Element {
 
 function Bubble({
   m,
-  goToVerse,
+  openCitation,
   onRegenerate
 }: {
   m: Msg
-  goToVerse: (b: string, c: number, v: number) => void
+  openCitation: (c: ChatCitation) => void
   onRegenerate?: () => void
 }): JSX.Element {
   if (m.role === 'user') {
@@ -533,18 +532,18 @@ function Bubble({
     <div className="flex justify-start">
       <div className="max-w-[92%]">
         <div className="rounded-2xl rounded-bl-sm bg-elevated text-ink px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed">
-          {m.content ? <LinkedScripture text={m.content} /> : '…'}
+          {m.content ? <LinkedScripture text={m.content} citations={m.citations} /> : '…'}
         </div>
         {m.citations && m.citations.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1.5">
             {m.citations.slice(0, 8).map((c, i) => (
               <button
                 key={i}
-                onClick={() => (c.source ? undefined : goToVerse(c.book, c.chapter, c.verse))}
+                onClick={() => openCitation(c)}
                 title={c.text}
                 className="text-[11px] px-1.5 py-0.5 rounded-md border border-line text-accent hover:bg-accent-soft"
               >
-                {c.source ? c.source : `${c.bookName} ${c.chapter}:${c.verse}`}
+                {citationLabel(c)}
               </button>
             ))}
           </div>

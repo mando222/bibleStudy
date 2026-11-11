@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { mapPassage } from '@shared/passageMapping'
 import type { Highlight, Note } from '@shared/types'
 import { BOOK_BY_ID } from '@shared/books'
 import { useAppStore } from '@/store/useAppStore'
@@ -15,6 +16,9 @@ interface Props {
   verseText: string
   highlight?: Highlight
   note?: Note
+  notesLoading?: boolean
+  notesError?: string
+  retryNotes?: () => void
   onClose: () => void
 }
 
@@ -27,12 +31,21 @@ export default function VersePopover({
   verse,
   verseText,
   highlight,
-  note,
+  note, notesLoading, notesError, retryNotes,
   onClose
 }: Props): JSX.Element {
   const bump = useAppStore((s) => s.bumpUserData)
   const askAssistantAbout = useAppStore((s) => s.askAssistantAbout)
   const [noteText, setNoteText] = useState(note?.body ?? '')
+  const canonical = mapPassage({ book, chapter, verse }, translation, 'KJV')
+  const [saveError, setSaveError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const dialog = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const container = dialog.current
+    if (!container?.contains(document.activeElement)) container?.querySelector('button')?.focus({ preventScroll: true })
+  }, [])
+  const dirty = useRef(false)
   const [editingNote, setEditingNote] = useState(false)
   // The chapter's notes load asynchronously, so `note` can arrive after this popover mounts.
   // Adopt it then — otherwise the box stays blank and saving wipes the existing note. Only sync
@@ -41,7 +54,7 @@ export default function VersePopover({
   useEffect(() => {
     if ((note?.id ?? null) === loadedNoteId.current) return
     loadedNoteId.current = note?.id ?? null
-    setNoteText(note?.body ?? '')
+    if (!dirty.current) setNoteText(note?.body ?? '')
   }, [note?.id, note?.body])
 
   const setColor = async (color: (typeof HIGHLIGHT_COLORS)[number]): Promise<void> => {
@@ -67,18 +80,26 @@ export default function VersePopover({
   }
 
   const saveNote = async (): Promise<void> => {
+    if (!canonical || notesLoading || notesError || saving) return
     const body = noteText.trim()
-    if (!body && note) await window.api.deleteNote(note.id)
-    else if (body) await window.api.saveNote({ id: note?.id, book, chapter, verse, body })
-    bump()
-    onClose()
+    setSaving(true)
+    setSaveError('')
+    try {
+      if (!body && note) await window.api.deleteNote(note.id)
+      else if (body) await window.api.saveNote({ id: note?.id, ...canonical, body })
+      bump()
+      onClose()
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Could not save this note.')
+    } finally { setSaving(false) }
   }
 
   return (
     <>
       {/* click-away backdrop */}
       <div className="fixed inset-0 z-10" onClick={onClose} />
-      <div
+      <div ref={dialog} role="dialog" aria-label={`Verse ${verse} actions`}
+        onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onClose() } }}
         className="absolute z-20 w-64 rounded-lg border border-line bg-elevated shadow-xl p-2"
         style={{ top: y, left: x }}
         onClick={(e) => e.stopPropagation()}
@@ -105,12 +126,15 @@ export default function VersePopover({
         </div>
 
         <div className="border-t border-line pt-2">
-          {editingNote || note ? (
+          {!canonical ? <p className="text-xs text-muted">No verified reference for shared verse notes.</p>
+            : notesError ? <p role="alert" className="text-xs">{notesError} <button onClick={retryNotes}>Try again</button></p>
+            : notesLoading && !editingNote ? <p role="status" className="text-xs">Loading notes…</p>
+            : editingNote || note ? (
             <div>
               <textarea
                 autoFocus
                 value={noteText}
-                onChange={(e) => setNoteText(e.target.value)}
+                onChange={(e) => { dirty.current = true; setNoteText(e.target.value) }}
                 placeholder={`Note on verse ${verse}…`}
                 className="w-full h-24 resize-none rounded-md border border-line bg-panel p-2 text-sm text-ink outline-none focus:border-accent"
               />
@@ -119,6 +143,7 @@ export default function VersePopover({
                   Cancel
                 </button>
                 <button
+                  disabled={saving || notesLoading}
                   onClick={saveNote}
                   className="px-2.5 py-1 text-xs rounded-md bg-accent text-white hover:opacity-90"
                 >
@@ -137,11 +162,12 @@ export default function VersePopover({
           )}
         </div>
 
+        {saveError && <p role="alert" className="text-xs">{saveError}</p>}
         <div className="border-t border-line pt-2 mt-2">
           <button
             onClick={() => {
               askAssistantAbout({
-                book,
+                book, translation,
                 bookName: BOOK_BY_ID[book]?.name ?? book,
                 chapter,
                 verse,

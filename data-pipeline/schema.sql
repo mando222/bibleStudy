@@ -55,6 +55,23 @@ CREATE TABLE verse_tokens (
 
 CREATE INDEX idx_tokens_strongs ON verse_tokens (strongs);
 
+-- The exact publisher row retained after aligning the Berean table to the printed BSB.
+-- KJV links require independent English tagging, verbatim English parallels, and the unique
+-- inflected form in the Hebrew/Aramaic or TR witness. A single corroborated bare divine
+-- name can also qualify in a differently worded verse.
+CREATE TABLE source_word_spans (
+  translation_id TEXT NOT NULL,
+  book_id TEXT NOT NULL,
+  chapter INTEGER NOT NULL,
+  verse INTEGER NOT NULL,
+  start_position INTEGER NOT NULL,
+  end_position INTEGER NOT NULL,
+  bsb_position INTEGER NOT NULL,
+  source_row TEXT NOT NULL,
+  language TEXT NOT NULL,
+  PRIMARY KEY (translation_id, book_id, chapter, verse, end_position)
+) WITHOUT ROWID;
+
 -- Selectable original-language editions for the interlinear (Masoretic, TR, Byzantine, Critical, …).
 CREATE TABLE editions (
   id         TEXT PRIMARY KEY,   -- 'MT' | 'NA' | 'TR' | 'BYZ' | 'LXX'
@@ -71,7 +88,10 @@ CREATE TABLE original_tokens (
   chapter   INTEGER NOT NULL,
   verse     INTEGER NOT NULL,
   position  INTEGER NOT NULL,
+  native_chapter INTEGER,       -- edition's own numbering when the reader uses English references
+  native_verse   INTEGER,
   original  TEXT NOT NULL,       -- the Greek/Hebrew word
+  source_type TEXT,              -- TAHOT's attestation code for the Hebrew/Aramaic reading
   translit  TEXT,
   strongs   TEXT,
   morph     TEXT,
@@ -80,6 +100,45 @@ CREATE TABLE original_tokens (
 ) WITHOUT ROWID;
 
 CREATE INDEX idx_ot_loc ON original_tokens (edition, book_id, chapter, verse);
+CREATE INDEX idx_ot_native ON original_tokens (edition, book_id, native_chapter, native_verse);
+
+-- One verified source occurrence of a dictionary ID. Several IDs may describe the same
+-- publisher-attested reading. Hebrew attached lexical components have their own part number.
+CREATE TABLE word_frequency_occurrences (
+  edition        TEXT NOT NULL,
+  strongs        TEXT NOT NULL,
+  book_id        TEXT NOT NULL,
+  chapter        INTEGER NOT NULL, -- reader address
+  verse          INTEGER NOT NULL,
+  position       INTEGER NOT NULL, -- position in original_tokens
+  part           INTEGER NOT NULL,
+  native_chapter INTEGER NOT NULL,
+  native_verse   INTEGER NOT NULL,
+  language       TEXT NOT NULL,
+  surface        TEXT NOT NULL, -- original lexical spelling, including any cantillation
+  form           TEXT NOT NULL, -- grouping form; retains vowel points, accents, spelling
+  morph          TEXT NOT NULL,
+  translit       TEXT,          -- publisher's transliteration when available
+  alternate      INTEGER NOT NULL CHECK (alternate IN (0,1)),
+  surface_start  INTEGER NOT NULL, -- UTF-16 offsets in original_tokens.original
+  surface_end    INTEGER NOT NULL,
+  segments       TEXT,          -- extra span information for a joined multiword lexeme
+  PRIMARY KEY (strongs, edition, book_id, chapter, verse, position, part)
+) WITHOUT ROWID;
+
+-- Denominator for relative frequency: once per tagged source position, regardless of the
+-- number of aliases or bound segments. Chapter is the edition's NATIVE chapter.
+CREATE TABLE word_frequency_chapters (
+  edition TEXT NOT NULL, language TEXT NOT NULL, book_id TEXT NOT NULL,
+  chapter INTEGER NOT NULL, tagged_words INTEGER NOT NULL,
+  PRIMARY KEY (edition,language,book_id,chapter)
+) WITHOUT ROWID;
+
+-- The publisher lists an ID but the available reading does not establish its exact surface.
+CREATE TABLE word_frequency_gaps (
+  edition TEXT NOT NULL, strongs TEXT NOT NULL, reason TEXT NOT NULL, positions INTEGER NOT NULL,
+  PRIMARY KEY (strongs,edition,reason)
+) WITHOUT ROWID;
 
 -- OT textual apparatus: the Ketiv (written) variant beside the Qere (read) main text. The Qere
 -- is what's stored in original_tokens ('MT'); this table keeps the Ketiv so the Variants tab can
@@ -126,6 +185,13 @@ CREATE TABLE lexicon_entries (
 );
 
 CREATE INDEX idx_lex_strongs ON lexicon_entries (strongs, lexicon, sort);
+
+-- One browsable entry per numeric headword, including extended publisher entries
+-- with no counterpart in the historical Strong's dictionary.
+CREATE TABLE lexicon_headwords (
+  id TEXT PRIMARY KEY, language TEXT NOT NULL, lemma TEXT NOT NULL, translit TEXT,
+  gloss TEXT, definition TEXT, lookup_form TEXT NOT NULL, source TEXT NOT NULL
+) WITHOUT ROWID;
 
 -- Scripture-attested parses: every distinct analysis (Strong's + morphology + gloss) that an
 -- original-language WORD FORM receives across the scholar-tagged editions (STEPBible TAGNT for

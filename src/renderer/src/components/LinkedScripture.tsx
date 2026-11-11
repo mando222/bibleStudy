@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
+import type { ChatCitation } from '@shared/types'
 import { parseScriptureRefs } from '@shared/refs'
 import { useAppStore } from '@/store/useAppStore'
 import ScriptureRef from './ScriptureRef'
@@ -25,7 +26,7 @@ interface Span {
  * pane. Original-language words are resolved to a Strong's number by form (getLexiconByWord), so
  * only words we can actually look up become links; everything else stays plain text.
  */
-export default function LinkedScripture({ text }: { text: string }): JSX.Element {
+export default function LinkedScripture({ text, citations }: { text: string; citations?: ChatCitation[] }): JSX.Element {
   const selectStrongs = useAppStore((s) => s.selectStrongs)
   // Cache original-word → Strong's (or null) lookups across renders / streamed updates.
   const cache = useRef<Map<string, string | null>>(new Map())
@@ -74,6 +75,8 @@ export default function LinkedScripture({ text }: { text: string }): JSX.Element
           key={key}
           book={r.book}
           bookName={r.bookName}
+          translation={citations?.find(c => !c.source && c.book === r.book && c.chapter === r.chapter &&
+            c.verse <= r.verse && r.verse <= (c.endVerse ?? c.verse))?.translation}
           chapter={r.chapter}
           verse={r.verse}
           className="text-accent hover:underline font-medium"

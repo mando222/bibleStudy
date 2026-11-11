@@ -1,3 +1,4 @@
+import { studyProfile } from './studyProfile'
 import { app, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -43,7 +44,7 @@ interface UpdateConfig {
 const DEFAULTS: UpdateConfig = { checkOnLaunch: true }
 
 function configPath(): string {
-  return join(app.getPath('userData'), 'updates.json')
+  return join(studyProfile().root, 'updates.json')
 }
 
 function readConfig(): UpdateConfig {

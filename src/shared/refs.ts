@@ -1,6 +1,12 @@
 // Scripture-reference parsing shared by the AI answers (clickable refs) and, later, note
 // auto-linkification. Pure/renderer-safe: no Electron or DOM dependencies.
 import { BOOKS, BOOK_BY_ID } from './books'
+import type { ChatCitation } from './types'
+
+export function citationLabel(citation: ChatCitation): string {
+  const { source, bookName, chapter, verse, endVerse } = citation
+  return source ?? `${bookName} ${chapter}:${verse}${endVerse && endVerse !== verse ? `–${endVerse}` : ''}`
+}
 
 export interface RefMatch {
   start: number // index into the source string
@@ -102,6 +108,39 @@ const NAME_INDEX: Record<string, string> = (() => {
 // "chapter:verse". The phrase is resolved in code — shedding leading non-book words — which handles
 // numbered ("1 Corinthians") and multi-word ("Song of Solomon") names and any spacing.
 const CAND_RE = /((?:[1-3]\s*)?[A-Za-z][A-Za-z.]*(?:\s+[A-Za-z][A-Za-z.]*){0,2})\s*(\d{1,3}):(\d{1,3})/g
+
+export interface ScripturePassage {
+  book: string
+  chapter: number
+  firstVerse?: number
+  lastChapter: number
+  lastVerse?: number
+}
+
+// Named references in study questions may be an entire chapter, a verse range or a single verse.
+const bookNames = [...new Set([...BOOKS.flatMap(b => [b.name, b.id, b.usfm]), ...Object.keys(ABBREV)])]
+  .sort((a, b) => b.length - a.length)
+  .map(name => name.replace(/\s+/g, '\\s*').replace(/^([1-3])(?=[a-z])/i, '$1\\s*'))
+const PASSAGE_RE = new RegExp(
+  `\\b(${bookNames.join('|')})\\.?\\s*(\\d{1,3})(?::(\\d{1,3}))?(?:\\s*[-–—]\\s*(\\d{1,3})(?::(\\d{1,3}))?)?(?![\\d:])`, 'gi'
+)
+
+export function namedPassages(text: string): ScripturePassage[] {
+  const passages: ScripturePassage[] = []
+  for (const [, name, ch, v, end, endV] of text.matchAll(PASSAGE_RE)) {
+    const book = NAME_INDEX[norm(name)]
+    const singleChapterVerse = BOOK_BY_ID[book].chapters === 1 && !v && Number(ch) !== 1
+    const chapter = singleChapterVerse ? 1 : Number(ch)
+    const firstVerse = singleChapterVerse ? Number(ch) : v ? Number(v) : undefined
+    const lastChapter = endV || (end && firstVerse == null) ? Number(end) : chapter
+    const lastVerse = endV ? Number(endV) : firstVerse != null && end ? Number(end) : firstVerse
+    if (chapter > 0 && lastChapter >= chapter && lastChapter <= BOOK_BY_ID[book].chapters &&
+        (!firstVerse || lastChapter > chapter || (lastVerse ?? firstVerse) >= firstVerse)) {
+      passages.push({ book, chapter, firstVerse, lastChapter, lastVerse })
+    }
+  }
+  return passages
+}
 
 /** Find every scripture reference in `text` that resolves to a known book. */
 export function parseScriptureRefs(text: string): RefMatch[] {

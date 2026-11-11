@@ -1,4 +1,4 @@
-import { app } from 'electron'
+import { studyProfile } from '../studyProfile'
 import { join } from 'node:path'
 import { readFileSync, writeFileSync } from 'node:fs'
 import type { AiConfig } from '../../shared/types'
@@ -13,7 +13,7 @@ const DEFAULTS: AiConfig = {
 }
 
 function configPath(): string {
-  return join(app.getPath('userData'), 'ai-config.json')
+  return join(studyProfile().root, 'ai-config.json')
 }
 
 let cache: AiConfig | null = null

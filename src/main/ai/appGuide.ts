@@ -31,19 +31,19 @@ export const APP_GUIDE: GuideSection[] = [
     body: "Use the '+' (add a parallel translation) control in the top toolbar to add columns and read translations side by side. Columns scroll together. Remove a column with the × on its header."
   },
   {
-    title: "Restore the divine names (LORD → Yahweh)",
-    keywords: "divine names yahweh yhwh tetragrammaton lord god elohim adonai jehovah",
-    body: "Click the Divine Names toggle (יהוה) in the top toolbar to render the divine name as Yahweh (and God as Elohim, etc.) instead of LORD. Use the pencil / customize button next to it to enable individual names or set your own rendering. This needs a Strong's-tagged translation such as the KJV or BSB."
-  },
-  {
-    title: "Replace an English word with the original (agape mode)",
-    keywords: "word replace agape overlay render original lemma every occurrence substitute",
-    body: "Open a word's lexicon card (click the word with Strong's on), then use the replace control to show its original word — e.g. render 'love' as 'agape' — everywhere that Strong's number appears. Clear replacements from the bar above the reader."
+    title: "Restore source words and the divine name",
+    keywords: "restore words replace agape divine names yahweh yhwh tetragrammaton lord god elohim adonai jehovah",
+    body: "Turn on Restore words in the reader toolbar. Where a verified source alignment identifies the Hebrew divine name, the reader shows YHWH. Use Choose words to restore to enable other terms. Hover over a restored word to compare translations, or focus the word and press Down Arrow. Each translation shows its verified wording or the verse for context. Source-word evidence identifies the publisher’s row. Copies and assistant selections quote the published translation."
   },
   {
     title: "Highlight and take notes",
     keywords: "highlight note annotate color margin verse menu save",
     body: "Click a verse's number to open its menu, then pick a highlight color or 'Add a note'. Notes and highlights are saved locally and stay with the verse. Your notes and highlights are preserved across app updates."
+  },
+  {
+    title: "Back up or restore your study work",
+    keywords: "backup restore transfer move computer notebook files bookmarks learning progress",
+    body: "Open About and find Study backup. Save backup creates an .obsbackup file. On the destination computer, choose Restore backup and restart. You can find your previous study work in the recovery backup shown before restart."
   },
   {
     title: "Search the Bible",
@@ -79,6 +79,11 @@ export const APP_GUIDE: GuideSection[] = [
     title: "Scholarly lexicons",
     keywords: "lexicon bdb abbott-smith lsj liddell scott brown driver briggs thayer greek hebrew",
     body: "The lexicon card in the study pane has tabs for the scholarly lexicons — Abbott-Smith and LSJ for Greek, BDB for Hebrew — each showing sense divisions with citations, keyed to the word's Strong's number."
+  },
+  {
+    title: "Word frequency in the Words tab",
+    keywords: "heat map heatmap occurrences count distribution concentration inflected forms chapter frequency",
+    body: "Open Words, select a lexicon entry, and open Word frequency. All forms of the entry are included by default. Choose a form to see where that spelling and grammatical analysis occur. The book map shows uses per 1,000 tagged words or total uses. Select a book and chapter to see the original words highlighted. Uses and verses are counted separately because a word can occur several times in one verse. Greek editions can be studied separately, regardless of the reading translation."
   }
 ]
 

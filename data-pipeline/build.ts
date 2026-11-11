@@ -6,10 +6,16 @@
  * data-pipeline/schema.sql for the shape it produces.
  */
 import { DatabaseSync } from 'node:sqlite'
-import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import wordSourceHashes from './assets/word-source-hashes.json'
+import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, renameSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { BOOKS, BOOK_BY_USFM } from '../src/shared/books'
+import { greekReadings, parseStepReference } from './step'
+import { WordFrequencyIndex, parseHebrewFrequency, type HebrewWord } from './wordFrequency'
+import { buildSourceWordSpans } from './sourceWords'
+import { buildWordDirectory } from './wordDirectory'
 import { foldLatinHomoglyphs } from '../src/shared/originalText'
 import {
   cleanLexBody,
@@ -30,6 +36,7 @@ import {
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '..')
 const OUT = join(ROOT, 'resources', 'bible.sqlite')
+const STAGED = `${OUT}.${process.pid}.tmp`
 const SCHEMA = join(HERE, 'schema.sql')
 
 interface TranslationSource {
@@ -142,8 +149,8 @@ const JULIA_SMITH_BASE = 'https://studybible.info/JuliaSmith'
 const JULIA_SMITH_BOOK: Record<string, string> = { Song: 'Song of Songs' } // else use book.name
 
 // STEPBible Translators Amalgamated OT+NT (CC BY 4.0) — tagged original-language editions.
-const STEP_BASE =
-  'https://raw.githubusercontent.com/STEPBible/STEPBible-Data/master/Translators%20Amalgamated%20OT%2BNT'
+const STEP_REPO = 'https://raw.githubusercontent.com/STEPBible/STEPBible-Data/f71b5e51f2d768ae72e3ed69743a7a9df25ef8b5'
+const STEP_BASE = STEP_REPO + '/Translators%20Amalgamated%20OT%2BNT'
 const TAGNT_FILES: [string, string][] = [
   ['tagnt_mat-jhn.txt', `${STEP_BASE}/TAGNT%20Mat-Jhn%20-%20Translators%20Amalgamated%20Greek%20NT%20-%20STEPBible.org%20CC-BY.txt`],
   ['tagnt_act-rev.txt', `${STEP_BASE}/TAGNT%20Act-Rev%20-%20Translators%20Amalgamated%20Greek%20NT%20-%20STEPBible.org%20CC-BY.txt`]
@@ -158,9 +165,9 @@ const TAHOT_FILES: [string, string][] = [
 const EDITIONS: { id: string; name: string; language: string; testament: string; sort: number }[] = [
   { id: 'MT', name: 'Masoretic (WLC)', language: 'hbo', testament: 'OT', sort: 1 },
   { id: 'LXX', name: 'Septuagint (Swete)', language: 'grc', testament: 'OT', sort: 2 },
-  { id: 'NA', name: 'Critical (NA/SBL)', language: 'grc', testament: 'NT', sort: 3 },
-  { id: 'TR', name: 'Textus Receptus', language: 'grc', testament: 'NT', sort: 4 },
-  { id: 'BYZ', name: 'Byzantine', language: 'grc', testament: 'NT', sort: 5 }
+  { id: 'NA', name: 'Critical (NA28, STEPBible)', language: 'grc', testament: 'NT', sort: 3 },
+  { id: 'TR', name: 'Textus Receptus (Scrivener 1894)', language: 'grc', testament: 'NT', sort: 4 },
+  { id: 'BYZ', name: 'Byzantine (Robinson–Pierpont 2005)', language: 'grc', testament: 'NT', sort: 5 }
 ]
 
 // Septuagint — Swete's text (public domain), digitised by Open Greek and Latin / First1KGreek
@@ -212,7 +219,6 @@ const LXX_SWETE_FILES: [string, string][] = [
 // Scholarly lexicons (STEPBible, CC BY 4.0), keyed to extended Strong's numbers. TBESH is the
 // Brown-Driver-Briggs Hebrew lexicon; TBESG the Abbott-Smith Greek NT lexicon; TFLSJ the full
 // Liddell-Scott-Jones (broad Greek incl. LXX/classical). Same 8-column TSV as the tagged texts.
-const STEP_REPO = 'https://raw.githubusercontent.com/STEPBible/STEPBible-Data/master'
 const LEXICON_FILES: { id: string; file: string }[] = [
   { id: 'TBESH', file: 'Lexicons/TBESH - Translators Brief lexicon of Extended Strongs for Hebrew - STEPBible.org CC BY.txt' },
   { id: 'TBESG', file: 'Lexicons/TBESG - Translators Brief lexicon of Extended Strongs for Greek - STEPBible.org CC BY.txt' },
@@ -396,9 +402,8 @@ function reconcileVerseTokens(
  * store them in `derived_tags`. See the header in ./lib and the table comment in schema.sql for
  * what this is and — importantly — what it isn't.
  *
- * Returns per-translation coverage, plus an agreement score: the same derivation is run over the
- * KJV and scored against the KJV's own independent tagging, which the method never sees. That
- * number is the honest accuracy estimate, and the build asserts on it.
+ * Returns per-translation coverage and agreement for KJV units with a tag on both sides.
+ * KJV token data contributes to candidate generation, so this is an internal consistency check.
  */
 function buildDerivedTags(
   db: DatabaseSync
@@ -495,7 +500,7 @@ function buildDerivedTags(
   }
   db.exec('COMMIT')
 
-  // Score the same method against the KJV's independent tagging, which it never sees. Tagger
+  // Score agreement with KJV tagging, which also contributes candidates and attested forms. Tagger
   // tokens can span several words, so expand them to line up word-for-word with the derivation.
   let scored = 0
   let agreed = 0
@@ -532,14 +537,7 @@ function buildDerivedTags(
 /** Tag the BSB with per-word Strong's + original-language alignment from bsb_tables.tsv.
  *  Produces BSB verse_tokens: surface=English gloss, lemma=original word, translit, morph, strongs. */
 async function tagBsb(db: DatabaseSync): Promise<number> {
-  const path = join(HERE, 'sources', 'bsb_tables.tsv')
-  if (!existsSync(path)) {
-    process.stdout.write(' downloading bsb_tables.tsv (~85MB)…')
-    const res = await fetch(BSB_TABLES_URL)
-    if (!res.ok) throw new Error(`GET bsb_tables.tsv → ${res.status}`)
-    mkdirSync(dirname(path), { recursive: true })
-    writeFileSync(path, Buffer.from(await res.arrayBuffer()))
-  }
+  const path = await downloadCached('bsb_tables.tsv', BSB_TABLES_URL)
 
   const bookByName = new Map(BOOKS.map((b) => [b.name, b.id]))
   bookByName.set('Psalm', 'Ps') // BSB uses the singular
@@ -702,61 +700,58 @@ interface Complete {
 
 async function downloadCached(name: string, url: string): Promise<string> {
   const p = join(HERE, 'sources', name)
-  if (!existsSync(p)) {
+  const expected = (wordSourceHashes as Record<string,string>)[name]
+  const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
+  if (!existsSync(p) || (expected && digest(readFileSync(p)) !== expected)) {
     const r = await fetch(url)
     if (!r.ok) throw new Error(`GET ${name} → ${r.status}`)
     mkdirSync(dirname(p), { recursive: true })
-    writeFileSync(p, Buffer.from(await r.arrayBuffer()))
+    const bytes = Buffer.from(await r.arrayBuffer())
+    if (expected && digest(bytes) !== expected)
+      throw new Error(`Publisher data changed for ${name}. Review the new source before updating its recorded checksum.`)
+    writeFileSync(p, bytes)
   }
   return p
 }
 
-const STEP_ROW = /^[A-Za-z0-9]+\.\d+\.\d+#\d+/
-
-/** Build TR / Byzantine / Critical (NA) Greek editions from TAGNT (per-word edition membership). */
-async function buildGreekEditions(db: DatabaseSync): Promise<number> {
+/** Reconstruct each named edition from TAGNT's readings, spellings and order markers.
+ * Reader addresses follow KJV versification so parallel editions and links agree. Preserve
+ * native chapter and verse on every token (e.g. the Byzantine placement of Rom 16:25). */
+async function buildGreekEditions(db: DatabaseSync, frequencies: WordFrequencyIndex): Promise<number> {
   const ins = db.prepare(
-    `INSERT OR REPLACE INTO original_tokens (edition, book_id, chapter, verse, position, original, translit, strongs, morph, gloss)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`
+    `INSERT INTO original_tokens
+       (edition, book_id, chapter, verse, position, original, translit, strongs, morph, gloss, native_chapter, native_verse)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
   )
   let count = 0
   for (const [name, url] of TAGNT_FILES) {
     const path = await downloadCached(name, url)
-    const lines = readFileSync(path, 'utf8').split('\n')
-    let curVerse = ''
-    const pos: Record<string, number> = { NA: 0, TR: 0, BYZ: 0 }
-    db.exec('BEGIN')
-    for (const line of lines) {
-      if (!STEP_ROW.test(line)) continue
+    const verses = new Map<string, {book: string; chapter: number; verse: number; words: ReturnType<typeof greekReadings>}>()
+    for (const line of readFileSync(path, 'utf8').split('\n')) {
+      if (!/^[A-Za-z0-9]+\.\d/.test(line)) continue
       const c = line.split('\t')
-      const m = /^([A-Za-z0-9]+)\.(\d+)\.(\d+)#\d+/.exec(c[0])
-      if (!m) continue
-      const book = stepBookId(m[1])
-      if (!book) continue
-      const chapter = Number(m[2])
-      const verse = Number(m[3])
-      const vk = `${book}.${chapter}.${verse}`
-      if (vk !== curVerse) {
-        curVerse = vk
-        pos.NA = 0
-        pos.TR = 0
-        pos.BYZ = 0
+      const ref = parseStepReference(c[0])
+      if (!ref) throw new Error(`Unknown TAGNT reference: ${c[0]}`)
+      const book = stepBookId(ref.book)
+      if (!book) throw new Error(`Unknown TAGNT book: ${ref.book}`)
+      const {chapter, verse} = ref.kjv ?? ref
+      for (const word of greekReadings(c, ref)) {
+        const key = `${word.edition}:${book}:${chapter}:${verse}`
+        let group = verses.get(key)
+        if (!group) verses.set(key, group = {book, chapter, verse, words: []})
+        // When adjacent source verses contribute to one English verse, retain their sequence.
+        word.order += (ref.chapter * 1000 + ref.verse) * 1000
+        group.words.push(word)
       }
-      const sp = c[1].indexOf(' (')
-      const original = (sp >= 0 ? c[1].slice(0, sp) : c[1]).trim()
-      const translit = sp >= 0 ? c[1].slice(sp + 2).replace(/\)\s*$/, '').trim() : null
-      const gloss = (c[2] || '').trim() || null
-      const [sRaw, morph] = (c[3] || '').split('=')
-      const strongs = normStrongs(sRaw || '')
-      const ed = c[5] || ''
-      const mem: string[] = []
-      if (/NA2[78]|SBL/.test(ed)) mem.push('NA')
-      if (/(^|\+)TR(\+|$)/.test(ed)) mem.push('TR')
-      if (/Byz/.test(ed)) mem.push('BYZ')
-      for (const e of mem) {
-        ins.run(e, book, chapter, verse, pos[e]++, original, translit, strongs, morph || null, gloss)
+    }
+    db.exec('BEGIN')
+    for (const {book, chapter, verse, words} of verses.values()) {
+      words.sort((a,b) => a.order - b.order)
+      words.forEach((w, pos) => {
+        ins.run(w.edition,book,chapter,verse,pos,w.original,w.translit,w.strongs,w.morph,w.gloss,w.nativeChapter,w.nativeVerse)
+        frequencies.greek(book,chapter,verse,pos,w)
         count++
-      }
+      })
     }
     db.exec('COMMIT')
   }
@@ -764,10 +759,10 @@ async function buildGreekEditions(db: DatabaseSync): Promise<number> {
 }
 
 /** Build the Masoretic (MT) Hebrew edition from TAHOT, capturing Ketiv/Qere variants. */
-async function buildHebrewEdition(db: DatabaseSync): Promise<{ count: number; kq: number }> {
+async function buildHebrewEdition(db: DatabaseSync, frequencies: WordFrequencyIndex): Promise<{ count: number; kq: number }> {
   const ins = db.prepare(
-    `INSERT OR REPLACE INTO original_tokens (edition, book_id, chapter, verse, position, original, translit, strongs, morph, gloss)
-     VALUES ('MT',?,?,?,?,?,?,?,?,?)`
+    `INSERT OR REPLACE INTO original_tokens (edition, book_id, chapter, verse, position, original, translit, strongs, morph, gloss, native_chapter, native_verse, source_type)
+     VALUES ('MT',?,?,?,?,?,?,?,?,?,?,?,?)`
   )
   // The Ketiv ("written") variant beside the Qere ("read") main text. TAHOT marks such words with a
   // `=Q(K)` type on the ref column (uppercase K = affects translation), and gives the Ketiv Hebrew
@@ -782,19 +777,21 @@ async function buildHebrewEdition(db: DatabaseSync): Promise<{ count: number; kq
     const path = await downloadCached(name, url)
     const lines = readFileSync(path, 'utf8').split('\n')
     let curVerse = ''
+    let frequencyWords: HebrewWord[] = []
     let pos = 0
     db.exec('BEGIN')
     for (const line of lines) {
-      if (!STEP_ROW.test(line)) continue
+      if (!/^[A-Za-z0-9]+\.\d/.test(line)) continue
       const c = line.split('\t')
-      const m = /^([A-Za-z0-9]+)\.(\d+)\.(\d+)#\d+(?:=(\S+))?/.exec(c[0])
-      if (!m) continue
-      const book = stepBookId(m[1])
-      if (!book) continue
-      const chapter = Number(m[2])
-      const verse = Number(m[3])
+      const ref = parseStepReference(c[0])
+      if (!ref) throw new Error(`Unknown TAHOT reference: ${c[0]}`)
+      const book = stepBookId(ref.book)
+      if (!book) throw new Error(`Unknown TAHOT book: ${ref.book}`)
+      const {chapter, verse} = ref
       const vk = `${book}.${chapter}.${verse}`
       if (vk !== curVerse) {
+        frequencies.hebrewVerse(frequencyWords)
+        frequencyWords = []
         curVerse = vk
         pos = 0
       }
@@ -805,13 +802,16 @@ async function buildHebrewEdition(db: DatabaseSync): Promise<{ count: number; kq
       const strongs = normStrongs(c[8] || c[4] || '')
       const morph = (c[5] || '').trim() || null
       const position = pos
-      ins.run(book, chapter, verse, position, original, translit, strongs, morph, gloss)
+      ins.run(book, chapter, verse, position, original, translit, strongs, morph, gloss, ref.native?.chapter ?? chapter, ref.native?.verse ?? verse, ref.type)
+      const frequencyWord = parseHebrewFrequency(c, ref.type, { book,chapter,verse,position,
+        nativeChapter:ref.native?.chapter ?? chapter, nativeVerse:ref.native?.verse ?? verse })
+      if (frequencyWord) frequencyWords.push(frequencyWord)
       count++
 
       // Ketiv/Qere? The type looks like Q(K), Q(k), or Q(K+B) — the letter case marks significance.
       // The Ketiv Hebrew appears in one of two TAHOT forms: "K= translit (Hebrew) …" (parens), or
       // ";K= Hebrew" (direct). Prefer the parens form; fall back to the direct one.
-      const kqType = /^Q\(([Kk])/.exec(m[4] || '')
+      const kqType = /^Q\(([Kk])/.exec(ref.type)
       if (kqType) {
         const paren = /[;\s]K=\s*[^\t(]*\(([^)]+)\)/.exec(line)
         const direct = /[;\s]K=\s*([^\t¦(]+)/.exec(line)
@@ -825,6 +825,7 @@ async function buildHebrewEdition(db: DatabaseSync): Promise<{ count: number; kq
       }
       pos++
     }
+    frequencies.hebrewVerse(frequencyWords)
     db.exec('COMMIT')
   }
   return { count, kq }
@@ -844,6 +845,21 @@ async function buildSeptuagintEdition(db: DatabaseSync): Promise<number> {
   for (const [book, file] of LXX_SWETE_FILES) {
     const path = await downloadCached(`lxx_${file}`, `${LXX_BASE}/${encodeURIComponent(file)}`)
     const lines = readFileSync(path, 'utf8').split('\n')
+    // First1KGreek's export sometimes gives the unnumbered title before a Psalm
+    // the previous Psalm's last verse number. Keep such front matter at verse 0.
+    const firstSlots = new Map<number, number[]>()
+    if (book === 'Ps') {
+      for (const line of lines) {
+        const loc = /^\d+\.(\d+)\.(\d+) /.exec(line)
+        if (!loc) continue
+        const ch = Number(loc[1])
+        const slots = firstSlots.get(ch) ?? []
+        if (slots.length < 2 && slots.at(-1) !== Number(loc[2])) slots.push(Number(loc[2]))
+        firstSlots.set(ch, slots)
+      }
+    }
+    let lastChapter = -1
+    let inTitle = false
     let curVerse = ''
     let pos = 0
     db.exec('BEGIN')
@@ -855,7 +871,14 @@ async function buildSeptuagintEdition(db: DatabaseSync): Promise<number> {
       const original = raw.slice(sp + 1).trim().replace(strip, '')
       if (!original) continue
       const chapter = Number(m[1])
-      const verse = Number(m[2])
+      let verse = Number(m[2])
+      if (chapter !== lastChapter) {
+        const slots = firstSlots.get(chapter)
+        inTitle = !!slots && slots[0] > 1 && slots[1] === 1
+        lastChapter = chapter
+      }
+      if (verse === 1) inTitle = false
+      if (inTitle) verse = 0
       const vk = `${chapter}.${verse}`
       if (vk !== curVerse) {
         curVerse = vk
@@ -951,6 +974,17 @@ function buildOriginalReadingEditions(db: DatabaseSync): { id: string; verses: n
   const insFts = db.prepare(
     'INSERT INTO verses_fts (text, translation_id, book_id, chapter, verse) VALUES (?,?,?,?,?)'
   )
+  // The Greek NT is searchable in every edition, even when the reader displays English.
+  // Its native interlinear stays keyed to edition; only MT and LXX are standalone reading versions.
+  for (const edition of ['NA', 'TR', 'BYZ']) {
+    const text = db.prepare(`SELECT book_id, chapter, verse, group_concat(original, ' ' ORDER BY position) AS text
+      FROM original_tokens WHERE edition=? GROUP BY book_id, chapter, verse`)
+    db.exec('BEGIN')
+    for (const row of text.iterate(edition)) {
+      insFts.run(foldOriginal(String(row.text)), edition, row.book_id, row.chapter, row.verse)
+    }
+    db.exec('COMMIT')
+  }
   const out: { id: string; verses: number }[] = []
   for (const d of defs) {
     insTrans.run(d.id, d.abbrev, d.name, d.language, d.direction, d.license, d.attribution, d.sort)
@@ -1128,7 +1162,7 @@ async function buildTheographic(
   db: DatabaseSync
 ): Promise<{ people: number; places: number; events: number }> {
   const BASE =
-    'https://raw.githubusercontent.com/robertrouse/theographic-bible-metadata/master/json'
+    'https://raw.githubusercontent.com/robertrouse/theographic-bible-metadata/cfb1c485d4da6fb63a69cb3b7f5b0752792f46bc/json'
   type Rec = { id: string; fields: Record<string, unknown> }
   const load = async (name: string): Promise<Rec[]> =>
     JSON.parse(readFileSync(await downloadCached(`theo_${name}.json`, `${BASE}/${name}.json`), 'utf8'))
@@ -1383,8 +1417,8 @@ function buildVocab(db: DatabaseSync): number {
   const rows = db
     .prepare(
       `SELECT ot.strongs AS strongs, COUNT(*) AS freq, sl.lemma AS lemma, sl.translit AS translit,
-              sl.kjv_def AS kjv, sl.definition AS def
-       FROM original_tokens ot LEFT JOIN strongs_lexicon sl ON sl.id = ot.strongs
+              sl.gloss AS kjv, sl.definition AS def
+       FROM original_tokens ot LEFT JOIN lexicon_headwords sl ON sl.id = ot.strongs
        WHERE ot.edition IN ('NA','MT') AND ot.strongs IS NOT NULL AND ot.strongs != ''
        GROUP BY ot.strongs`
     )
@@ -1467,11 +1501,11 @@ function buildGrammar(db: DatabaseSync): number {
 
 async function main(): Promise<void> {
   mkdirSync(dirname(OUT), { recursive: true })
-  for (const f of [OUT, `${OUT}-wal`, `${OUT}-shm`, `${OUT}-journal`]) {
+  for (const f of [STAGED, `${STAGED}-journal`]) {
     if (existsSync(f)) rmSync(f)
   }
 
-  const db = new DatabaseSync(OUT)
+  const db = new DatabaseSync(STAGED)
   db.exec('PRAGMA journal_mode = MEMORY; PRAGMA synchronous = OFF;')
   db.exec(readFileSync(SCHEMA, 'utf8'))
 
@@ -1660,9 +1694,26 @@ async function main(): Promise<void> {
   }
   process.stdout.write('\n')
 
+  const insEdition = db.prepare(
+    'INSERT OR REPLACE INTO editions (id, name, language, testament, sort_order) VALUES (?,?,?,?,?)'
+  )
+  for (const e of EDITIONS) insEdition.run(e.id, e.name, e.language, e.testament, e.sort)
+  process.stdout.write('• Hebrew interlinear (Masoretic)…')
+  const frequencies = new WordFrequencyIndex(db)
+  const mt = await buildHebrewEdition(db, frequencies)
+  process.stdout.write(` ${mt.count} (+${mt.kq} Ketiv/Qere)\n`)
+  process.stdout.write('• Greek interlinear (TR/Byz/Critical)…')
+  const grcCount = await buildGreekEditions(db, frequencies)
+  frequencies.finish()
+  process.stdout.write(` ${grcCount}\n`)
+  // Verify each KJV link against its Hebrew/Aramaic or Greek witness and its own original tags.
+  process.stdout.write('• Verifying Berean source-word spans…')
+  buildSourceWordSpans(db, join(HERE, 'sources', 'bsb_tables.tsv'))
+  process.stdout.write(' done\n')
+
   // Backfill divine-name tags the KJV Strong's source left blank. In the KJV OT, small-caps
-  // LORD/GOD always render the Tetragrammaton (YHWH, and YHWH beside Adonai); tagging the gaps
-  // makes every occurrence clickable for study and reachable by the Divine Names feature.
+  // LORD/GOD conventionally render the Tetragrammaton (YHWH, and YHWH beside Adonai).
+  // Backfilled links are available for word study after the restoration evidence has been sealed.
   const otBooks = "(SELECT id FROM books WHERE testament='OT')"
   const fixLord = db
     .prepare(
@@ -1686,16 +1737,7 @@ async function main(): Promise<void> {
       `  |  ${derived.agreement}% agreement vs the KJV's own tagging\n`
   )
 
-  // Original-language editions (selectable interlinear bases)
-  const insEdition = db.prepare(
-    'INSERT OR REPLACE INTO editions (id, name, language, testament, sort_order) VALUES (?,?,?,?,?)'
-  )
-  for (const e of EDITIONS) insEdition.run(e.id, e.name, e.language, e.testament, e.sort)
-  process.stdout.write('• Interlinear editions: Hebrew (Masoretic)…')
-  const mt = await buildHebrewEdition(db)
-  process.stdout.write(` ${mt.count} (+${mt.kq} Ketiv/Qere) · Greek (TR/Byz/Critical)…`)
-  const grcCount = await buildGreekEditions(db)
-  process.stdout.write(` ${grcCount} · Septuagint (Swete + Esdras B)…`)
+  process.stdout.write('• Septuagint (Swete + Esdras B)…')
   const lxxCount = await buildSeptuagintEdition(db)
   process.stdout.write(` ${lxxCount}\n`)
 
@@ -1711,6 +1753,7 @@ async function main(): Promise<void> {
 
   process.stdout.write('• Lexicons (BDB / Abbott-Smith / LSJ)…')
   const lexEntries = await buildLexicons(db)
+  buildWordDirectory(db)
   process.stdout.write(` ${lexEntries} entries\n`)
 
   process.stdout.write('• Scripture-attested parses (scholar-tagged)…')
@@ -1745,13 +1788,37 @@ async function main(): Promise<void> {
   insMeta.run('schema_version', '1')
   insMeta.run(
     'sources',
-    'helloao Free Use Bible API; openscriptures/strongs (CC-BY-SA); kaiserlik/kjv (KJV+Strong’s); bereanbible.com bsb_tables (BSB interlinear, public domain); STEPBible TAHOT/TAGNT + lexicons TBESH/TBESG/TFLSJ (CC-BY); Septuagint: Swete via Open Greek and Latin / First1KGreek, nathans/lxx-swete (CC-BY-SA 4.0); Theographic Bible Metadata (people/places/events, CC-BY-SA 4.0); Natural Earth land (public domain); Treasury of Scripture Knowledge cross-references via OpenBible.info (CC-BY); hand-authored kingdoms overlay (this project, CC0); Greek grammar course authored for this project, readings rendered from the tagged Greek NT (Nestle 1904 PD / STEPBible CC-BY)'
+    'helloao Free Use Bible API; openscriptures/strongs (CC-BY-SA); kaiserlik/kjv (KJV+Strong’s); bereanbible.com bsb_tables (BSB interlinear, public domain); STEPBible TAHOT/TAGNT + lexicons TBESH/TBESG/TFLSJ (CC-BY); Septuagint: Swete via Open Greek and Latin / First1KGreek, nathans/lxx-swete (CC-BY-SA 4.0); Theographic Bible Metadata (people/places/events, CC-BY-SA 4.0); Natural Earth land (public domain); Treasury of Scripture Knowledge cross-references via OpenBible.info (CC-BY); hand-authored kingdoms overlay (this project, CC0); Greek grammar course authored for this project, readings rendered from the NA28 readings represented by STEPBible TAGNT (CC BY 4.0)'
   )
 
   // ---- assertions --------------------------------------------------------
   const errors: string[] = []
   const bookCount = (db.prepare('SELECT COUNT(*) n FROM books').get() as { n: number }).n
   if (bookCount !== 66) errors.push(`expected 66 books, got ${bookCount}`)
+
+  // Ground the frequency totals in attested readings, including a row-level alternate ID,
+  // an edition-specific absence, and an attached Hebrew preposition in Genesis 1:1.
+  const freqCount = db.prepare('SELECT COUNT(*) n FROM word_frequency_occurrences WHERE edition=? AND strongs=?')
+  for (const edition of ['NA', 'TR', 'BYZ']) {
+    const n = Number(freqCount.get(edition,'G33')?.n)
+    if (n !== 3) errors.push(`${edition}: expected 3 Greek G33 alternate-tagged uses, got ${n}`)
+    const rare = Number(freqCount.get(edition,'G1207')?.n)
+    if (rare !== (edition === 'NA' ? 0 : 1)) errors.push(`${edition}: unexpected G1207 count ${rare}`)
+  }
+  const love = db.prepare(`SELECT COUNT(*) AS uses, COUNT(DISTINCT form) AS forms
+    FROM word_frequency_occurrences WHERE edition='NA' AND strongs='G26'`).get()
+  if (love?.uses !== 116 || love.forms !== 5) errors.push('NA G26 frequency/forms disagree with tagged readings')
+  const inBeginning = db.prepare(`SELECT form FROM word_frequency_occurrences WHERE edition='MT'
+    AND strongs='H9003' AND book_id='Gen' AND chapter=1 AND verse=1 AND position=0`).get()
+  if (inBeginning?.form !== 'בְּ'.normalize('NFC')) errors.push('Missing Hebrew prefix from Genesis 1:1')
+  if (db.prepare("SELECT 1 FROM word_frequency_occurrences WHERE strongs BETWEEN 'H9014' AND 'H9019' LIMIT 1").get()) {
+    errors.push('TAHOT punctuation markers must not be indexed as lexical words')
+  }
+  const name = db.prepare(`SELECT segments FROM word_frequency_occurrences WHERE edition='MT' AND
+    strongs='H7163' AND book_id='Job' AND chapter=42 AND verse=14`).all()
+  if (name.length !== 1 || JSON.parse(String(name[0]?.segments ?? '[]')).length !== 2) {
+    errors.push('Keren-happuch in Job 42:14 must be one use spanning two tagged source words')
+  }
 
   for (const s of summary) {
     // Julia Smith is scraped and may have minor gaps; assert it more loosely.
@@ -1871,8 +1938,7 @@ async function main(): Promise<void> {
     errors.push(`TNT John 3:16 should keep 1534 spelling: ${tntJohn?.text ?? '(missing)'}`)
   }
 
-  // The derivation is inferred, so the build measures it rather than trusting it: score the same
-  // method against the KJV's independent tagging and refuse to ship if it degrades.
+  // Detect regressions in the internal KJV agreement metric.
   if (derived.agreement < 90) {
     errors.push(`derived word tags only ${derived.agreement}% agreement vs the KJV (expected >= 90%)`)
   }
@@ -2005,6 +2071,19 @@ async function main(): Promise<void> {
   ).n
   if (lxxTagged < 100000) errors.push(`LXX tagging too sparse: ${lxxTagged} words`)
 
+  const count = (sql: string): number => Number(db.prepare(sql).get()?.n)
+  if (count("SELECT COUNT(*) n FROM verses WHERE translation_id='MT' AND book_id='Ps' AND chapter=51 AND verse>0") !== 19)
+    errors.push('The Hebrew reader must contain all 19 numbered verses of Psalm 51')
+  if (count("SELECT COUNT(*) n FROM verses WHERE translation_id='MT' AND verse>0") !== 23145)
+    errors.push('The Hebrew reader must contain all 23,145 numbered OT verses')
+  if (count("SELECT COUNT(DISTINCT verse) n FROM original_tokens WHERE edition='NA' AND book_id='Rom' AND chapter=16 AND verse BETWEEN 25 AND 27") !== 3)
+    errors.push('Romans 16:25–27 missing from the Greek NT')
+  if (count("SELECT COUNT(*) n FROM original_tokens WHERE edition='NA' AND book_id='Jude' AND verse=5 AND strongs='G2424'") !== 1 ||
+      count("SELECT COUNT(*) n FROM original_tokens WHERE edition='TR' AND book_id='Jude' AND verse=5 AND strongs='G2962'") !== 1)
+    errors.push('Jude 1:5 must follow the edition-specific reading')
+  if (count("SELECT COUNT(*) n FROM verses_fts WHERE translation_id='NA' AND verses_fts MATCH 'αγαπη*' AND book_id='1Cor' AND chapter=13 AND verse=4") !== 1)
+    errors.push('Folded Greek NT full-text index did not find 1 Corinthians 13:4')
+
   // Esdras B split → Ezra + Nehemiah now present in the LXX.
   for (const b of ['Ezra', 'Neh']) {
     const n = (
@@ -2097,12 +2176,14 @@ async function main(): Promise<void> {
   if (errors.length) {
     console.error('\n✗ ASSERTIONS FAILED:')
     for (const e of errors) console.error(`  - ${e}`)
-    process.exit(1)
+    throw new Error('Database integrity checks failed')
   }
+  renameSync(STAGED, OUT)
   console.log('✓ All assertions passed.')
 }
 
 main().catch((err) => {
+  rmSync(STAGED, { force: true })
   console.error(err)
   process.exit(1)
 })

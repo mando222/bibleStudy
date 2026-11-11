@@ -18,7 +18,7 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
   const activeVerse = useAppStore((s) => s.activeVerse)
 
   const [files, setFiles] = useState<NotebookFile[]>([])
-  const { content, edit, flush, ready, status, error } = useNotebookDocument(active, visible)
+  const { content, edit, flush, recover, checkpoint, ready, status, error } = useNotebookDocument(active, visible)
   const [folder, setFolder] = useState('')
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
@@ -116,8 +116,8 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
         null,
         contextLine
       )
-      if (res.error) setAiErr(res.error)
-      setProposal(res.text || '(no output)')
+      if (res.error || !res.text.trim()) setAiErr(res.error || 'The assistant returned no text.')
+      else setProposal(res.text)
     } catch (e) {
       setAiErr(e instanceof Error ? e.message : String(e))
     } finally {
@@ -126,7 +126,7 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
   }
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col">
+    <div className="flex-1 min-h-0 flex flex-col" {...(checkpoint ? { inert: '' } : {})}>
       <div className="shrink-0 border-b border-line px-2 py-1 flex items-center gap-2 text-[11px] text-muted">
         <span className="truncate" title={folder}>
           {folder || 'Notebook folder'}
@@ -193,7 +193,20 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
       {(error || fileError) && (
         <div role="alert" className="p-2 text-sm text-red-500">
           {fileError || error}
-          {error && ready && <button onClick={() => void runFileAction(async () => {})} className="ml-2 underline">Retry save</button>}
+          {error && ready && <>
+            <button disabled={busy} onClick={() => void runFileAction(async () => {})} className="ml-2 underline">Retry save</button>
+            <button disabled={busy} onClick={async () => {
+              setBusy(true)
+              try {
+                const name = await recover()
+                setFileError(null)
+                refreshFiles()
+                setActive(name)
+              } catch (err) {
+                setFileError(err instanceof Error ? err.message : 'Could not save a copy.')
+              } finally { setBusy(false) }
+            }} className="ml-2 underline">Save draft as a copy</button>
+          </>}
         </div>
       )}
 

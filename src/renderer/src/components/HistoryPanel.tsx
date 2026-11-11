@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Bookmark, HistoryEntry } from '@shared/types'
 import { useAppStore } from '@/store/useAppStore'
+import { mapChapter, mapPassage } from '@shared/passageMapping'
 import { BOOK_BY_ID } from '@shared/books'
 import { ClockIcon, BookmarkIcon } from './icons'
 
@@ -8,6 +9,10 @@ import { ClockIcon, BookmarkIcon } from './icons'
 export default function HistoryPanel(): JSX.Element {
   const book = useAppStore((s) => s.book)
   const chapter = useAppStore((s) => s.chapter)
+  const activeVerse = useAppStore((s) => s.activeVerse)
+  const edition = useAppStore((s) => s.referenceEdition || s.primary)
+  const canonical = activeVerse == null ? mapChapter({ book, chapter }, edition, 'KJV')
+    : mapPassage({ book, chapter, verse: activeVerse }, edition, 'KJV')
   const goToVerse = useAppStore((s) => s.goToVerse)
   const [open, setOpen] = useState(false)
   const [history, setHistory] = useState<HistoryEntry[]>([])
@@ -25,7 +30,7 @@ export default function HistoryPanel(): JSX.Element {
   useEffect(() => {
     if (open) {
       refresh()
-      setName(`${bookName(book)} ${chapter}`)
+      setName(`${bookName(book)} ${chapter}${activeVerse != null ? ':' + activeVerse : ''}${edition === 'LXX' ? ' (LXX)' : ''}`)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -41,8 +46,9 @@ export default function HistoryPanel(): JSX.Element {
   }, [open])
 
   const addBookmark = async (): Promise<void> => {
-    const nm = name.trim() || `${bookName(book)} ${chapter}`
-    await window.api.addBookmark({ name: nm, book, chapter, verse: 1 })
+    if (!canonical) return
+    const nm = name.trim() || `${bookName(book)} ${chapter}${activeVerse != null ? ':' + activeVerse : ''}${edition === 'LXX' ? ' (LXX)' : ''}`
+    await window.api.addBookmark({ name: nm, ...canonical, verse: 'verse' in canonical ? Number(canonical.verse) : 1 })
     refresh()
   }
   const removeBookmark = async (id: number): Promise<void> => {
@@ -73,6 +79,8 @@ export default function HistoryPanel(): JSX.Element {
               className="flex-1 min-w-0 bg-elevated border border-line rounded-md px-2 py-1 text-xs text-ink outline-none focus:border-accent"
             />
             <button
+              disabled={!canonical}
+              title={canonical ? undefined : 'No verified equivalent for this bookmark'}
               onClick={addBookmark}
               className="px-2 py-1 rounded-md bg-accent text-white text-xs hover:opacity-90 whitespace-nowrap"
             >

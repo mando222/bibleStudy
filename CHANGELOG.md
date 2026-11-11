@@ -16,6 +16,27 @@ Group changes under: **Added** (new features), **Changed** (changes to existing 
 
 _Nothing yet._
 
+## [0.4.0] - 2026-11-11
+
+The Words tab now lets you follow a Hebrew, Aramaic, or Greek word from its dictionary entry to the exact forms and verses behind its frequency map.
+
+### Added
+
+- **Word frequency in the Words tab.** Each entry has a map of its recorded uses in the selected original-language edition. Start with all forms together or choose a form, then follow a book and chapter to its highlighted occurrences. The map distinguishes an edition with no recorded matches from a gap in source tagging.
+- **Compare restored words.** Hover over a restored word to see each translation’s published wording. Where the app cannot verify the exact word, it shows the verse for context. Open Source-word evidence to inspect the original form and the publisher’s record.
+- **Study backup and restore.** Move your verse notes, highlights, bookmarks, learning progress, imported translations, notebook files, assistant documents and reading preferences to another installation.
+- **Browse every result.** Search, the Words browser and the concordance now let you page through matches. Search also covers imported Bible text and Greek New Testament editions.
+
+### Fixed
+
+- **Missing Hebrew dictionary cards.** Dictionary references with a leading zero now open the right entry: the **H02** link under *Abba* opens **H2**, Aramaic for “father.” Words, the interlinear, and vocabulary cards also show the bundled scholarly entry when a word or grammatical component has no historical Strong’s entry. Hebrew dictionary search accepts spellings without vowel points.
+- **Source words.** All 45 lexical entries in Restore words use fixed source spellings. The reader shows YHWH for the verified four-letter name and the attested transliteration for other selected words. It keeps the published wording for pronouns, ambiguous meanings and forms whose prefixes or suffixes would duplicate the surrounding grammar. Copying a passage or asking the assistant about it uses the published translation.
+
+- **Missing Hebrew and Greek passages.** The original-language importer now reads alternate verse numbering, edition-specific readings and moved words. This restores Hebrew Psalm 51 and the closing verses of Romans. English and Septuagint parallels now align corresponding passages and show their native references.
+- **Protect notebook edits and verse notes.** A detached window saves to the folder it opened, conflicting edits can be recovered, and an unsuccessful translation import rolls back before later notes are saved.
+- **More accurate study tools.** Strong’s searches respect the selected translation and testament. Hebrew lessons display words in reading order, and language switches start the appropriate quiz or flashcard session.
+- **Assistant sources.** Naming a passage retrieves its text in the selected translation. The PDF importer reads text using the installed parser.
+
 ## [0.3.1] - 2026-09-25
 
 This maintenance release makes everyday study more reliable, with particular care for notebook
