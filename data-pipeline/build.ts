@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { BOOKS, BOOK_BY_USFM } from '../src/shared/books'
 import { greekReadings, parseStepReference } from './step'
+import { readPrintedOrder, checkPrintedOrder } from './greekOrder'
 import { WordFrequencyIndex, parseHebrewFrequency, type HebrewWord } from './wordFrequency'
 import { buildSourceWordSpans } from './sourceWords'
 import { buildWordDirectory } from './wordDirectory'
@@ -622,6 +623,12 @@ async function downloadCached(name: string, url: string): Promise<string> {
  * Reader addresses follow KJV versification so parallel editions and links agree. Preserve
  * native chapter and verse on every token (e.g. the Byzantine placement of Rom 16:25). */
 async function buildGreekEditions(db: DatabaseSync, frequencies: WordFrequencyIndex): Promise<number> {
+  const printed: Record<string, Map<string, string[]>> = {}
+  for (const [edition, archive] of [['TR', 'SCR-ASCII.ZIP'], ['BYZ', 'BYZ-ASCII.ZIP']] as const) {
+    const path = await downloadCached(archive, 'https://www.byztxt.com/download/' + archive)
+    printed[edition] = readPrintedOrder(readFileSync(path), edition)
+  }
+  const uncertainOrder = db.prepare('INSERT INTO greek_order_uncertainties VALUES (?,?,?,?)')
   const ins = db.prepare(
     `INSERT INTO original_tokens
        (edition, book_id, chapter, verse, position, original, translit, strongs, morph, gloss, native_chapter, native_verse)
@@ -651,7 +658,13 @@ async function buildGreekEditions(db: DatabaseSync, frequencies: WordFrequencyIn
     db.exec('BEGIN')
     for (const {book, chapter, verse, words} of verses.values()) {
       words.sort((a,b) => a.order - b.order)
-      words.forEach((w, pos) => {
+      const edition = words[0].edition
+      const nativeRefs = new Set(words.map(w => book + '.' + w.nativeChapter + '.' + w.nativeVerse))
+      const order = edition === 'NA'
+        ? { words, uncertain: words.some(w => w.displaced) }
+        : checkPrintedOrder(words, nativeRefs.size === 1 ? printed[edition].get([...nativeRefs][0]) : undefined)
+      if (order.uncertain) uncertainOrder.run(edition, book, chapter, verse)
+      order.words.forEach((w, pos) => {
         ins.run(w.edition,book,chapter,verse,pos,w.original,w.translit,w.strongs,w.morph,w.gloss,w.nativeChapter,w.nativeVerse)
         frequencies.greek(book,chapter,verse,pos,w)
         count++

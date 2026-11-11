@@ -1,3 +1,4 @@
+import { readChapterApparatus, readOriginalVerse } from './apparatus'
 import { DatabaseSync } from 'node:sqlite'
 import type { VerseLayout } from '../../shared/literaryLayout'
 import { existsSync } from 'node:fs'
@@ -6,9 +7,11 @@ import { app } from 'electron'
 import { greekNtEditions, greekScript, hebrewScript, scopedBooks, searchText } from './search'
 import { mapPassage } from '../../shared/passageMapping'
 import { foldLatinHomoglyphs } from '../../shared/originalText'
+import { sweteReadingIssue } from '../../shared/lxxIntegrity'
 import { lexiconId } from '../../shared/lexiconId'
 import { splitVerseUnits, unpackTags } from '../../shared/verseUnits'
-import { isSourceForm, SOURCE_WORD_ALIGNMENT_VERSION } from '../../shared/sourceWords'
+import { SOURCE_WORD_ALIGNMENT_VERSION } from '../../shared/sourceWords'
+import { countSourceSpans, publisherForm } from './sourceWordCoverage'
 import type {
   Translation,
   ChapterRef,
@@ -17,6 +20,7 @@ import type {
   Verse,
   VerseToken,
   SourceWord,
+  SourceWordCoverage,
   StrongsEntry,
   SearchQuery,
   SearchResponse,
@@ -25,7 +29,6 @@ import type {
   ConcordanceResponse,
   Edition,
   InterlinearContent,
-  VariantItem,
   VerseVariant,
   LexiconGroup,
   LexiconEntry,
@@ -38,7 +41,13 @@ import type {
 
 let db: DatabaseSync | null = null
 let hasVerifiedSourceWords = false
+let hasSourceSingletons = false
+let hasSourceCoverage = false
+const legacyCoverage = new Map<string, SourceWordCoverage[]>()
 let hasLiteraryLayout = false
+let hasMasoreticSourceTypes = false
+let hasKetivPairs = false
+let hasGreekOrderReview = false
 
 function resolveDbPath(): string | null {
   // app.getAppPath() is the app root when launched as `electron .`, but the SCRIPT'S directory when
@@ -63,8 +72,13 @@ export function openBibleDb(): boolean {
   db = new DatabaseSync(path, { readOnly: true })
   db.exec('PRAGMA foreign_keys = OFF;')
   hasLiteraryLayout = hasTable('verse_layout')
+  hasMasoreticSourceTypes = db.prepare("SELECT 1 FROM pragma_table_info('original_tokens') WHERE name='source_type'").get() !== undefined
+  hasKetivPairs = hasTable('ketiv_qere')
+  hasGreekOrderReview = hasTable('greek_order_uncertainties')
   hasVerifiedSourceWords = hasTable('source_word_spans') && hasTable('meta') &&
     db.prepare("SELECT value FROM meta WHERE key = 'source_word_alignment_version'").get()?.value === SOURCE_WORD_ALIGNMENT_VERSION
+  hasSourceSingletons = hasVerifiedSourceWords && hasTable('source_word_singletons')
+  hasSourceCoverage = hasVerifiedSourceWords && hasTable('source_word_coverage')
   return true
 }
 
@@ -83,6 +97,22 @@ function required(): DatabaseSync {
 export function bibleDb(): DatabaseSync | null {
   if (!db) openBibleDb()
   return db
+}
+
+export function getSourceWordCoverage(input: string): SourceWordCoverage[] {
+  const id = typeof input === 'string' ? lexiconId(input) : ''
+  if (!/^[GH][1-9]\d*$/.test(id) || !isReady() || !hasVerifiedSourceWords) return []
+  const d = required()
+  if (hasSourceCoverage) {
+    return d.prepare(`SELECT translation_id AS translation, occurrences FROM source_word_coverage
+      WHERE strongs=? ORDER BY translation_id`).all(id) as unknown as SourceWordCoverage[]
+  }
+  const cached = legacyCoverage.get(id)
+  if (cached) return cached
+  const result = Array.from(countSourceSpans(d, id).get(id) ?? [], ([translation, occurrences]) =>
+    ({ translation, occurrences }))
+  legacyCoverage.set(id, result)
+  return result
 }
 
 export function listTranslations(): Translation[] {
@@ -199,9 +229,13 @@ function taggedTokens(ref: ChapterRef, verseNumber?: number): Map<number, VerseT
 
   if (hasVerifiedSourceWords && tokenRows.length && (ref.translation === 'KJV' || ref.translation === 'BSB')) {
     const spans = d.prepare(`SELECT s.verse, s.start_position, s.end_position, s.source_row, s.language,
-        b.lemma AS text, b.translit, b.strongs, b.morph
+        b.lemma AS text, b.translit, b.strongs, b.morph,
+        ${hasSourceSingletons ? 'cert.source_row IS NOT NULL' : '0'} AS standalone
       FROM source_word_spans s JOIN verse_tokens b ON b.translation_id='BSB'
         AND b.book_id=s.book_id AND b.chapter=s.chapter AND b.verse=s.verse AND b.position=s.bsb_position
+      ${hasSourceSingletons ? `LEFT JOIN source_word_singletons cert ON cert.translation_id=s.translation_id
+        AND cert.book_id=s.book_id AND cert.chapter=s.chapter AND cert.verse=s.verse AND cert.position=s.end_position
+        AND s.start_position=s.end_position AND cert.source_row=s.source_row` : ''}
       WHERE s.translation_id=? AND s.book_id=? AND s.chapter=?
         ${verseNumber === undefined ? '' : 'AND s.verse = ?'}`).all(...params)
     for (const span of spans) {
@@ -214,17 +248,15 @@ function taggedTokens(ref: ChapterRef, verseNumber?: number): Map<number, VerseT
       const startPosition = Number(span.start_position)
       if (!Number.isInteger(startPosition) || startPosition < 0 || startPosition > endPosition) continue
       const english = tokens.slice(startPosition, endPosition).map(t => t.surface + t.trailer).join('') + token.surface
-      // The publisher sometimes includes sof pasuq and the open/closed section marker in
-      // the same field as the Hebrew word. They are typography, not part of its spelling.
-      const text = span.language === 'Greek' ? span.text :
-        span.text.replace(/׃[פס]$/u, '').replace(/^[־׀׃]+|[־׀׃]+$/gu, '')
       const language = span.language as SourceWord['language']
-      if (!isSourceForm(language, text)) continue
+      const text = publisherForm(span.text, language)
+      if (!text) continue
       token.sourceWord = {
         edition: 'BSB', language, rowId: String(span.source_row),
         book: ref.book, chapter: ref.chapter, verse, startPosition, endPosition,
         english, text, strongs: token.strongs, morph: String(span.morph ?? ''),
-        translit: span.translit, evidence: ref.translation === 'BSB' ? 'aligned' : 'corroborated'
+        translit: span.translit, evidence: ref.translation === 'BSB' ? 'aligned' : 'corroborated',
+        canReplaceAlone: span.standalone === 1
       }
     }
   }
@@ -628,11 +660,19 @@ export function getInterlinear(
     | undefined
   const direction = ed?.language === 'hbo' ? 'rtl' : 'ltr'
   const lang = ed?.language === 'hbo' ? 'hebrew' : 'greek'
+  const masoretic = edition === 'MT'
+  const swete = edition === 'LXX'
+  const pair = masoretic && hasKetivPairs
 
   const rows = d
     .prepare(
-      `SELECT verse, position, original, translit, strongs, morph, gloss
-       FROM original_tokens WHERE edition = ? AND book_id = ? AND chapter = ? ORDER BY verse, position`
+      `SELECT t.verse, t.position, t.original, t.translit,
+         ${swete ? 'NULL AS strongs, NULL AS morph, NULL AS gloss' : 't.strongs, t.morph, t.gloss'},
+         ${masoretic && hasMasoreticSourceTypes ? 't.source_type' : 'NULL'} AS source_type,
+         ${pair ? 'k.qere, k.ketiv' : 'NULL AS qere, NULL AS ketiv'}
+       FROM original_tokens t ${pair ? `LEFT JOIN ketiv_qere k ON k.book_id=t.book_id AND k.chapter=t.chapter
+         AND k.verse=t.verse AND k.position=t.position` : ''}
+       WHERE t.edition=? AND t.book_id=? AND t.chapter=? ORDER BY t.verse, t.position`
     )
     .all(edition, book, chapter) as Record<string, unknown>[]
 
@@ -640,23 +680,42 @@ export function getInterlinear(
   for (const r of rows) {
     const v = r.verse as number
     if (!byVerse.has(v)) byVerse.set(v, [])
+    // TAHOT inserts a backslash to separate punctuation. The Hebrew punctuation itself is retained.
+    const original = masoretic ? String(r.original).replace(/\\/g, '') : r.original as string
+    const paired = typeof r.ketiv === 'string' && r.qere === original
+    const sourceType = typeof r.source_type === 'string' ? r.source_type : paired ? 'Q' : undefined
     byVerse.get(v)!.push({
       position: r.position as number,
+      ...(sourceType ? { sourceType } : {}),
+      ...(paired ? { ketiv: r.ketiv as string } : {}),
       surface: (r.gloss as string) ?? '', // English gloss under the word
       trailer: ' ',
       strongs: (r.strongs as string) ?? null,
-      lemma: r.original as string, // the Greek/Hebrew word (shown prominently)
+      lemma: original, // the Greek/Hebrew word (shown prominently)
       translit: (r.translit as string) ?? null,
       morph: (r.morph as string) ?? null,
       gloss: (r.gloss as string) ?? null
     })
   }
 
+  // Swete supplies Greek forms. The database's LXX tags, glosses and parses were inferred
+  // from other texts, and cannot establish a translation or a lexical ID for this occurrence.
+  const sourceIssues = new Map<number, string>()
+  if (swete) for (const [verse, tokens] of byVerse) {
+    const issue = sweteReadingIssue({ book, chapter, verse }, tokens.map(t => t.lemma).join(' '))
+    if (issue) {
+      sourceIssues.set(verse, issue)
+      byVerse.set(verse, [])
+    }
+  }
+
   // Compare the corresponding native verses. A single LXX chapter can span two English chapters.
   const linesByVerse = new Map<number, NonNullable<InterlinearContent['verses'][number]['lines']>>()
   for (const tid of translations) {
+    if (tid === edition && swete) continue
     const chapters = new Map<string, Map<number, Verse>>()
     for (const [verse, tokens] of byVerse) {
+      if (sourceIssues.has(verse)) continue
       const target = mapPassage({ book, chapter, verse }, edition, tid)
       if (!target) continue
       const key = `${target.book}.${target.chapter}`
@@ -668,6 +727,7 @@ export function getInterlinear(
       }
       const text = verses.get(target.verse)
       if (!text) continue
+      if (tid === 'LXX' && sweteReadingIssue(target, text.text)) continue
       const words = new Map<string, string[]>()
       for (const t of text.tokens ?? []) {
         if (!t.strongs) continue
@@ -693,7 +753,7 @@ export function getInterlinear(
   }
 
   // "All parses": attach every Scripture-attested analysis of each word's form (scholar-tagged).
-  if (includeParses) {
+  if (includeParses && !swete) {
     const norm = lang === 'hebrew' ? normHebrewWord : normGreekWord
     const stmt = d.prepare(
       'SELECT strongs, morph, gloss, count FROM form_parses WHERE form = ? AND lang = ? ORDER BY count DESC'
@@ -720,118 +780,22 @@ export function getInterlinear(
 
   const verses = [...byVerse.entries()]
     .sort((a, b) => a[0] - b[0])
-    .map(([verse, tokens]) => ({ verse, tokens, lines: linesByVerse.get(verse) }))
+    .map(([verse, tokens]) => ({ verse, tokens, lines: linesByVerse.get(verse), sourceIssue: sourceIssues.get(verse) }))
 
-  return { book, chapter, edition, direction, verses }
+  const uncertainOrder = hasGreekOrderReview && greekNtEditions.has(edition)
+    ? d.prepare('SELECT verse FROM greek_order_uncertainties WHERE edition=? AND book_id=? AND chapter=? ORDER BY verse')
+      .all(edition, book, chapter).map(row => Number(row.verse))
+    : undefined
+  return { book, chapter, edition, direction, verses, ...(uncertainOrder ? { uncertainOrderVerses: uncertainOrder } : {}),
+    ...(masoretic ? { masoreticAttestationAvailable: hasMasoreticSourceTypes } : {}) }
 }
 
-interface Lite {
-  surface: string
-  strongs: string | null
-  translit: string | null
-  gloss: string | null
-}
-
-function chapterTokensByVerse(edition: string, book: string, chapter: number): Map<number, Lite[]> {
-  const rows = required()
-    .prepare(
-      'SELECT verse, original, translit, strongs, gloss FROM original_tokens WHERE edition = ? AND book_id = ? AND chapter = ? ORDER BY verse, position'
-    )
-    .all(edition, book, chapter) as Record<string, unknown>[]
-  const map = new Map<number, Lite[]>()
-  for (const r of rows) {
-    const v = r.verse as number
-    if (!map.has(v)) map.set(v, [])
-    map.get(v)!.push({
-      surface: r.original as string,
-      strongs: (r.strongs as string) ?? null,
-      translit: (r.translit as string) ?? null,
-      gloss: (r.gloss as string) ?? null
-    })
-  }
-  return map
-}
-
-/** LCS diff of two verse word-lists, keyed by Strong's (fallback surface). */
-function diffVerse(a: Lite[], b: Lite[]): VariantItem[] {
-  const ka = a.map((t) => t.strongs || t.surface)
-  const kb = b.map((t) => t.strongs || t.surface)
-  const m = a.length
-  const n = b.length
-  const dp = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0))
-  for (let i = m - 1; i >= 0; i--)
-    for (let j = n - 1; j >= 0; j--)
-      dp[i][j] = ka[i] === kb[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1])
-
-  const item = (t: Lite, side: VariantItem['side']): VariantItem => ({
-    surface: t.surface,
-    strongs: t.strongs,
-    translit: t.translit,
-    gloss: t.gloss,
-    side
-  })
-  const out: VariantItem[] = []
-  let i = 0
-  let j = 0
-  while (i < m && j < n) {
-    if (ka[i] === kb[j]) {
-      out.push(item(a[i], 'both'))
-      i++
-      j++
-    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
-      out.push(item(a[i], 'critical'))
-      i++
-    } else {
-      out.push(item(b[j], 'tr'))
-      j++
-    }
-  }
-  while (i < m) out.push(item(a[i++], 'critical'))
-  while (j < n) out.push(item(b[j++], 'tr'))
-  return out
-}
-
-/** OT apparatus: the Ketiv (written) beside the Qere (read) for each verse that has one. */
-function otApparatus(book: string, chapter: number): VerseVariant[] {
-  const rows = required()
-    .prepare(
-      'SELECT verse, qere, ketiv, strongs FROM ketiv_qere WHERE book_id = ? AND chapter = ? ORDER BY verse, position'
-    )
-    .all(book, chapter) as { verse: number; qere: string; ketiv: string; strongs: string | null }[]
-  const byVerse = new Map<number, VariantItem[]>()
-  for (const r of rows) {
-    if (!byVerse.has(r.verse)) byVerse.set(r.verse, [])
-    const items = byVerse.get(r.verse)!
-    items.push({ surface: r.qere, strongs: r.strongs, translit: null, gloss: null, side: 'qere' })
-    items.push({ surface: r.ketiv, strongs: r.strongs, translit: null, gloss: null, side: 'ketiv' })
-  }
-  return [...byVerse.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([verse, items]) => ({ verse, items }))
-}
-
-/**
- * Textual apparatus for a chapter. OT → Ketiv/Qere (Masoretic scribal variants); NT → where the
- * Critical (NA) and Textus Receptus Greek differ.
- */
 export function getChapterApparatus(book: string, chapter: number): VerseVariant[] {
-  const testament = (
-    required().prepare('SELECT testament FROM books WHERE id = ?').get(book) as
-      | { testament?: string }
-      | undefined
-  )?.testament
-  if (testament === 'OT') return otApparatus(book, chapter)
+  return readChapterApparatus(required(), book, chapter)
+}
 
-  const na = chapterTokensByVerse('NA', book, chapter)
-  const tr = chapterTokensByVerse('TR', book, chapter)
-  if (na.size === 0 && tr.size === 0) return []
-  const verses = [...new Set([...na.keys(), ...tr.keys()])].sort((x, y) => x - y)
-  const out: VerseVariant[] = []
-  for (const v of verses) {
-    const items = diffVerse(na.get(v) ?? [], tr.get(v) ?? [])
-    if (items.some((it) => it.side !== 'both')) out.push({ verse: v, items })
-  }
-  return out
+export function getOriginalVerseReadings(ref: VerseRef) {
+  return readOriginalVerse(required(), ref)
 }
 
 export function search(q: SearchQuery): SearchResponse {

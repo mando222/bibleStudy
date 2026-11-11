@@ -1,11 +1,14 @@
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, describe, expect, it, vi } from 'vitest'
-import { getChapter, getComparisonVerse, getConcordance, getInterlinear, search } from '../src/main/db/bible'
+import { getChapter, getComparisonVerse, getConcordance, getInterlinear, getSourceWordCoverage, search } from '../src/main/db/bible'
 import { searchImportedText } from '../src/main/db/search'
 import { namedPassages } from '../src/shared/refs'
+import InterlinearVerse from '../src/renderer/src/components/InterlinearVerse'
 
 vi.mock('node:sqlite', () => createRequire(import.meta.url)('node:sqlite'))
 vi.mock('electron', () => ({ app: { getAppPath: () => process.cwd() } }))
@@ -59,6 +62,7 @@ describe.skipIf(!existsSync('resources/bible.sqlite'))('real Scripture search an
       const token = verse.tokens!.find(t => t.strongs === 'H3068')!
       const word = token.sourceWord!
       expect(word).toEqual({
+        canReplaceAlone: false,
         edition: 'BSB', language: 'Hebrew', strongs: 'H3068', morph: 'Noun - proper - masculine singular',
         rowId: '344393', book: 'Ps', chapter: 23, verse: 1,
         startPosition: 0, endPosition: translation === 'BSB' ? 0 : 1, english: 'The LORD', text: 'יְהוָ֥ה',
@@ -108,6 +112,35 @@ describe.skipIf(!existsSync('resources/bible.sqlite'))('real Scripture search an
     const nums = getChapter({ translation: 'KJV', book: 'Num', chapter: 11 }).verses.find(v => v.verse === 29)!
     expect(nums.tokens!.filter(t => t.strongs === 'H3068').map(t => t.sourceWord)).toEqual([undefined, undefined])
   })
+  it('ties independent words and folded translations to their own publisher rows', () => {
+    function words(book: string, chapter: number, verse: number, id: string, translation = 'BSB') {
+      return getComparisonVerse({ book, chapter, verse, translation })!.tokens!
+        .filter(t => t.strongs === id).map(t => t.sourceWord)
+    }
+    expect(words('1John', 2, 1, 'G264')).toMatchObject([
+      { rowId: '199485', english: 'you will not sin', text: 'ἁμάρτητε', canReplaceAlone: false },
+      { rowId: '199489', english: 'does sin', text: 'ἁμάρτῃ', canReplaceAlone: false }
+    ])
+    expect(words('1John', 2, 1, 'G264', 'KJV')).toEqual([undefined, undefined])
+    expect(words('1Cor', 12, 21, 'G1410')).toMatchObject([
+      { english: 'cannot', text: 'δύναται', canReplaceAlone: false }
+    ])
+    expect(words('1Cor', 6, 15, 'G1096')).toMatchObject([
+      { english: 'Never', text: 'γένοιτο', canReplaceAlone: false }
+    ])
+    expect(words('John', 10, 30, 'G3962')).toMatchObject([
+      { english: 'Father', text: 'Πατὴρ', canReplaceAlone: true }
+    ])
+    expect(words('1Chr', 1, 1, 'H121')).toMatchObject([
+      { language: 'Hebrew', text: 'אָדָ֥ם', canReplaceAlone: true }
+    ])
+    expect(words('Dan', 2, 4, 'H2418')).toMatchObject([
+      { language: 'Aramaic', text: 'חֱיִ֔י', canReplaceAlone: false }
+    ])
+    expect(getSourceWordCoverage('g0264')).toEqual([{ translation: 'BSB', occurrences: 39 }])
+    expect(getSourceWordCoverage('G999999')).toEqual([])
+  })
+
   it('honors a Strong’s query’s edition, book and testament, including an empty inferred result', () => {
     expect(search({ text: 'G26', translation: 'BSB', testament: 'OT' }).total).toBe(0)
     expect(search({ text: 'G26', translation: 'BSB', testament: 'NT', limit: 2 }).total).toBe(106)
@@ -137,5 +170,50 @@ describe.skipIf(!existsSync('resources/bible.sqlite'))('real Scripture search an
   it('stacks English Psalm 23 under the equivalent Greek Psalm 22', () => {
     const first = getInterlinear('Ps', 22, 'LXX', ['KJV']).verses.find(v => v.verse === 1)
     expect(first?.lines?.[0]).toMatchObject({ id: 'KJV', ref: '23:1', text: expect.stringContaining('my shepherd') })
+  })
+  it('uses the edition’s checked Greek order and reports unresolved moves', () => {
+    for (const edition of ['TR', 'BYZ']) {
+      const chapter = getInterlinear('1Cor', 15, edition)
+      expect(chapter.uncertainOrderVerses).toBeDefined()
+      expect(chapter.uncertainOrderVerses).not.toContain(19)
+      const words = chapter.verses.find(v => v.verse === 19)!.tokens
+      expect(words.slice(5, 9).map(t => t.strongs)).toEqual(['G1679','G1510','G1722','G5547'])
+      expect(words[6].lemma).toBe('ἐσμὲν')
+      expect(words.at(-1)?.lemma).toBe('ἐσμέν.')
+      const john = getInterlinear('John', 7, edition)
+      expect(john.uncertainOrderVerses).not.toContain(31)
+      expect(john.verses.find(v => v.verse === 31)!.tokens.slice(0, 2).map(t => t.lemma)).toEqual(['πολλοὶ','δὲ'])
+    }
+    expect(getInterlinear('Jude', 1, 'NA').uncertainOrderVerses).toContain(5)
+    // The unaccented Scrivener file cannot identify which of καὶ and καί moved.
+    expect(getInterlinear('Luke', 19, 'TR').uncertainOrderVerses).toContain(42)
+  })
+  it('identifies the attestation of each exceptional TAHOT form, including an unpaired Qere', () => {
+    const word = (book: string, chapter: number, verse: number, position: number) => {
+      const data = getInterlinear(book, chapter, 'MT')
+      expect(data.masoreticAttestationAvailable).toBe(true)
+      return data.verses.find(v => v.verse === verse)?.tokens.find(t => t.position === position)
+    }
+    expect(word('1Chr', 4, 13, 7)).toMatchObject({ lemma: 'וּמְעוֹנֹתַי׃', sourceType: 'X' })
+    expect(word('Josh', 21, 36, 0)).toMatchObject({ lemma: 'וּמִמַּטֵּ֣ה', sourceType: 'R' })
+    expect(word('1Chr', 1, 11, 3)).toMatchObject({ lemma: 'לוּדִ֧ים', sourceType: 'Q(K)', ketiv: 'לוּדִיִּים' })
+    const unpaired = word('Dan', 4, 32, 21)
+    expect(unpaired).toMatchObject({ lemma: 'עִלָּיָא֙', sourceType: 'Q(k)' })
+    expect(unpaired?.ketiv).toBeUndefined()
+    const greek = getInterlinear('1John', 2, 'NA')
+    expect(greek.masoreticAttestationAvailable).toBeUndefined()
+    expect(greek.verses[0].tokens[0].sourceType).toBeUndefined()
+  })
+  it('shows editorial and read forms in the interlinear with the recorded written form when available', () => {
+    const render = (book: string, chapter: number, verse: number) => {
+      const row = getInterlinear(book, chapter, 'MT').verses.find(v => v.verse === verse)!
+      return renderToStaticMarkup(createElement(InterlinearVerse, { v: { ...row, text: '' }, rtl: true }))
+    }
+    expect(render('1Chr', 4, 13)).toContain('Reconstruction from Greek</span>')
+    expect(render('Josh', 21, 36)).toContain('Restored from a parallel</span>')
+    const pair = render('1Chr', 1, 11)
+    expect(pair).toContain('Qere · read form</span>')
+    expect(pair).toContain('Ketiv · written form')
+    expect(pair).toContain('לוּדִיִּים</bdi>')
   })
 })

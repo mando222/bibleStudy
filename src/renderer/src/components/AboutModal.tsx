@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { UpdateInfo } from '@shared/types'
 import { useAppStore } from '@/store/useAppStore'
 import StudyBackupControls from './StudyBackupControls'
 import { BookIcon } from './icons'
@@ -26,6 +27,7 @@ const ORIGINALS: Source[] = [
   { what: 'Masoretic Hebrew (TAHOT)', detail: 'Amalgamated Hebrew OT', license: 'CC BY 4.0 — STEPBible / Tyndale House', url: 'https://github.com/STEPBible/STEPBible-Data' },
   { what: 'Word frequency and grammatical forms', detail: 'Original TAGNT and TAHOT word records; abbreviated grammar labels from TEGMC and TEHMC', license: 'CC BY 4.0 — STEPBible / Tyndale House', url: 'https://github.com/STEPBible/STEPBible-Data' },
   { what: 'Greek NT editions (TAGNT)', detail: 'NA28, Scrivener 1894 and Robinson–Pierpont 2005 readings represented in TAGNT', license: 'CC BY 4.0 — STEPBible / Tyndale House', url: 'https://github.com/STEPBible/STEPBible-Data' },
+  { what: 'Greek NT word order checks', detail: 'Scrivener 1894 and Robinson–Pierpont 2005, one verse per line', license: 'Reference transcriptions from BYZTXT.com', url: 'https://www.byztxt.com/downloads.html' },
   { what: 'Verse numbering', detail: 'Swete and English passage correspondences from TVTMS', license: 'CC BY 4.0 — STEPBible / Tyndale House', url: 'https://github.com/STEPBible/STEPBible-Data/tree/master/Versification' },
   { what: 'Septuagint (Greek OT)', detail: 'Swete — via Open Greek and Latin / First1KGreek', license: 'CC BY-SA 4.0 — nathans/lxx-swete', url: 'https://github.com/nathans/lxx-swete' },
   { what: "Strong's Greek & Hebrew lexicons", detail: 'Strong (1890/1894), JSON', license: 'CC BY-SA — OpenScriptures', url: 'https://github.com/openscriptures/strongs' },
@@ -66,7 +68,13 @@ const AI: Source[] = [
   { what: 'Nomic Embed Text v1.5', detail: 'Embeddings for semantic search', license: 'Apache 2.0 — Nomic AI', url: 'https://huggingface.co/nomic-ai' }
 ]
 
-export default function AboutModal(): JSX.Element | null {
+interface UpdateControls {
+  update: UpdateInfo | null
+  onChecked: (info: UpdateInfo | null) => void
+  onViewUpdate: () => void
+}
+
+export default function AboutModal({ update, onChecked, onViewUpdate }: UpdateControls): JSX.Element | null {
   const open = useAppStore((s) => s.aboutOpen)
   const setOpen = useAppStore((s) => s.setAboutOpen)
   const translations = useAppStore((s) => s.translations)
@@ -139,7 +147,14 @@ export default function AboutModal(): JSX.Element | null {
             Bundled texts and lexicons retain their own licenses, credited below.
           </p>
 
-          <UpdateSetting />
+          <UpdateSetting
+            update={update}
+            onChecked={onChecked}
+            onViewUpdate={() => {
+              setOpen(false)
+              onViewUpdate()
+            }}
+          />
           <StudyBackupControls />
 
           <div className="mt-5 rounded-lg border border-line bg-elevated p-3">
@@ -243,12 +258,13 @@ function SourceWordNote(): JSX.Element {
     <div className="mt-5 rounded-lg border border-line bg-elevated p-3">
       <div className="text-sm font-medium text-ink">Source word restoration</div>
       <p className="mt-1 text-xs text-muted">
-        Restore words shows YHWH where a verified alignment identifies the four Hebrew letters
-        יהוה. You can also enable other terms to see the source spelling in Latin letters.
-        Each form comes from the word used at that location in the Berean word table.
-        Hover over a restored word to compare what the translations print. A verified link shows
-        the exact wording. Other translations show the verse for context. Copy and assistant selections
-        quote the published translation.
+        Select a word in the reader to show its written form at verified occurrences. The
+        right-hand lexicon panel identifies the source row for the selected verse. Forms follow
+        the cited textual edition. Other manuscripts can have different readings. When several
+        words share a translation phrase, the reader keeps the phrase alongside the source form.
+        The toolbar also offers transliterated terms. The verified four-letter Hebrew name
+        appears as YHWH. Hover over a restored word to compare translations. Copies and assistant
+        selections quote the published text.
       </p>
     </div>
   )
@@ -288,11 +304,7 @@ function SourceRow({ s }: { s: Source }): JSX.Element {
   )
 }
 
-/**
- * The update check is the only thing this app ever sends over the network, so it gets an explicit,
- * visible switch — and says plainly what it does and doesn't do.
- */
-function UpdateSetting(): JSX.Element {
+function UpdateSetting({ update, onChecked, onViewUpdate }: UpdateControls): JSX.Element {
   const [on, setOn] = useState(true)
   const [checking, setChecking] = useState(false)
   const [result, setResult] = useState<string | null>(null)
@@ -314,10 +326,15 @@ function UpdateSetting(): JSX.Element {
     setChecking(true)
     setResult(null)
     try {
-      const info = await window.updates?.check(true)
-      setResult(info ? `Version ${info.latest} is available.` : 'You’re on the latest version.')
+      if (!window.updates) {
+        setResult('Update checks are unavailable in this window.')
+        return
+      }
+      const info = await window.updates.check(true)
+      onChecked(info)
+      if (!info) setResult('You’re on the latest version.')
     } catch {
-      setResult('Couldn’t reach GitHub — you may be offline.')
+      setResult('Couldn’t check the latest release on GitHub. Try again later.')
     } finally {
       setChecking(false)
     }
@@ -329,10 +346,9 @@ function UpdateSetting(): JSX.Element {
         <div>
           <div className="text-sm font-medium text-ink">Check for updates</div>
           <div className="text-xs text-muted">
-            Asks GitHub once a day whether a newer release exists. Nothing about you is sent, and
-            everything else in this app stays fully offline. Turn it off and no request is made.
-            If you choose to download an update, it is saved to your Downloads folder and never
-            run for you &mdash; you install it yourself, whenever suits.
+            With On launch enabled, the app checks GitHub for new releases and remembers a
+            successful check for a day. You can check manually at any time. To install a
+            release, download the installer and open it from your Downloads folder.
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -354,7 +370,14 @@ function UpdateSetting(): JSX.Element {
           </label>
         </div>
       </div>
-      {result && <div className="mt-2 text-xs text-accent">{result}</div>}
+      <div role="status" className="text-xs text-accent">
+        {result ? <p className="mt-2">{result}</p> : update && !checking && (
+          <p className="mt-2">
+            Version {update.latest} is available.{' '}
+            <button onClick={onViewUpdate} className="underline">View download options</button>
+          </p>
+        )}
+      </div>
     </div>
   )
 }

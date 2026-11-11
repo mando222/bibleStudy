@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { restoredVerseSegments } from '../src/shared/sourceWords'
+import { literaryGroups } from '../src/shared/literaryLayout'
 import type { ChapterRef, SourceWord, Verse, VerseToken } from '../src/shared/types'
 
 const ref: ChapterRef = { translation: 'BSB', book: 'Ps', chapter: 23 }
@@ -69,5 +70,42 @@ describe('verified word restoration', () => {
   it('uses printed text if a tagger changes words or punctuation', () => {
     const bad = { ...verse([word(0, 'The LORD', '', 'H3068', source)]), text: 'The LORD!' }
     expect(restoredVerseSegments(bad, ref, true)).toEqual([{ display: bad.text, original: bad.text }])
+  })
+
+  it('preserves both translated phrases and adds the written form from each distinct G264 row', () => {
+    const where = { book: '1John', chapter: 2, translation: 'BSB' }
+    const sin = { ...source, ...where, language: 'Greek' as const, strongs: 'G264', morph: 'Verb',
+      rowId: '199485', english: 'you will not sin', text: 'ἁμάρτητε', translit: 'hamartēte' }
+    const other = { ...sin, rowId: '199489', startPosition: 1, endPosition: 1,
+      english: 'does sin', text: 'ἁμάρτῃ', translit: 'hamartē' }
+    const v = verse([word(0, sin.english, ', ', 'G264', sin), word(1, other.english, '.', 'G264', other)])
+    const parts = restoredVerseSegments(v, where, true, {}, ['G264'])
+    expect(parts.map(p => p.display).join('')).toBe(v.text)
+    expect(parts.filter(p => p.annotation).map(p => [p.display, p.annotation])).toEqual([
+      ['you will not sin', sin.text], ['does sin', other.text]
+    ])
+    const split = literaryGroups(parts, [{ at: 4, kind: 'poetry', indent: 1 }], true, false)
+    expect(split.flatMap(g => g.parts).filter(p => p.annotation).map(p => p.annotation)).toEqual([sin.text, other.text])
+    expect(restoredVerseSegments(v, where, false, {}, ['G264']).every(p => !p.annotation)).toBe(true)
+    for (const edition of ['KJV', 'WEB', 'imp_example']) {
+      expect(restoredVerseSegments(v, { ...where, translation: edition }, true, {}, ['G264']).every(p => !p.annotation)).toBe(true)
+    }
+  })
+
+  it('requires independent evidence before directly displaying the written form and keeps YHWH fixed', () => {
+    const greek = { ...source, language: 'Greek' as const, strongs: 'G1410', english: 'cannot',
+      text: 'δύναται', translit: 'dynatai', morph: 'Verb' }
+    const resolve = (s: SourceWord) => restoredVerseSegments(verse([word(0, s.english, '.', s.strongs, s)]),
+      ref, true, {}, [s.strongs])[0]
+    expect(resolve(greek)).toMatchObject({ display: 'cannot', annotation: 'δύναται' })
+    expect(resolve({ ...greek, english: 'can', canReplaceAlone: true })).toMatchObject({ display: 'δύναται', original: 'can' })
+    expect(resolve({ ...greek, english: 'can', canReplaceAlone: true, morph: 'Verb | Particle' }).annotation).toBe('δύναται')
+    expect(resolve({ ...greek, english: 'we can', canReplaceAlone: true }).display).toBe('we can')
+    expect(resolve({ ...source, strongs: 'H430', english: 'God', text: 'אֱלֹהִים', translit: 'elohim' }).display).toBe('אֱלֹהִים')
+    expect(resolve(source).display).toBe('YHWH')
+    const affixed = resolve({ ...source, text: 'לַיהוָה', canReplaceAlone: true })
+    expect(affixed.display).toBe('The LORD')
+    expect(affixed.annotation).toBeUndefined()
+    expect(resolve({ ...greek, chapter: 29 })).not.toHaveProperty('annotation')
   })
 })

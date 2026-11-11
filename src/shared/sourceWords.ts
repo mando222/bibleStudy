@@ -61,12 +61,16 @@ export function isSourceForm(language: SourceWord['language'], text: string): bo
 export interface VerseSegment {
   original: string
   display: string
+  /** A source word shown beside an intact English span that has no independent word boundary. */
+  annotation?: string
   token?: VerseToken
 }
 
-function displayForm(source: SourceWord, english: string): string | undefined {
-  if (source.english !== english || !termsById.get(source.strongs)?.english.test(english)) return
-  if (source.strongs.startsWith('G') !== (source.language === 'Greek') || !isSourceForm(source.language, source.text)) return
+export const isProtectedSourceName = (id: string): boolean => id === 'H3068' || id === 'H3069' || id === 'H3050'
+
+export function presetForm(source: Pick<SourceWord, 'strongs' | 'language' | 'text' | 'translit' | 'morph'>,
+  english: string): string | undefined {
+  if (!termsById.get(source.strongs)?.english.test(english)) return
   // A prefix or suffix can encode a preposition, article or pronoun that English prints separately.
   if (!source.morph?.trim() || source.morph.includes('|')) return
   if (source.strongs === 'H3068' || source.strongs === 'H3069' || source.strongs === 'H3050') {
@@ -80,29 +84,48 @@ function displayForm(source: SourceWord, english: string): string | undefined {
 }
 
 /** Each displayed span carries the exact published text used by copy and citations. */
-export function restoredVerseSegments(verse: Verse, ref: ChapterRef, enabled: boolean, terms: SourceWordTerms = {}): VerseSegment[] {
+export function restoredVerseSegments(verse: Verse, ref: ChapterRef, enabled: boolean, terms: SourceWordTerms = {},
+  sourceFormIds: readonly string[] = []): VerseSegment[] {
   const tokens = verse.tokens
   if (!tokens?.length || tokens.map(t => t.surface + t.trailer).join('') !== verse.text ||
       tokens.some((t, i) => t.position !== i)) {
     return [{ original: verse.text, display: verse.text }]
   }
-  const replacements = new Map<number, { end: number; display: string; original: string }>()
+  const replacements = new Map<number, { end: number; part: VerseSegment }>()
   const evidence = ref.translation === 'BSB' ? 'aligned' : ref.translation === 'KJV' ? 'corroborated' : undefined
   if (enabled && evidence) {
+    const exactIds = new Set(sourceFormIds)
     for (let end = 0; end < tokens.length; end++) {
       const token = tokens[end]
       const source = token.sourceWord
-      if (!source || token.derived || !token.strongs || source.strongs !== token.strongs ||
-          !termEnabled(token.strongs, terms) || source.edition !== 'BSB' || source.evidence !== evidence ||
+      if (!source || token.derived || !token.strongs || !/^[GH][1-9]\d*$/.test(token.strongs) ||
+          source.strongs !== token.strongs || source.edition !== 'BSB' || source.evidence !== evidence ||
           source.book !== ref.book || source.chapter !== ref.chapter || source.verse !== verse.verse ||
           !/^[1-9]\d*(?:\.\d+)?$/.test(source.rowId) || source.endPosition !== end) continue
+      const exact = exactIds.has(token.strongs)
+      if (!exact && !termEnabled(token.strongs, terms)) continue
       const start = source.startPosition
       if (!Number.isInteger(start) || start < 0 || start > end || /^['’]/u.test(token.trailer)) continue
       const before = tokens.slice(start, end)
       if (before.some(t => t.strongs || t.derived || t.sourceWord)) continue
       const original = before.map(t => t.surface + t.trailer).join('') + token.surface
-      const display = displayForm(source, original)
-      if (display) replacements.set(start, { end, display, original })
+      if (source.english !== original || token.strongs.startsWith('G') !== (source.language === 'Greek') ||
+          !isSourceForm(source.language, source.text)) continue
+      const preset = presetForm(source, original)
+      const divineName = isProtectedSourceName(token.strongs)
+      if ((!exact || divineName) && !preset) continue
+      let display = preset ?? original
+      let annotation: string | undefined
+      if (exact && preset !== 'YHWH') {
+        // A single English spelling can still absorb another source word (e.g. “cannot”).
+        // Only replace it when its independence has been certified, or the existing preset
+        // already verifies this particular lexical correspondence.
+        const independent = source.canReplaceAlone === true && /^\p{L}+$/u.test(original) &&
+          !!source.morph?.trim() && !source.morph.includes('|')
+        if (preset || independent) display = source.text
+        else annotation = source.text
+      }
+      replacements.set(start, { end, part: { token, original, display, ...(annotation ? { annotation } : {}) } })
     }
   }
 
@@ -111,9 +134,7 @@ export function restoredVerseSegments(verse: Verse, ref: ChapterRef, enabled: bo
     const restored = replacements.get(index)
     if (restored) index = restored.end
     const token = tokens[index]
-    segments.push({
-      token, original: restored?.original ?? token.surface, display: restored?.display ?? token.surface
-    })
+    segments.push(restored?.part ?? { token, original: token.surface, display: token.surface })
     if (token.trailer) segments.push({ original: token.trailer, display: token.trailer })
   }
   return segments

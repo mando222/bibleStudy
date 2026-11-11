@@ -2,12 +2,13 @@ import { studyStorageKey } from '../lib/studyPreferences'
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { mapPassage } from '@shared/passageMapping'
-import { plainDisplay, overrideDisplay, type DisplayFlags, type DisplayOverrides, type ReadingFeature } from '@shared/readingDisplay'
+import { chooseColumn, plainDisplay, overrideDisplay, type DisplayFlags, type DisplayOverrides, type ReadingFeature } from '@shared/readingDisplay'
 import type { StudyRange } from '@shared/passageStudy'
-import { lexiconId } from '@shared/lexiconId'
+import { defaultTextPreference, normalizeTextPreference, type NtText, type OtText, type TextPreference } from '@shared/textPreference'
+import { isDivineNameId, lexiconId, normalizeSourceFormIds } from '@shared/lexiconId'
 import type { SourceWordTerms } from '@shared/sourceWords'
 import { BOOK_BY_ID } from '@shared/books'
-import type { Translation, ChatCitation, SearchHit, SourceWord } from '@shared/types'
+import type { Edition, Translation, ChatCitation, SearchHit, SourceWord } from '@shared/types'
 
 export type Theme = 'light' | 'dark'
 export type StudyTab = 'lexicon' | 'notes' | 'search' | 'apparatus' | 'crossrefs'
@@ -88,6 +89,12 @@ interface AppState {
   // About / credits modal
   aboutOpen: boolean
   setAboutOpen: (v: boolean) => void
+  settingsOpen: boolean
+  setSettingsOpen: (open: boolean) => void
+  preferredTextOrder: TextPreference
+  setPreferredTextOrder: (order: TextPreference) => void
+  frequencyGreekEdition: NtText | ''
+  setFrequencyGreekEdition: (edition: NtText | '') => void
 
   // AI assistant drawer
   assistantOpen: boolean
@@ -144,7 +151,9 @@ interface AppState {
   toggleStrongs: () => void
   interlinear: boolean
   toggleInterlinear: () => void
-  interlinearEdition: string // '' = auto (Masoretic for OT, Critical for NT)
+  originalEditions: Edition[] | null
+  setOriginalEditions: (editions: Edition[]) => void
+  interlinearEdition: string // An empty selection follows the global text order.
   setInterlinearEdition: (id: string) => void
   interlinearStack: string[] // translation ids stacked under each original word
   toggleInterlinearStack: (id: string) => void
@@ -162,6 +171,8 @@ interface AppState {
   toggleSourceWords: () => void
   sourceWordTerms: SourceWordTerms
   setSourceTerm: (ids: string[], enabled: boolean) => void
+  sourceFormIds: string[]
+  setSourceForm: (id: string, enabled: boolean) => void
   sourceWordSettingsOpen: boolean
   setSourceWordSettingsOpen: (open: boolean) => void
 
@@ -186,11 +197,22 @@ interface AppState {
   setStudyTab: (tab: StudyTab) => void
 }
 
+type OriginalTextState = Pick<AppState, 'preferredTextOrder' | 'interlinearEdition' | 'originalEditions'>
+
+export function originalTextEdition(s: OriginalTextState, testament: 'NT', choice?: string): NtText | ''
+export function originalTextEdition(s: OriginalTextState, testament: 'OT', choice?: string): OtText | ''
+export function originalTextEdition(s: OriginalTextState, testament: 'NT' | 'OT', choice?: string): NtText | OtText | ''
+export function originalTextEdition(s: OriginalTextState, testament: 'OT' | 'NT', choice = s.interlinearEdition): string {
+  const order: readonly string[] = testament === 'OT' ? s.preferredTextOrder.ot : s.preferredTextOrder.nt
+  const available = (id: string) => !s.originalEditions || s.originalEditions.some(e => e.id === id && e.testament === testament)
+  if (order.includes(choice) && available(choice)) return choice
+  return order.find(available) ?? ''
+}
+
 /** The edition whose native chapter numbers appear in the book navigator. */
-export function readingEdition(s: Pick<AppState, 'book' | 'primary' | 'interlinear' | 'interlinearEdition'>, book = s.book): string {
+export function readingEdition(s: Pick<AppState, 'book' | 'primary' | 'interlinear'> & OriginalTextState, book = s.book): string {
   if (!s.interlinear) return s.primary
-  if (BOOK_BY_ID[book]?.testament === 'OT') return s.interlinearEdition === 'LXX' ? 'LXX' : 'MT'
-  return ['NA', 'TR', 'BYZ'].includes(s.interlinearEdition) ? s.interlinearEdition : 'NA'
+  return originalTextEdition(s, BOOK_BY_ID[book]?.testament ?? 'NT') || s.primary
 }
 
 export const useAppStore = create<AppState>()(
@@ -214,7 +236,7 @@ export const useAppStore = create<AppState>()(
         atlasOrigin: s.activity === 'maps' ? s.atlasOrigin : { activity: s.activity,
           ...(s.activity === 'genealogies' ? { personId } : s.studyInspector ? { passage: s.studyInspector.range } : {}) }
       })),
-      clearAtlasTarget: () => set({ atlasTarget: null, atlasOrigin: null, focusPlaceId: null }),
+      clearAtlasTarget: () => set({ atlasTarget: null, focusPlaceId: null }),
       returnFromAtlas: () => set(s => {
         const origin = s.atlasOrigin
         const range = origin?.passage
@@ -245,6 +267,12 @@ export const useAppStore = create<AppState>()(
 
       aboutOpen: false,
       setAboutOpen: (aboutOpen) => set({ aboutOpen }),
+      settingsOpen: false,
+      setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+      preferredTextOrder: defaultTextPreference,
+      setPreferredTextOrder: (preferredTextOrder) => set({ preferredTextOrder: normalizeTextPreference(preferredTextOrder) }),
+      frequencyGreekEdition: '',
+      setFrequencyGreekEdition: (frequencyGreekEdition) => set({ frequencyGreekEdition }),
 
       assistantOpen: false,
       setAssistantOpen: (assistantOpen) => set({ assistantOpen }),
@@ -290,6 +318,8 @@ export const useAppStore = create<AppState>()(
       toggleStrongs: () => set({ strongsVisible: !get().strongsVisible }),
       interlinear: false,
       toggleInterlinear: () => set({ interlinear: !get().interlinear, studyInspector: null }),
+      originalEditions: null,
+      setOriginalEditions: (originalEditions) => set({ originalEditions }),
       interlinearEdition: '',
       setInterlinearEdition: (interlinearEdition) => set({ interlinearEdition }),
       interlinearStack: [],
@@ -333,6 +363,23 @@ export const useAppStore = create<AppState>()(
       setSourceTerm: (ids, enabled) => set(state => ({
         sourceWordTerms: { ...state.sourceWordTerms, ...Object.fromEntries(ids.map(id => [id, enabled])) }
       })),
+      sourceFormIds: [],
+      setSourceForm: (input, enabled) => set(state => {
+        const [id] = normalizeSourceFormIds([input])
+        if (!id) return state
+        if (isDivineNameId(id)) {
+          return {
+            sourceWordTerms: { ...state.sourceWordTerms, H3068: enabled, H3069: enabled },
+            sourceFormIds: state.sourceFormIds.filter(selected => !isDivineNameId(selected)),
+            restoreSourceWords: enabled || state.restoreSourceWords
+          }
+        }
+        if (!enabled) return { sourceFormIds: state.sourceFormIds.filter(selected => selected !== id) }
+        return {
+          sourceFormIds: state.sourceFormIds.includes(id) ? state.sourceFormIds : [...state.sourceFormIds, id],
+          restoreSourceWords: true
+        }
+      }),
       sourceWordSettingsOpen: false,
       setSourceWordSettingsOpen: (sourceWordSettingsOpen) => set({ sourceWordSettingsOpen }),
 
@@ -344,11 +391,13 @@ export const useAppStore = create<AppState>()(
       scrollToVerse: null,
       goToVerse: (book, chapter, verse, sourceEdition = 'KJV') => {
         const s = get()
-        const available = mapPassage({ book, chapter, verse }, sourceEdition, readingEdition(s))
+        const edition = readingEdition(s, book)
+        const unverifiedImport = edition !== sourceEdition && (edition.startsWith('imp_') || sourceEdition.startsWith('imp_'))
+        const available = !unverifiedImport && mapPassage({ book, chapter, verse }, sourceEdition, edition)
         const showSource = !available && s.translations.some((t) => t.id === sourceEdition)
         set({
           book, chapter, referenceEdition: sourceEdition, activeVerse: verse, scrollToVerse: verse, activity: 'bible', studyInspector: null,
-          ...(showSource ? { primary: sourceEdition, parallels: [sourceEdition, ...s.parallels.slice(1).filter(id => id !== sourceEdition)], interlinear: false } : {})
+          ...(showSource ? { primary: sourceEdition, parallels: chooseColumn(s.parallels, 0, sourceEdition), interlinear: false } : {})
         })
       },
       focusVerse: (book, chapter, verse, referenceEdition) =>
@@ -416,7 +465,9 @@ export const useAppStore = create<AppState>()(
             }
           }
         }
-        return { ...current, ...previous, displayDefaults: defaults, displayOverrides: overrides }
+        return { ...current, ...previous, displayDefaults: defaults, displayOverrides: overrides,
+          sourceFormIds: normalizeSourceFormIds(previous.sourceFormIds),
+          preferredTextOrder: normalizeTextPreference(previous.preferredTextOrder) }
       },
       migrate: (saved) => {
         const previous = (saved ?? {}) as Partial<AppState> & {
@@ -438,6 +489,7 @@ export const useAppStore = create<AppState>()(
         theme: s.theme,
         displayDefaults: s.displayDefaults,
         displayOverrides: s.displayOverrides,
+        preferredTextOrder: s.preferredTextOrder,
         activity: s.activity,
         referenceEdition: s.referenceEdition,
         primary: s.primary,
@@ -452,6 +504,7 @@ export const useAppStore = create<AppState>()(
         chronological: s.chronological,
         restoreSourceWords: s.restoreSourceWords,
         sourceWordTerms: s.sourceWordTerms,
+        sourceFormIds: s.sourceFormIds,
         chatMessages: s.chatMessages,
         mapYear: s.mapYear,
         mapShowRegions: s.mapShowRegions,

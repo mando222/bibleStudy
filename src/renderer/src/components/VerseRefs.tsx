@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useAppStore } from '@/store/useAppStore'
+import { readingEdition, useAppStore } from '@/store/useAppStore'
 import { BOOKS, BOOK_BY_ID } from '@shared/books'
 import { mapPassage } from '@shared/passageMapping'
 
@@ -7,19 +7,20 @@ import { mapPassage } from '@shared/passageMapping'
 const BOOK_RANK: Record<string, number> = Object.fromEntries(BOOKS.map((b, i) => [b.id, i]))
 
 /** A single clickable verse-reference chip that jumps the reader to that verse. */
-function VerseChip({ refKey, displayEdition }: { refKey: string; displayEdition?: string }): JSX.Element {
+function VerseChip({ refKey, displayEdition, followReader }: { refKey: string; displayEdition?: string; followReader?: boolean }): JSX.Element {
   const goToVerse = useAppStore((s) => s.goToVerse)
   const [book, ch, v] = refKey.split('.')
+  const edition = useAppStore(s => displayEdition ?? (followReader ? readingEdition(s, book) : undefined))
   const canonical = { book, chapter: Number(ch), verse: Number(v) }
-  const native = displayEdition && !displayEdition.startsWith('imp_') ? mapPassage(canonical, 'KJV', displayEdition) : null
+  const native = edition && !edition.startsWith('imp_') ? mapPassage(canonical, 'KJV', edition) : null
   const ref = native ?? canonical
   const name = BOOK_BY_ID[ref.book]?.name ?? ref.book
   return (
     <button
-      onClick={() => goToVerse(book, Number(ch), Number(v))}
+      onClick={() => goToVerse(ref.book, ref.chapter, ref.verse, native ? edition : 'KJV')}
       className="text-[11px] px-1.5 py-0.5 rounded border border-line text-accent hover:bg-accent-soft"
     >
-      {name} {ref.chapter}:{ref.verse}{displayEdition && !native ? ' (KJV)' : ''}
+      {name} {ref.chapter}:{ref.verse}{edition && !native ? ' (KJV)' : ''}
     </button>
   )
 }
@@ -33,12 +34,14 @@ export default function VerseRefs({
   refs,
   limit,
   groupByBook,
-  displayEdition
+  displayEdition,
+  followReader
 }: {
   refs: string[]
   limit?: number
   groupByBook?: boolean
   displayEdition?: string
+  followReader?: boolean
 }): JSX.Element {
   const [page, setPage] = useState<{ refs: string[]; count: number } | null>(null)
   const count = page?.refs === refs ? page.count : limit ?? refs.length
@@ -74,7 +77,7 @@ export default function VerseRefs({
             </div>
             <div className="flex flex-wrap gap-1">
               {items.sort(byRef).map((r, i) => (
-                <VerseChip key={i} refKey={r} displayEdition={displayEdition} />
+                <VerseChip key={i} refKey={r} displayEdition={displayEdition} followReader={followReader} />
               ))}
             </div>
           </div>
@@ -87,7 +90,7 @@ export default function VerseRefs({
   return (
     <div className="flex flex-wrap gap-1">
       {show.map((r, i) => (
-        <VerseChip key={i} refKey={r} displayEdition={displayEdition} />
+        <VerseChip key={i} refKey={r} displayEdition={displayEdition} followReader={followReader} />
       ))}
       {more}
     </div>

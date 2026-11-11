@@ -82,6 +82,25 @@ CREATE TABLE source_word_spans (
   PRIMARY KEY (translation_id, book_id, chapter, verse, end_position)
 ) WITHOUT ROWID;
 
+-- Only a subset of verified source spans can stand in place of one English word.
+-- Each row is bound to the translation, exact token position, and publisher occurrence.
+CREATE TABLE source_word_singletons (
+  translation_id TEXT NOT NULL,
+  book_id TEXT NOT NULL,
+  chapter INTEGER NOT NULL,
+  verse INTEGER NOT NULL,
+  position INTEGER NOT NULL,
+  source_row TEXT NOT NULL,
+  PRIMARY KEY (translation_id, book_id, chapter, verse, position)
+) WITHOUT ROWID;
+
+CREATE TABLE source_word_coverage (
+  strongs TEXT NOT NULL,
+  translation_id TEXT NOT NULL,
+  occurrences INTEGER NOT NULL,
+  PRIMARY KEY (strongs, translation_id)
+) WITHOUT ROWID;
+
 -- Selectable original-language editions for the interlinear (Masoretic, TR, Byzantine, Critical, …).
 CREATE TABLE editions (
   id         TEXT PRIMARY KEY,   -- 'MT' | 'NA' | 'TR' | 'BYZ' | 'LXX'
@@ -111,6 +130,15 @@ CREATE TABLE original_tokens (
 
 CREATE INDEX idx_ot_loc ON original_tokens (edition, book_id, chapter, verse);
 CREATE INDEX idx_ot_native ON original_tokens (edition, book_id, native_chapter, native_verse);
+
+-- TAGNT order could not be confirmed for these edition-specific verses.
+CREATE TABLE greek_order_uncertainties (
+  edition TEXT NOT NULL,
+  book_id TEXT NOT NULL,
+  chapter INTEGER NOT NULL,
+  verse INTEGER NOT NULL,
+  PRIMARY KEY (edition, book_id, chapter, verse)
+) WITHOUT ROWID;
 
 -- One verified source occurrence of a dictionary ID. Several IDs may describe the same
 -- publisher-attested reading. Hebrew attached lexical components have their own part number.

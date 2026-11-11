@@ -21,6 +21,11 @@ export const APP_GUIDE: GuideSection[] = [
     body: "Click the Interlinear toggle in the top toolbar to show the passage word-by-word with the original Greek or Hebrew, transliteration, Strong's number, and gloss under each word. In the interlinear you can choose the base edition (Masoretic Hebrew, Septuagint, Textus Receptus, Byzantine, or the Critical text) and stack translations under each original word."
   },
   {
+    title: "Set your preferred text order",
+    keywords: "global settings authority order rank preference editions source text manuscript textual variants critical byzantine textus receptus qere ketiv",
+    body: "Open Settings in the top toolbar and use the arrows under Preferred text order. Choose an order for the Greek New Testament, the Old Testament texts, and the written and read Masoretic forms. The Variants panel and Compare source texts in the reader’s Lexicon show the recorded readings in this order. The automatic interlinear opens your highest-ranked available edition. Each translation’s restored words continue to follow its own verified source links."
+  },
+  {
     title: "Interlinear: best guess vs all parses",
     keywords: "parse parsing morphology ambiguous forms grammar attested readings",
     body: "In the interlinear, toggle between the single best-guess parse and all Scripture-attested parses for each word. 'All parses' shows every reading a form actually takes across the scholar-tagged editions, with how often each occurs — nothing is machine-generated."
@@ -38,12 +43,12 @@ export const APP_GUIDE: GuideSection[] = [
   {
     title: "Map a passage or person",
     keywords: "atlas maps location unknown birthplace journey travel route passage context place map person Paul Ruth Naomi",
-    body: "Choose Context in the reader or select a range of verses and choose Context. Map this passage opens its places and supporting verses in the offline atlas. Maps also searches by name or alias; places without coordinates still have reference cards. Choose Map a person there, or Map this person in a Family profile, to see documented places. Numbered stops indicate a cited sequence. The optional dotted connector does not identify a road. Try Paul in Acts 13:13–14 or Ruth and Naomi in Ruth 1."
+    body: "Choose Context in the reader or select a range of verses and choose Context. Map this passage opens its places and supporting verses in the offline atlas. Maps also searches by place name or alias. Map a person lists people with at least one location supported by a cited passage. Their Family profiles have a Map this person button. A place with unknown coordinates still has a reference card. Numbered stops and optional dotted lines show the order given in the passage. Try Paul in Acts 13:13–14 or Ruth and Naomi in Ruth 1."
   },
   {
     title: "Restore source words and the divine name",
-    keywords: "restore words replace agape divine names yahweh yhwh tetragrammaton lord god elohim adonai jehovah",
-    body: "Turn on Restore words in the reader toolbar. Where a verified source alignment identifies the Hebrew divine name, the reader shows YHWH. Use Choose words to restore to enable other terms. Hover over a restored word to compare translations, or focus the word and press Down Arrow. Each translation shows its verified wording or the verse for context. Source-word evidence identifies the publisher’s row. Copies and assistant selections quote the published translation."
+    keywords: "restore words replace occurrences original form lexicon panel greek hebrew aramaic agape divine names yahweh yhwh tetragrammaton lord god elohim adonai jehovah",
+    body: "Select a word in the reader. The right-hand lexicon panel lets you show its written form wherever the edition has a verified source link. Each occurrence uses its own source row. A translated phrase can keep its wording with the source form beside it. Restore words in the toolbar controls visibility, and Choose words to restore manages your choices. The verified four-letter Hebrew divine name displays as YHWH. Hover over a displayed source form or focus it and press Down Arrow to compare translations. Copies and assistant selections quote the published translation."
   },
   {
     title: "Highlight and take notes",

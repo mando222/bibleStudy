@@ -1,22 +1,20 @@
 import { useEffect, useState } from 'react'
 import type { Edition, InterlinearContent } from '@shared/types'
+import { useAppStore } from '@/store/useAppStore'
+import { useStudyQuery } from './useStudyQuery'
 
-let editionsCache: Edition[] | null = null
+const noEditions: Edition[] = []
+const loadEditions = () => window.api.listEditions()
 
 /** The available original-language editions (loaded once, cached). */
-export function useEditions(): Edition[] {
-  const [editions, setEditions] = useState<Edition[]>(editionsCache ?? [])
+export function useEditions(enabled = true) {
+  const editions = useAppStore(s => s.originalEditions)
+  const setEditions = useAppStore(s => s.setOriginalEditions)
+  const query = useStudyQuery(loadEditions, enabled && editions == null)
   useEffect(() => {
-    if (editionsCache) return
-    window.api
-      .listEditions()
-      .then((e) => {
-        editionsCache = e
-        setEditions(e)
-      })
-      .catch(() => undefined)
-  }, [])
-  return editions
+    if (query.data) setEditions(query.data)
+  }, [query.data, setEditions])
+  return { editions: editions ?? noEditions, loading: editions == null && !query.error, error: query.error, retry: query.retry }
 }
 
 interface State {

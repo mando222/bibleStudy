@@ -1,4 +1,5 @@
 import type { PlaceItem } from './types'
+import type { PersonMapStop } from './passageStudy'
 import { isArealFeature } from './mapFeatures'
 
 type Point = { x: number; y: number }
@@ -16,6 +17,28 @@ export const homeCamera: Camera = { ...project(38, 33), zoom: 1 }
 export const located = (place: PlaceItem): place is LocatedPlace =>
   place.precision !== 'Unlocated' && place.lat != null && place.lon != null &&
   Number.isFinite(place.lat) && Math.abs(place.lat) <= 90 && Number.isFinite(place.lon) && Math.abs(place.lon) <= 180
+
+export type JourneySegment = { key: string; from: LocatedPlace; to: LocatedPlace }
+
+/** Connect consecutive, located stops within the same documented journey. */
+export function journeySegments(stops: readonly PersonMapStop[], places: ReadonlyMap<number, PlaceItem>): JourneySegment[] {
+  const journeys = new Map<string, Map<number, LocatedPlace>>()
+  for (const stop of stops) {
+    const place = places.get(stop.placeId)
+    if (stop.journey == null || stop.order == null || !place || !located(place)) continue
+    const ordered = journeys.get(stop.journey) ?? new Map<number, LocatedPlace>()
+    ordered.set(stop.order, place)
+    journeys.set(stop.journey, ordered)
+  }
+  const segments: JourneySegment[] = []
+  for (const [journey, ordered] of journeys) {
+    for (const [order, from] of ordered) {
+      const to = ordered.get(order + 1)
+      if (to) segments.push({ key: journey + ':' + order, from, to })
+    }
+  }
+  return segments
+}
 
 export function cameraBounds(camera: Camera, frame: Frame): Bounds {
   const aspect = frame.width / frame.height

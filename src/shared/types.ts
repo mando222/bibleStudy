@@ -1,3 +1,4 @@
+import type { VerseVariant, OriginalVerseReadings } from './apparatus'
 // Shared domain + IPC contract types, used by main, preload, and renderer.
 import type { WordFrequency, WordFrequencyQuery, WordFrequencyPassageQuery, WordFrequencyVerse } from './wordFrequency'
 import type { StudyRange, PassageContext, PersonMap } from './passageStudy'
@@ -21,6 +22,10 @@ export interface VerseToken {
   /** True when the Strong's number was INFERRED rather than taken from scholarly tagging
    *  (see derived_tags in schema.sql). The reader marks these links visually. */
   derived?: boolean
+  /** STEPBible TAHOT's attestation code for this Masoretic interlinear word. */
+  sourceType?: string
+  /** The written alternative that TAHOT pairs with this precise read form. */
+  ketiv?: string
   sourceWord?: SourceWord
   position: number
   surface: string // the word as printed
@@ -50,6 +55,13 @@ export interface SourceWord {
   startPosition: number
   endPosition: number
   evidence: 'aligned' | 'corroborated'
+  /** One English word independently accounted for in a complete publisher alignment of the verse. */
+  canReplaceAlone?: boolean
+}
+
+export interface SourceWordCoverage {
+  translation: 'BSB' | 'KJV'
+  occurrences: number
 }
 
 /** One Scripture-attested analysis of an original-language form (from the scholar-tagged text). */
@@ -177,6 +189,9 @@ export interface Edition {
 }
 
 export interface InterlinearContent {
+  masoreticAttestationAvailable?: boolean
+  /** Greek NT verses with unresolved edition word order. Absent on older database bundles. */
+  uncertainOrderVerses?: number[]
   book: string
   chapter: number
   edition: string
@@ -184,6 +199,7 @@ export interface InterlinearContent {
   verses: {
     verse: number
     tokens: VerseToken[]
+    sourceIssue?: string // edition supplied a partial or unusable reading at this native address
     lines?: { id: string; text: string; ref?: string }[] // untagged stacked translations, shown as a verse line
   }[]
 }
@@ -196,20 +212,7 @@ export interface ImportedTranslation {
   verseCount: number
 }
 
-/** One word in a TR-vs-Critical comparison: present in both, or only one edition. */
-export interface VariantItem {
-  surface: string
-  strongs: string | null
-  translit: string | null
-  gloss: string | null
-  // NT (Greek): 'both' = shared, 'critical' = NA-only, 'tr' = TR-only.
-  // OT (Hebrew): 'qere' = the read/main form, 'ketiv' = the written variant.
-  side: 'both' | 'critical' | 'tr' | 'qere' | 'ketiv'
-}
-export interface VerseVariant {
-  verse: number
-  items: VariantItem[]
-}
+export type { VerseVariant } from './apparatus'
 
 // ---- Local AI assistant + RAG ----
 
@@ -361,6 +364,11 @@ export interface PersonRef {
   id: number
   name: string
 }
+export interface MappedPerson extends PersonRef {
+  displayName: string
+  aliases: string[]
+  mappedPlaceCount: number
+}
 export interface PersonListItem {
   id: number
   name: string
@@ -370,6 +378,7 @@ export interface PersonListItem {
   verseCount: number
 }
 export interface PersonDetail extends PersonListItem {
+  mappedPlaceCount: number
   summary: string | null
   father: PersonRef | null
   mother: PersonRef | null
@@ -467,7 +476,7 @@ export interface UpdateProgress {
   total: number
 }
 export interface UpdatesApi {
-  /** Newer release, or null for "nothing to show" (disabled, throttled, dismissed, or offline). */
+  /** Launch checks can return a remembered offer. A forced check rejects on failure and returns null when up to date. */
   check(force?: boolean): Promise<UpdateInfo | null>
   getPrefs(): Promise<UpdatePrefs>
   setPrefs(patch: Partial<UpdatePrefs>): Promise<UpdatePrefs>
@@ -545,10 +554,12 @@ export interface BibleApi {
   getChapter(ref: ChapterRef): Promise<ChapterContent>
   getComparisonVerse(ref: VerseRef): Promise<Verse | null>
   getStrongs(id: string): Promise<StrongsEntry | null>
+  getSourceWordCoverage(id: string): Promise<SourceWordCoverage[]>
   browseLexicon(opts: LexBrowseOptions): Promise<LexBrowseResult>
   getWordFrequency(query: WordFrequencyQuery): Promise<WordFrequency>
   getWordFrequencyPassages(query: WordFrequencyPassageQuery): Promise<WordFrequencyVerse[]>
   getPeople(query?: string, limit?: number): Promise<PersonListItem[]>
+  getMappedPeople(): Promise<MappedPerson[]>
   getPerson(id: number): Promise<PersonDetail | null>
   getAncestry(id: number): Promise<PersonRef[]>
   getPlaces(): Promise<PlaceItem[]>
@@ -574,6 +585,7 @@ export interface BibleApi {
     includeParses?: boolean
   ): Promise<InterlinearContent>
   getChapterApparatus(book: string, chapter: number): Promise<VerseVariant[]>
+  getOriginalVerseReadings(ref: VerseRef): Promise<OriginalVerseReadings>
   search(query: SearchQuery): Promise<SearchResponse>
 
   listHighlights(ref: ChapterRef): Promise<Highlight[]>

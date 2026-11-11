@@ -39,14 +39,44 @@ describe.skipIf(!existsSync('resources/bible.sqlite'))('cited study data', () =>
 
   it('keeps explicit routes separate for each traveler and from independent biographical facts', () => {
     const paul = getPersonMap(2479)!
-    expect(paul.stops.filter(s => s.order).map(s => [s.placeId, s.order])).toEqual([[919, 1], [936, 2], [69, 3]])
-    expect(paul.stops.some(s => s.placeId === 636)).toBe(false)
+    const pisidia = paul.stops.find(s => s.placeId === 919 && s.refs.includes('Acts.13.13'))!.journey
+    expect(pisidia).toBeTruthy()
+    expect(paul.stops.filter(s => s.journey === pisidia).map(s => [s.placeId, s.order])).toEqual([[919, 1], [936, 2], [69, 3]])
     expect(paul.stops.find(s => s.placeId === 1140)).toMatchObject({ role: 'birthplace', order: null })
-    expect(getPersonMap(1679)?.stops.find(s => s.placeId === 636)?.refs).toContain('Acts.13.13')
-    for (const id of [2147, 2450]) expect(getPersonMap(id)?.stops.map(s => s.placeId)).toEqual([815, 218])
+    expect(getPersonMap(1722)?.stops.filter(s => s.journey === pisidia).map(s => s.placeId)).toEqual([919, 936, 69])
+    const john = getPersonMap(1679)!
+    expect(john.stops.filter(s => s.order).map(s => [s.placeId, s.order])).toEqual([[936, 1], [636, 2]])
+    expect(john.stops[1].refs).toContain('Acts.13.13')
+    for (const id of [2147, 2450]) expect(getPersonMap(id)?.stops.filter(s => s.order).map(s => s.placeId)).toEqual([815, 218])
+    expect(getPersonMap(2147)?.stops.filter(s => s.placeId === 815).map(s => [s.role, s.order]))
+      .toEqual([['departure', 1], ['residence', null]])
     expect(getPersonMap(2478)?.stops.map(s => s.placeId)).toEqual([837]) // King Saul has his own evidence.
     expect(getPersonMap(13)?.stops).toEqual([]) // No reviewed location for Abel.
     expect(getPersonMap(-9)).toBeNull()
+  })
+
+  it('distinguishes documented origins and residences from a birthplace or a burial', () => {
+    expect(getPersonMap(279)?.stops.find(s => s.placeId === 956)).toMatchObject({ role: 'origin', refs: ['Acts.18.2'] })
+    const adam = getPersonMap(78)!.stops.filter(s => s.placeId === 354)
+    expect(adam.some(s => s.role === 'residence')).toBe(true)
+    expect(adam.some(s => s.role === 'birthplace')).toBe(false)
+    expect(bibleDb()!.prepare('SELECT lat,lon FROM places WHERE id=354').get()).toMatchObject({ lat: null, lon: null })
+    const joshua = getPersonMap(1727)!.stops.filter(s => s.placeId === 1167)
+    expect(joshua.some(s => s.role === 'residence')).toBe(true)
+    expect(joshua.some(s => s.role === 'death')).toBe(false)
+    expect(getPersonMap(994)?.stops.map(s => [s.placeId, s.role, s.order]))
+      .toEqual(expect.arrayContaining([[551, 'visit', null], [636, 'residence', null]]))
+  })
+
+  it('uses the named children of David in each birthplace list and keeps similarly named sons distinct', () => {
+    const children = bibleDb()!.prepare('SELECT id FROM people WHERE father_id=994').all()
+    const bornAt = (placeId: number) => children.map(child => Number(child.id)).filter(id =>
+      getPersonMap(id)?.stops.some(s => s.placeId === placeId && s.role === 'birthplace')
+    ).sort((a, b) => a - b)
+    expect(bornAt(551)).toEqual([59, 97, 232, 655, 939, 2657])
+    expect(bornAt(636)).toEqual([728, 1078, 1143, 1148, 1156, 1163, 1584, 2152, 2179, 2213, 2547, 2715, 2762])
+    expect(getPersonMap(1148)?.stops[0].refs).toContain('1Chr.14.5') // Elpalet
+    expect(getPersonMap(1143)?.stops[0].refs).toContain('1Chr.14.7') // Eliphalet
   })
 
   it('indexes every source association and validates the reviewed citations against the bundled text', () => {

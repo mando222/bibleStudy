@@ -1,4 +1,5 @@
 import type { Verse } from '@shared/types'
+import { masoreticSourceNote } from '@shared/originalText'
 import { useAppStore } from '@/store/useAppStore'
 
 /** Word-by-word interlinear: each word is a vertical cell —
@@ -11,7 +12,9 @@ export default function InterlinearVerse({
   lines = [],
   onSelectVerse,
   verseNumbers = true,
-  showParses = false
+  showParses = false,
+  swete = false,
+  sourceIssue
 }: {
   v: Verse
   rtl?: boolean
@@ -21,6 +24,8 @@ export default function InterlinearVerse({
   onSelectVerse?: () => void
   verseNumbers?: boolean
   showParses?: boolean
+  swete?: boolean
+  sourceIssue?: string
 }): JSX.Element {
   const selectStrongs = useAppStore((s) => s.selectStrongs)
   const selected = useAppStore((s) => s.selectedStrongs)
@@ -42,9 +47,17 @@ export default function InterlinearVerse({
         <button type="button" onClick={onSelectVerse} aria-label={`Select verse ${v.verse}`} title="Select verse"
           className={`reader-marker text-xs font-sans font-semibold text-accent/70 tabular-nums ${verseNumbers ? 'pt-1.5' : 'absolute top-1 -start-5 rounded px-1 opacity-0 group-hover/verse:opacity-100 focus-visible:opacity-100'}`}
           data-label={verseNumbers ? v.verse : '⋯'} />
-        {(v.tokens ?? []).map((tok) => {
-        const isHeb = tok.strongs?.startsWith('H') ?? false
+        {sourceIssue && <p className="flex-1 text-xs text-muted py-1">{sourceIssue}</p>}
+        {!sourceIssue && (v.tokens ?? []).map((tok) => {
+        if (swete) return (
+          <span key={tok.position} className="flex flex-col items-center px-1.5 py-1">
+            <span lang="grc" className="font-greek text-xl leading-tight">{tok.lemma}</span>
+            {tok.translit && <span className="text-xs italic text-muted mt-0.5">{tok.translit}</span>}
+          </span>
+        )
+        const isHeb = rtl || tok.strongs?.startsWith('H')
         const isSel = selected != null && selected === tok.strongs
+        const sourceNote = masoreticSourceNote(tok.sourceType)
         return (
           <button
             key={tok.position}
@@ -62,6 +75,10 @@ export default function InterlinearVerse({
                 {tok.lemma}
               </span>
             )}
+            {sourceNote && <span title={sourceNote.description} className="text-[10px] text-muted">{sourceNote.label}</span>}
+            {tok.ketiv && <span className="text-xs text-muted" title="TAHOT gives the written consonants with vowel points supplied by Tyndale scholars.">
+              Ketiv · written form <bdi dir="rtl" className="font-hebrew">{tok.ketiv}</bdi>
+            </span>}
             {tok.translit && <span className="text-xs italic text-muted mt-0.5">{tok.translit}</span>}
             <span className="text-xs text-ink mt-0.5">{tok.surface}</span>
             {stack.map((tid) => (
@@ -109,7 +126,7 @@ export default function InterlinearVerse({
           )
         })}
       </div>
-      {lines.length > 0 && (
+      {!sourceIssue && lines.length > 0 && (
         <div className="mt-2 ml-5 space-y-0.5">
           {lines.map((ln) => (
             <div key={ln.id} className="text-sm text-muted leading-snug">

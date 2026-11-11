@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { PlaceItem } from '@shared/types'
 import type { PersonMapStop, StudyRange } from '@shared/passageStudy'
 import { BOOK_BY_ID } from '@shared/books'
-import { locationKind, locationLabel, mapShapes, placeMatches, regionQualifier, sliderFromYear, yearFromSlider } from '@shared/atlas'
+import { journeySegments, locationKind, locationLabel, mapShapes, placeMatches, regionQualifier, sliderFromYear, yearFromSlider } from '@shared/atlas'
 import { useAppStore } from '@/store/useAppStore'
 import { useStudyQuery } from '@/hooks/useStudyQuery'
 import AtlasCanvas from './AtlasCanvas'
@@ -13,6 +13,7 @@ const emptyStops: PersonMapStop[] = []
 const field = 'w-full rounded-md border border-line bg-elevated px-2 py-1.5 text-sm text-ink'
 const action = 'rounded-md border border-line px-2 py-1 text-xs text-muted hover:text-accent hover:bg-elevated'
 const loadPlaces = () => window.api.getPlaces()
+const loadMappedPeople = () => window.api.getMappedPeople()
 const loadRegions = async () => {
   const source = await window.api.getMapRegions()
   return source ? mapShapes(JSON.parse(source)) : []
@@ -36,17 +37,22 @@ const contextMessages = {
 
 function PersonSearch({ onPerson }: { onPerson: (id: number) => void }) {
   const [query, setQuery] = useState('')
-  const result = useStudyQuery(useCallback(() => window.api.getPeople(query.trim(), 60), [query]))
-  return <div className="min-h-0 flex flex-col">
+  const result = useStudyQuery(loadMappedPeople)
+  const name = query.trim().toLowerCase()
+  const matches = result.data?.filter(person => person.displayName.toLowerCase().startsWith(name)
+    || [person.name, ...person.aliases].some(label => label.toLowerCase().includes(name)))
+  return <div className="min-h-0 flex-1 flex flex-col">
     <label className="block p-3 text-xs text-muted">Search for a person
       <input autoFocus value={query} onChange={e => setQuery(e.target.value)} className={field + ' mt-1'} placeholder="Person’s name" />
     </label>
-    <div className="overflow-auto">
+    <div role="region" className="overflow-auto" aria-label="People with documented locations">
+      {result.loading && <p role="status" className="px-3 text-sm text-muted">Loading mapped people…</p>}
       {result.error && <button className={action} onClick={result.retry}>People unavailable · Retry</button>}
-      {result.data?.length === 0 && <p className="px-3 text-sm text-muted">No people match this name.</p>}
-      {result.data?.map(person => <button key={person.id} onClick={() => onPerson(person.id)}
+      {matches?.length === 0 && <p role="status" className="px-3 text-sm text-muted">{name
+        ? 'No people with documented locations match this name.' : 'No people have documented locations in this atlas.'}</p>}
+      {matches?.map(person => <button key={person.id} onClick={() => onPerson(person.id)}
         className="block w-full text-left px-3 py-2 text-sm border-b border-line/50 hover:bg-elevated">
-        {person.name}<span className="ml-2 text-xs text-muted">{person.verseCount} cited verses</span></button>)}
+        {person.displayName}{' '}<span className="ml-1 text-xs text-muted">{person.mappedPlaceCount} documented {person.mappedPlaceCount === 1 ? 'location' : 'locations'}</span></button>)}
     </div>
   </div>
 }
@@ -66,7 +72,8 @@ function PlaceEvidence({ place, edition }: { place: PlaceItem; edition?: string 
     {place.comment && <p className="mt-1 text-xs text-muted">Location note: {place.comment}</p>}
     {place.identificationNote && <p className="mt-1 text-xs text-muted">Theographic note on the Recogito identification: {place.identificationNote}</p>}
     {place.aliases.length > 0 && <p className="mt-1 text-xs text-muted">Also listed as {place.aliases.join(', ')}.</p>}
-    <div className="mt-2">{result.data?.length ? <VerseRefs refs={result.data} limit={35} displayEdition={edition} />
+    <h4 className="mt-2 text-xs font-medium text-muted">References to this place</h4>
+    <div className="mt-1">{result.data?.length ? <VerseRefs refs={result.data} limit={35} displayEdition={edition} followReader />
       : result.error ? <button className={action} onClick={result.retry}>References unavailable · Retry</button>
       : <span className="text-xs text-muted">{result.loading ? 'Loading references…' : 'No recorded verse references.'}</span>}</div>
   </section>
@@ -102,9 +109,11 @@ export default function MapsView(): JSX.Element {
   const [connect, setConnect] = useState(false)
   const range = target?.kind === 'passage' ? target.passage : null
   const personId = target?.kind === 'person' ? target.personId : null
+  const citationEdition = range?.edition ?? origin?.passage?.edition
   const context = useStudyQuery(useCallback(() => window.api.getPassageContext(range!), [range]), !!range)
   const person = useStudyQuery(useCallback(() => window.api.getPersonMap(personId!), [personId]), personId != null)
   const stops = person.data?.stops ?? emptyStops
+  const segments = useMemo(() => journeySegments(stops, byId), [stops, byId])
   const scoped = useMemo(() => {
     const ids = personId != null ? stops.map(s => s.placeId) : context.data?.places.map(p => p.id) ?? []
     return [...new Set(ids)].map(id => byId.get(id)).filter((p): p is PlaceItem => !!p)
@@ -113,8 +122,8 @@ export default function MapsView(): JSX.Element {
     setSelected(null)
     setFocus(target ? scoped : null)
     setConnect(false)
-    if (target) showPeople(false)
   }, [target, scoped])
+  useEffect(() => { if (target) showPeople(false) }, [target])
   const select = useCallback((p: PlaceItem) => {
     setSelected(p)
     if (locationKind(p) !== 'unlocated') setFocus([p])
@@ -147,7 +156,8 @@ export default function MapsView(): JSX.Element {
     }
     return duplicates
   }, [all])
-  const directoryTitle = target?.kind === 'person' ? person.data?.name ?? 'Person map' : range ? rangeLabel(range) : 'Places'
+  const directoryTitle = target?.kind === 'person' ? person.data?.displayName ?? 'Person map' : range ? rangeLabel(range) : 'Places'
+  const hasLocatedPlace = scoped.some(place => locationKind(place) !== 'unlocated')
   const scopedEmpty = !context.loading && !person.loading && !context.error && !person.error && !scoped.length
 
   function placeButton(p: PlaceItem, prefix = '') {
@@ -165,11 +175,16 @@ export default function MapsView(): JSX.Element {
   return <div className="h-full flex bg-bg">
     <aside className="w-64 max-w-[42%] shrink-0 flex flex-col border-r border-line bg-panel">
       <div className="p-3 border-b border-line space-y-2">
-        <h2 className="font-serif text-lg">{personPicker ? 'People' : directoryTitle}</h2>
+        <h2 className="font-serif text-lg">{personPicker ? 'People with documented locations' : directoryTitle}</h2>
         <div className="flex flex-wrap gap-1">
           {(personPicker || target) && <button className={action} onClick={() => { clearTarget(); showPeople(false); setQuery(''); setFtype('') }}>All places</button>}
-          {!personPicker && <button className={action} onClick={() => showPeople(true)}>Map a person</button>}
-          {target && !personPicker && scoped.some(p => locationKind(p) !== 'unlocated') &&
+          {!personPicker && <button className={action} onClick={() => {
+            clearTarget()
+            setSelected(null)
+            setFocus(null)
+            showPeople(true)
+          }}>Map a person</button>}
+          {target && !personPicker && hasLocatedPlace &&
             <button className={action} onClick={() => setFocus([...scoped])}>Fit all locations</button>}
           {origin && origin.activity !== 'maps' && <button className={action} onClick={returnFromAtlas}>
             {origin.activity === 'bible' ? 'Back to passage' : 'Back to profile'}</button>}
@@ -183,7 +198,7 @@ export default function MapsView(): JSX.Element {
           <label className="flex items-center gap-2 text-xs text-muted"><input type="checkbox" checked={showAreas} onChange={e => setShowAreas(e.target.checked)} />Show regions and rivers on map</label>
           <p className="text-xs text-faint">{filtered.length} {filtered.length === 1 ? 'place' : 'places'}</p>
         </>}
-        {personId != null && stops.some(s => s.order != null && s.order > 1) && <label className="flex items-start gap-2 text-xs text-muted">
+        {segments.length > 0 && <label className="flex items-start gap-2 text-xs text-muted">
           <input type="checkbox" checked={connect} onChange={e => setConnect(e.target.checked)} />Sequence only; road unknown.</label>}
       </div>
       {personPicker ? <PersonSearch onPerson={id => { showPeople(false); openPerson(id) }} /> :
@@ -214,18 +229,22 @@ export default function MapsView(): JSX.Element {
                 <p className="px-3 pt-3 text-xs font-medium text-muted">{stop.journey}</p>}
               {placeButton(place, stop.order == null ? '' : stop.order + '. ')}
               <div className="px-3 text-xs text-muted">{stop.role} · {stop.label}
-                <div className="mt-1"><VerseRefs refs={stop.refs} limit={4} /></div><span className="text-faint">{stop.source}</span>
+                <div className="mt-1"><VerseRefs refs={stop.refs} displayEdition={citationEdition} followReader limit={4} /></div><span className="text-faint">{stop.source}</span>
               </div></div>
           })}
           {target && (context.loading || person.loading) && <p className="p-3 text-sm text-muted">Loading cited places…</p>}
           {context.error && <button className={action} onClick={context.retry}>Passage map unavailable · Retry</button>}
           {person.error && <button className={action} onClick={person.retry}>Person map unavailable · Retry</button>}
+          {target && scoped.length > 0 && !hasLocatedPlace && <p className="p-3 text-sm text-muted">
+            {scoped.length === 1 ? 'This place has no recorded coordinates.' : 'These places have no recorded coordinates.'}
+          </p>}
           {target && catalog.data && scopedEmpty && (personId != null || context.data?.status === 'available' || context.data?.status === 'partial') &&
-            <p className="p-3 text-sm text-muted">{personId != null ? 'No documented location with a supporting passage is recorded for this person.' : 'No places are linked to these verses in the atlas.'}</p>}
+            <p className="p-3 text-sm text-muted">{personId == null ? 'No places are linked to these verses in the atlas.' :
+              person.data ? 'No documented location with a supporting passage is recorded for this person.' : 'This person could not be found.'}</p>}
         </div>}
     </aside>
     <main className="flex-1 min-w-0 flex flex-col">
-      <AtlasCanvas places={visible} focus={focus} selected={selected} onSelect={select} stops={stops} connect={connect} regions={activeRegions} />
+      <AtlasCanvas places={visible} focus={focus} overview={target ? scoped : null} selected={selected} onSelect={select} stops={stops} segments={connect ? segments : []} regions={activeRegions} />
       <div className="border-t border-line px-3 py-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
         <label className="flex items-center gap-2"><input type="checkbox" checked={showRegions} onChange={e => setShowRegions(e.target.checked)} />Kingdom boundaries</label>
         {showRegions && <>
@@ -235,7 +254,7 @@ export default function MapsView(): JSX.Element {
           {kingdomShapes.error && <button className={action} onClick={kingdomShapes.retry}>Boundary data unavailable · Retry</button>}
         </>}
       </div>
-      {selected && <PlaceEvidence key={selected.id} place={selected} edition={range?.edition} />}
+      {selected && <PlaceEvidence key={selected.id} place={selected} edition={citationEdition} />}
     </main>
   </div>
 }

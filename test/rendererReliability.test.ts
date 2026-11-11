@@ -16,7 +16,7 @@ import { useChapter } from '../src/renderer/src/hooks/useChapter'
 import { useHighlights, useNotes } from '../src/renderer/src/hooks/useUserData'
 import { useNotebookDocument } from '../src/renderer/src/hooks/useNotebookDocument'
 import { useVerseNavigation } from '../src/renderer/src/hooks/useVerseNavigation'
-import { useAppStore } from '../src/renderer/src/store/useAppStore'
+import { readingEdition, useAppStore } from '../src/renderer/src/store/useAppStore'
 import type { Translation, VerseRef } from '../src/shared/types'
 
 function deferred<T>() {
@@ -89,6 +89,21 @@ describe('search request lifecycle', () => {
     expect(search).toHaveBeenCalledTimes(2)
     expect(host.textContent).toContain('No results')
     expect(host.querySelector('[role="alert"]')).toBeNull()
+  })
+
+  it('uses the global Greek edition in translation view and the selected edition while reading interlinear', async () => {
+    const state = useAppStore.getState()
+    state.setPreferredTextOrder({ ...state.preferredTextOrder, nt: ['TR', 'NA', 'BYZ'] })
+    state.setInterlinearEdition('BYZ')
+    const search = vi.fn().mockResolvedValue({ total: 0, hits: [] })
+    Object.assign(window.api, { search })
+    await act(async () => root.render(createElement(SearchPanel)))
+    await change(host.querySelector('input')!, 'λόγος')
+    await advance()
+    expect(search.mock.lastCall?.[0]).toMatchObject({ greekEdition: 'TR' })
+    await act(async () => state.toggleInterlinear())
+    await advance()
+    expect(search.mock.lastCall?.[0]).toMatchObject({ greekEdition: 'BYZ' })
   })
 })
 
@@ -170,6 +185,62 @@ describe('passage navigation', () => {
     expect(host.textContent).toContain('Aligned ASV text')
     expect(scroll).toHaveBeenCalledOnce()
     expect(useAppStore.getState().scrollToVerse).toBeNull()
+  })
+
+  it('follows the global order in automatic mode and keeps explicit editions until released', async () => {
+    const state = useAppStore.getState()
+    state.setPreferredTextOrder({ ...state.preferredTextOrder, nt: ['TR', 'NA', 'BYZ'], ot: ['LXX', 'MT'] })
+    const editions = ['TR', 'BYZ', 'MT', 'LXX'].map(id => ({ id, name: id,
+      testament: ['MT', 'LXX'].includes(id) ? 'OT' : 'NT' }))
+    const getInterlinear = vi.fn(async (book, chapter, edition) => ({
+      book, chapter, edition, direction: 'ltr', verses: [{ verse: 1, tokens: [] }]
+    }))
+    Object.assign(window.api, { listEditions: async () => editions, getInterlinear })
+    state.toggleInterlinear()
+    await act(async () => root.render(createElement(InterlinearReader, { book: 'John', chapter: 1 })))
+    const select = host.querySelector<HTMLSelectElement>('[aria-label="Interlinear base text"]')!
+    expect(select.value).toBe('')
+    expect(getInterlinear.mock.lastCall?.slice(0, 3)).toEqual(['John', 1, 'TR'])
+    await change(select, 'BYZ')
+    await act(async () => state.setPreferredTextOrder({ ...useAppStore.getState().preferredTextOrder, nt: ['NA', 'TR', 'BYZ'] }))
+    expect(select.value).toBe('BYZ')
+    expect(readingEdition(useAppStore.getState())).toBe('BYZ')
+    await change(select, '')
+    expect(getInterlinear.mock.lastCall?.slice(0, 3)).toEqual(['John', 1, 'TR']) // NA is unavailable
+    await change(select, 'TR')
+    await act(async () => {
+      state.focusVerse('Ps', 51, 1, 'BSB')
+      root.render(createElement(InterlinearReader, { book: 'Ps', chapter: 51 }))
+    })
+    expect(readingEdition(useAppStore.getState())).toBe('LXX')
+    expect(getInterlinear.mock.lastCall?.slice(0, 3)).toEqual(['Ps', 50, 'LXX'])
+    expect(select.value).toBe('')
+    expect(host.querySelector('[role="status"]')?.textContent).toMatch(/Psalms? 50:3 in LXX/)
+    await act(async () => state.toggleInterlinear())
+    expect(readingEdition(useAppStore.getState())).toBe('KJV')
+  })
+
+  it('shows the Swete Greek surface, provenance and source gaps in both automatic and explicit modes', async () => {
+    const state = useAppStore.getState()
+    state.setPreferredTextOrder({ ...state.preferredTextOrder, ot: ['LXX', 'MT'] })
+    useAppStore.setState({ interlinearParses: true })
+    const getInterlinear = vi.fn(async () => ({ book: 'Dan', chapter: 1, edition: 'LXX', direction: 'ltr', verses: [
+      { verse: 1, tokens: [{ position: 0, lemma: 'ἐποίησεν', translit: 'epoiēsen', surface: 'committed', strongs: 'G4160' }] },
+      { verse: 2, tokens: [], sourceIssue: 'The source includes editorial notes.' }
+    ] }))
+    Object.assign(window.api, { listEditions: async () => [{ id: 'LXX', name: 'Swete', testament: 'OT' }], getInterlinear })
+    await act(async () => root.render(createElement(InterlinearReader, { book: 'Dan', chapter: 1 })))
+    const select = host.querySelector<HTMLSelectElement>('[aria-label="Interlinear base text"]')!
+    expect(select.value).toBe('')
+    expect(host.textContent).toContain('Theodotion')
+    expect(host.textContent).toContain('ἐποίησεν')
+    expect(host.textContent).toContain('epoiēsen')
+    expect(host.textContent).toContain('editorial notes')
+    expect(host.textContent).not.toMatch(/committed|G4160|All parses|Best guess/)
+    expect(getInterlinear).toHaveBeenCalledWith('Dan', 1, 'LXX', expect.any(Array), false)
+    await change(select, 'LXX')
+    expect(select.value).toBe('LXX')
+    expect(host.textContent).not.toMatch(/committed|G4160|All parses|Best guess/)
   })
 })
 
@@ -461,6 +532,39 @@ describe('source-word reading and quotations', () => {
       return host.querySelector<HTMLElement>('[data-restored-word]')!
     }
 
+    it('compares the selected occurrence from its added source form and leaves the printed English hover-free', async () => {
+      useAppStore.setState({ primary: 'BSB', parallels: ['BSB'], restoreSourceWords: true, sourceFormIds: ['G264'],
+        translations: editions })
+      useAppStore.getState().goTo('1John', 2, 'BSB')
+      const aligned = { edition: 'BSB', language: 'Greek', book: '1John', chapter: 2, verse: 1,
+        evidence: 'aligned', strongs: 'G264', morph: 'Verb' }
+      const first = { ...aligned, rowId: '199485', text: 'ἁμάρτητε', translit: 'hamartēte', startPosition: 0, endPosition: 0, english: 'you will not sin' }
+      const second = { ...aligned, rowId: '199489', text: 'ἁμάρτῃ', translit: 'hamartē', startPosition: 2, endPosition: 2, english: 'does sin' }
+      const verse = { verse: 1, text: 'you will not sin. But if anyone does sin,',
+        tokens: [{ position: 0, surface: first.english, trailer: '. ', strongs: 'G264', sourceWord: first },
+          { position: 1, surface: 'But if anyone', trailer: ' ', strongs: null },
+          { position: 2, surface: second.english, trailer: ',', strongs: 'G264', sourceWord: second }] }
+      const compare = vi.fn(async () => ({ verse: 1, text: 'And if any man sin,', tokens: null }))
+      Object.assign(window.api, { getChapter: async () => ({ translation: 'BSB', book: '1John', chapter: 2, direction: 'ltr', verses: [verse] }),
+        listHighlights: async () => [], listNotes: async () => [], getComparisonVerse: compare })
+      await act(async () => root.render(createElement(ReadingPanel)))
+      const row = host.querySelector<HTMLElement>('[data-verse="1"]')!
+      expect(row.textContent?.trim()).toBe('you will not sin [ἁμάρτητε]. But if anyone does sin [ἁμάρτῃ],')
+      await mouse('mouseover', row.querySelector('[data-aligned-english]')!)
+      await advance(500)
+      expect(dialog()).toBeNull()
+      expect(compare).not.toHaveBeenCalled()
+      const words = [...row.querySelectorAll('[data-restored-word]')]
+      expect(words.map(node => node.textContent)).toEqual([first.text, second.text])
+      await key(words[1], 'ArrowDown')
+      expect(dialog()?.querySelector('h2')?.textContent).toBe(second.text)
+      expect(reading('BSB')?.querySelector('p')?.textContent).toBe(second.english)
+      expect(reading('KJV')?.textContent).toContain('Verse context')
+      await act(async () => useAppStore.getState().setSourceForm('G264', false))
+      expect(dialog()).toBeNull()
+      expect(row.textContent?.trim()).toBe(verse.text)
+    })
+
     it('waits for a deliberate hover, compares only the verified span and preserves full fallback text', async () => {
       const fetch = vi.fn(async ({ translation }: VerseRef) =>
         translation === 'BSB' ? berean() : translation === 'ASV' ? asv : web)
@@ -554,7 +658,11 @@ describe('source-word reading and quotations', () => {
     const word = { text: 'ἠγάπησεν', translit: 'ēgapēsen', language: 'Greek', edition: 'BSB',
       strongs: 'G25', morph: 'Verb - Aorist Indicative Active - 3rd Person Singular',
       book: 'John', chapter: 3, verse: 16, rowId: '80599', english: 'loved', startPosition: 1, endPosition: 1, evidence: 'aligned' }
+    const reading = { nativeRefs: ['3:16'], words: [{ surface: word.text, strongs: 'G25', translit: word.translit, gloss: 'loved' }] }
+    const getOriginalVerseReadings = vi.fn(async () => ({ kind: 'greek', ref: { book: 'John', chapter: 3, verse: 16 },
+      readings: { NA: reading, TR: reading, BYZ: reading } }))
     Object.assign(window.api, {
+      getOriginalVerseReadings,
       getChapter: async () => ({ translation: 'BSB', book: 'John', chapter: 3, direction: 'ltr', verses: [{
         verse: 16, text: 'God loved the world.', tokens: [
           { position: 0, surface: 'God', trailer: ' ', strongs: 'G2316' },
@@ -579,6 +687,20 @@ describe('source-word reading and quotations', () => {
     expect(inspector.querySelector('bdi')?.textContent).toBe('ἠγάπησεν')
     expect(inspector.textContent).not.toContain('ἀγαπάω')
     expect(host.textContent).toContain('Dictionary headwordἀγαπάω')
+    expect(getOriginalVerseReadings).not.toHaveBeenCalled()
+    const compare = inspector.querySelector<HTMLButtonElement>('button[aria-expanded]')!
+    await act(async () => compare.click())
+    expect(getOriginalVerseReadings).toHaveBeenCalledWith({ translation: 'BSB', book: 'John', chapter: 3, verse: 16 })
+    const labels = () => [...inspector.querySelectorAll('dt')].map(el => el.textContent)
+    expect(labels()[0]).toContain('Critical')
+    await act(async () => {
+      const state = useAppStore.getState()
+      state.setPreferredTextOrder({ ...state.preferredTextOrder, nt: ['TR', 'BYZ', 'NA'] })
+    })
+    expect(labels()[0]).toContain('Textus Receptus')
+    expect(getOriginalVerseReadings).toHaveBeenCalledTimes(1)
+    expect(inspector.querySelector('bdi')?.textContent).toBe(word.text)
+    expect(host.querySelector('[data-verse]')!.textContent?.trim()).toBe('God ēgapēsen the world.')
   })
 
   it('copies and attaches published words across verses and preserves partial unmodified endpoints', async () => {

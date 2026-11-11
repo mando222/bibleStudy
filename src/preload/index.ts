@@ -7,6 +7,7 @@ const api: BibleApi = {
   getChapter: (ref) => ipcRenderer.invoke('bible:getChapter', ref),
   getComparisonVerse: (ref) => ipcRenderer.invoke('bible:getComparisonVerse', ref),
   getStrongs: (id) => ipcRenderer.invoke('bible:getStrongs', id),
+  getSourceWordCoverage: (id) => ipcRenderer.invoke('bible:getSourceWordCoverage', id),
   browseLexicon: (opts) => ipcRenderer.invoke('bible:browseLexicon', opts),
   getWordFrequency: (query) => ipcRenderer.invoke('bible:getWordFrequency', query),
   getWordFrequencyPassages: (query) => ipcRenderer.invoke('bible:getWordFrequencyPassages', query),
@@ -16,6 +17,7 @@ const api: BibleApi = {
   getPlaces: () => ipcRenderer.invoke('bible:getPlaces'),
   getPassageContext: range => ipcRenderer.invoke('bible:getPassageContext', range),
   getPersonMap: id => ipcRenderer.invoke('bible:getPersonMap', id),
+  getMappedPeople: () => ipcRenderer.invoke('bible:getMappedPeople'),
   getPlaceVerses: (id) => ipcRenderer.invoke('bible:getPlaceVerses', id),
   getEvents: () => ipcRenderer.invoke('bible:getEvents'),
   getMapLand: () => ipcRenderer.invoke('bible:getMapLand'),
@@ -32,6 +34,7 @@ const api: BibleApi = {
   listEditions: () => ipcRenderer.invoke('bible:listEditions'),
   getInterlinear: (book, chapter, edition, translations, includeParses) =>
     ipcRenderer.invoke('bible:getInterlinear', book, chapter, edition, translations, includeParses),
+  getOriginalVerseReadings: ref => ipcRenderer.invoke('bible:getOriginalVerseReadings', ref),
   getChapterApparatus: (book, chapter) =>
     ipcRenderer.invoke('bible:getChapterApparatus', book, chapter),
   search: (query) => ipcRenderer.invoke('bible:search', query),

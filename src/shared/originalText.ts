@@ -30,3 +30,19 @@ export function foldLatinHomoglyphs(s: string): string {
     .replace(MARKER_PREFIX, '')
     .replace(/[ABEZHIKMNOPTYXol]/g, (c) => LATIN_TO_GREEK[c] ?? c)
 }
+
+/** TAHOT's exceptional readings in its Masoretic edition. L denotes a Leningrad reading. */
+export function masoreticSourceNote(sourceType?: string): { label: string; description: string } | undefined {
+  if (sourceType === 'X') return {
+    label: 'Reconstruction from Greek',
+    description: 'TAHOT gives a Hebrew reconstruction based on Septuagint evidence.'
+  }
+  if (sourceType === 'R') return {
+    label: 'Restored from a parallel',
+    description: 'TAHOT supplies this word from a parallel Hebrew passage.'
+  }
+  if (sourceType === 'Q(K)' || sourceType === 'Q(k)' || sourceType === 'Q') return {
+    label: 'Qere · read form',
+    description: 'TAHOT gives the traditional reading at this position.'
+  }
+}

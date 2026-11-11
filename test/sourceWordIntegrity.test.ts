@@ -2,7 +2,7 @@ import { createReadStream, existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { createInterface } from 'node:readline'
 import { describe, expect, it, vi } from 'vitest'
-import { getChapter } from '../src/main/db/bible'
+import { bibleDb, getChapter } from '../src/main/db/bible'
 import { BOOKS } from '../src/shared/books'
 import { restoredVerseSegments, SOURCE_WORD_TERMS, type VerseSegment } from '../src/shared/sourceWords'
 import type { ChapterRef, SourceWord, Verse } from '../src/shared/types'
@@ -40,7 +40,6 @@ interface PublishedVerse {
 async function readPublisher(): Promise<Map<string, PublishedVerse>> {
   const verses = new Map<string, PublishedVerse>()
   const lines = createInterface({ input: createReadStream(publisherFile), crlfDelay: Infinity })
-  const wanted = new Set(identifiers)
   let current: PublishedVerse | undefined
   let header = true
   for await (const line of lines) {
@@ -65,7 +64,7 @@ async function readPublisher(): Promise<Map<string, PublishedVerse>> {
     const english = c[18].trim()
     if (strongs === 'H3068' || strongs === 'H3069' ||
         (!greek && c[5].normalize('NFD').replace(/\p{M}/gu, '').includes('יהוה'))) current.divineNames++
-    if (wanted.has(strongs)) {
+    if (/^[GH][1-9]\d*$/.test(strongs) && /^[1-9]\d*(?:\.\d+)?$/.test(c[greek ? 1 : 0].trim())) {
       const key = c[4] + ':' + c[greek ? 1 : 0].trim()
       if (current.rows.has(key)) throw new Error('Duplicate publisher occurrence ' + key)
       current.rows.set(key, {
@@ -86,6 +85,40 @@ const families = SOURCE_WORD_TERMS.map(term => ({
   ...term, settings: { ...noTerms, ...Object.fromEntries(term.ids.map(id => [id, true])) }
 }))
 const hasPublisher = existsSync(publisherFile)
+
+function auditExactForms(ref: ChapterRef, verse: Verse, published: PublishedVerse | undefined, counts: Map<string, number>) {
+  const selected = verse.tokens?.flatMap(t => t.sourceWord ? [t.sourceWord.strongs] : []) ?? []
+  const segments = restoredVerseSegments(verse, ref, true, noTerms, selected)
+  if (segments.map(s => s.original).join('') !== verse.text) throw new Error('Published text changed')
+  const printedWords = englishWords(verse.text)
+  const sameWordOrder = published && printedWords.join(' ').toLowerCase() === published.words.join(' ').toLowerCase()
+  let offset = 0
+  for (const span of segments) {
+    const start = offset
+    offset += span.original.length
+    if (!span.annotation && span.display === span.original) continue
+    const source = span.token!.sourceWord!
+    const row = published?.rows.get(source.language + ':' + source.rowId)
+    if (published) {
+      const form = source.language === 'Greek' ? row?.form :
+        row?.form.replace(/׃[פס]$/u, '').replace(/^[־׀׃]+|[־׀׃]+$/gu, '')
+      if (!row || row.strongs !== source.strongs || form !== source.text || row.form !== row.alternate ||
+          row.translit !== source.translit || row.morph !== source.morph) {
+        throw new Error('Source form differs from the publisher row: ' + source.language + ' ' + source.rowId)
+      }
+      const english = englishWords(span.original).join(' ').toLowerCase()
+      if (english !== englishWords(row.english).join(' ').toLowerCase() ||
+          (sameWordOrder && englishWords(verse.text.slice(0, start)).length !== row.wordOffset)) {
+        throw new Error('Source row aligned to different wording: ' + source.rowId + ' ' + ref.book + ' ' + ref.chapter + ':' + verse.verse)
+      }
+    }
+    if (span.annotation ? span.display !== span.original || span.annotation !== source.text :
+        span.display !== source.text && !(span.display === 'YHWH' && /^H306[89]$/.test(source.strongs))) {
+      throw new Error('Incorrect source form displayed at ' + source.rowId)
+    }
+    counts.set(source.strongs, (counts.get(source.strongs) ?? 0) + 1)
+  }
+}
 
 function verifyPublisherRow(
   source: SourceWord, span: VerseSegment, verse: Verse, offset: number, translation: string,
@@ -208,6 +241,7 @@ describe.skipIf(!existsSync('resources/bible.sqlite'))('source word restoration 
     for (const [translation, size, yhwh, other] of [['BSB', 31086, 2941, 3432], ['KJV', 31102, 1916, 1]] as const) {
       let count = 0
       const coverage: Coverage = { ids: restoredIds, yhwh: 0, other: 0 }
+      const exactCounts = new Map<string, number>()
       for (const book of BOOKS) {
         for (let chapter = 1; chapter <= book.chapters; chapter++) {
           const ref = { translation, book: book.id, chapter }
@@ -216,12 +250,15 @@ describe.skipIf(!existsSync('resources/bible.sqlite'))('source word restoration 
             const published = publisher?.get(address)
             if (publisher && !published) throw new Error('Missing publisher verse at ' + address)
             verifyVerse(ref, verse, address, published, coverage)
+            auditExactForms(ref, verse, published, exactCounts)
             count++
           }
         }
       }
       expect(count, translation + ' verses audited').toBe(size)
       expect([coverage.yhwh, coverage.other], translation + ' verified inline occurrences').toEqual([yhwh, other])
+      const storedCounts = bibleDb()!.prepare('SELECT strongs, occurrences FROM source_word_coverage WHERE translation_id=?').all(translation)
+      expect(exactCounts).toEqual(new Map(storedCounts.map(row => [row.strongs, row.occurrences])))
     }
     // These two Hebrew IDs have English rows for ordinary adversaries and scoundrels.
     // Neither yields a standalone attested name with the current publisher data.

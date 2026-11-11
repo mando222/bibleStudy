@@ -90,10 +90,12 @@ export default function GenealogiesView(): JSX.Element {
       </div>
 
       <div className="flex-1 min-w-0 overflow-y-auto p-6">
-        {person ? (
+        {person && person.id === id ? (
           <div className="max-w-2xl">
             <h1 className="font-serif text-2xl text-ink">{person.name}</h1>
-            <button className="mt-1 text-xs text-accent underline" onClick={() => openPersonMap(person.id)}>Map this person</button>
+            {person.mappedPlaceCount > 0
+              ? <button className="mt-1 text-xs text-accent underline" onClick={() => openPersonMap(person.id)}>Map this person</button>
+              : <p className="mt-1 text-xs text-muted">No documented location in the atlas.</p>}
             <div className="text-sm text-muted mt-0.5">
               {[person.gender, years(person.birthYear, person.deathYear)].filter(Boolean).join(' · ')}
             </div>

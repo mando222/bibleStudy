@@ -26,12 +26,14 @@ Installers for **macOS, Windows, and Linux**.
   translations under each word, and a "best guess ⇄ all Scripture-attested parses" toggle.
 - 📚 **Lexicons** — Strong's plus scholarly **BDB · Abbott-Smith · LSJ**, with a full-verse
   **concordance** for every word.
-- **Restore words** — choose which terms to show. The four-letter Hebrew name appears as YHWH.
-  Other spellings come from the Hebrew, Aramaic or Greek form aligned to that word in that verse.
-  For example, selecting Love shows *ēgapēsen* for “loved” in BSB John 3:16. Uncertain alignments
-  retain the published wording. Hover over a restored word to see what each translation prints,
-  or focus the word and press Down Arrow. The comparison shows the exact wording for verified
-  matches and the published verse for context elsewhere. Copies and assistant quotations use the published translation.
+- **Restore words** — select a word in the reader and use the right-hand lexicon panel to show its
+  Hebrew, Aramaic or Greek form at verified occurrences. In BSB 1 John 2:1, G264 has two different
+  forms. The reader keeps “you will not sin” with *ἁμάρτητε* and “does sin” with *ἁμάρτῃ*.
+  The source details identify the publisher’s row. A translation without a verified link keeps
+  its published wording. The toolbar also offers transliterated terms, including *ēgapēsen* for
+  “loved” in BSB John 3:16. The verified four-letter Hebrew name appears as YHWH.
+  Hover over a restored word, or focus it and press Down Arrow, to compare translations.
+  Copies and assistant quotations use the published text.
 - 🅰️ **Words tab** — browse the lexicon by number, transliteration, or meaning. Select an entry
   and open **Word frequency** to see where its Hebrew, Aramaic, or Greek forms occur. Each use
   counts once, even when the word occurs several times in a verse. Compare books by uses per
@@ -39,16 +41,24 @@ Installers for **macOS, Windows, and Linux**.
   The map follows the selected original-language edition independently of your English translation.
 
 **Textual apparatus**
-- 🔀 **Variants** — where the Greek NT editions differ (Critical vs Textus Receptus), and the OT
-  **Ketiv/Qere** (written vs read) scribal readings from the Masoretic tradition.
+- In **Settings → Preferred text order**, rank the three Greek New Testament editions, the
+  Masoretic Text and Greek Septuagint, and the written (Ketiv) and read (Qere) forms.
+  The automatic interlinear opens your highest-ranked available edition. Greek word-frequency
+  maps also follow this preference until you select an edition for the map.
+- **Variants** shows where the bundled Greek editions differ and where a Masoretic written and
+  read pair is recorded. From a word in the right-hand Lexicon, **Compare source texts** shows
+  the full verse in your preferred order. Try **John 1:18** to see which editions print “God”
+  and which print “Son.” Each restored word in a translation still uses its own source link.
+  A source note identifies readings whose word order could not be verified.
 
 **People, places & history**
 - 🌳 **Genealogies** — browse biblical people; click one to see their family and **every verse that
   mentions them**.
 - 🗺️ **Maps** — search the whole offline atlas by name or alias, including unlocated places such as
   Nod. Select a located place to center it. Proposed sites, broad areas, and approximate historical
-  boundaries are labeled. **Map a person** shows cited associations where available. Paul in Acts 13
-  and Ruth and Naomi in Ruth 1 have numbered stops; optional dotted lines indicate sequence only.
+  boundaries are labeled. **Map a person** lists people with at least one location supported by a
+  cited passage, including places whose coordinates are unknown. Paul in Acts 13 and Ruth and
+  Naomi in Ruth 1 have numbered stops. Optional dotted lines show the order given in the passage.
 - 🕰️ **Timelines** — biblical events in order, each linked to the passage that records it.
 
 **Study**

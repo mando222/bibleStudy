@@ -3,9 +3,11 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import MapsView from '../src/renderer/src/components/MapsView'
+import GenealogiesView from '../src/renderer/src/components/GenealogiesView'
 import { useAppStore } from '../src/renderer/src/store/useAppStore'
 import { cameraBounds, fitPlaces, homeCamera, project, yearFromSlider, sliderFromYear, zoomAt } from '../src/shared/atlas'
-import type { PlaceItem } from '../src/shared/types'
+import type { PlaceItem, Translation } from '../src/shared/types'
+import type { PersonMap } from '../src/shared/passageStudy'
 
 const place = (id: number, name: string, lat: number | null, lon: number | null, extra: Partial<PlaceItem> = {}): PlaceItem =>
   ({ id, name, lat, lon, featureType: 'City', aliases: [], precision: null, ambiguous: false, firstRef: null,
@@ -25,7 +27,7 @@ beforeEach(() => {
   Object.assign(window, { api: {
     getPlaces: async () => [rome, nod, adria], getMapRegions: async () => null,
     getMapLand: async () => '{"features":[]}', getPlaceVerses: async (id: number) => id === nod.id ? ['Gen.4.16'] : [],
-    getPeople: async () => [], getPersonMap: async () => null
+    getMappedPeople: async () => [], getPeople: async () => [], getPersonMap: async () => null
   } })
 })
 afterEach(async () => {
@@ -34,6 +36,100 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 const button = (label: string) => [...host.querySelectorAll('button')].find(b => b.textContent?.includes(label))!
+
+it('searches only people with cited places and keeps the picker open if a prior map arrives late', async () => {
+  let finish!: (person: PersonMap) => void
+  const pending = new Promise<PersonMap>(resolve => { finish = resolve })
+  const roster = vi.fn(async () => [
+    { id: 25, name: 'Paul', displayName: 'Paul', aliases: ['Saul'], mappedPlaceCount: 2 },
+    { id: 45, name: 'Cain', displayName: 'Cain', aliases: [], mappedPlaceCount: 1 }
+  ])
+  const allPeople = vi.fn(async () => [{ id: 13, name: 'Abel', verseCount: 12 }])
+  Object.assign(window.api, {
+    getMappedPeople: roster, getPeople: allPeople,
+    getPersonMap: (id: number) => id === 25 ? pending : Promise.resolve({ personId: id, name: 'Cain', displayName: 'Cain', stops: [{
+      placeId: nod.id, role: 'residence', label: 'Lived in Nod', refs: ['Gen.4.16'], journey: null, order: null, source: 'Reviewed passage'
+    }] })
+  })
+  useAppStore.setState({ activity: 'genealogies' })
+  useAppStore.getState().openPersonMap(25)
+  await act(async () => root.render(createElement(MapsView)))
+  await act(async () => button('Map a person').click())
+  await act(async () => finish({ personId: 25, name: 'Paul', displayName: 'Paul', stops: [] }))
+  expect(host.querySelector('h2')?.textContent).toBe('People with documented locations')
+  expect(button('Paul 2 documented locations')).toBeTruthy()
+  expect(button('Cain 1 documented location')).toBeTruthy()
+  const input = host.querySelector<HTMLInputElement>('input[placeholder="Person’s name"]')!
+  async function search(value: string) {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+  }
+  await search('Abel')
+  expect(host.querySelector('[role="status"]')?.textContent).toContain('No people with documented locations')
+  await search('Saul')
+  expect(button('Paul 2 documented locations')).toBeTruthy()
+  await search(' CaIN ')
+  expect(button('Paul')).toBeUndefined()
+  await act(async () => button('Cain').click())
+  expect(host.querySelector('h2')?.textContent).toBe('Cain')
+  expect(button('Nod')?.textContent).toContain('Location unknown')
+  expect(button('Genesis 4:16')).toBeTruthy()
+  expect(host.textContent).toContain('This place has no recorded coordinates.')
+  expect(host.querySelector('svg')?.textContent).not.toContain('Nod')
+  expect(roster).toHaveBeenCalledTimes(1)
+  expect(allPeople).not.toHaveBeenCalled()
+  await act(async () => button('All places').click())
+  await act(async () => button('Back to profile').click())
+  expect(useAppStore.getState()).toMatchObject({ activity: 'genealogies', focusPersonId: 25 })
+})
+
+it('keeps an unmapped person in Family and offers the map only on a supported profile', async () => {
+  vi.useFakeTimers()
+  try {
+    const people = [{ id: 13, name: 'Abel', mappedPlaceCount: 0 }, { id: 25, name: 'Paul', mappedPlaceCount: 1 }]
+    Object.assign(window.api, { getPeople: async () => people, getAncestry: async () => [],
+      getPerson: async (id: number) => ({ ...people.find(p => p.id === id), spouses: [], children: [], verses: [] }) })
+    useAppStore.setState({ activity: 'genealogies' })
+    await act(async () => root.render(createElement(GenealogiesView)))
+    await act(async () => vi.advanceTimersByTimeAsync(200))
+    await act(async () => button('Abel').click())
+    expect(host.querySelector('h1')?.textContent).toBe('Abel')
+    expect(host.textContent).toContain('No documented location')
+    expect(button('Map this person')).toBeUndefined()
+    await act(async () => button('Paul').click())
+    await act(async () => button('Map this person').click())
+    expect(useAppStore.getState()).toMatchObject({ activity: 'maps', atlasTarget: { kind: 'person', personId: 25 } })
+  } finally { vi.useRealTimers() }
+})
+
+it('opens person citations at the verse printed in the selected edition', async () => {
+  Object.assign(window.api, { getPersonMap: async () => ({ personId: 25, name: 'Paul', displayName: 'Paul', stops: [{
+    placeId: rome.id, journey: null, order: null, role: 'visit', label: 'Test location', source: 'Test citation', refs: ['Rom.16.25']
+  }] }) })
+  useAppStore.setState({ primary: 'WEB', referenceEdition: 'KJV', parallels: ['WEB', 'KJV'] })
+  useAppStore.getState().openPersonMap(25)
+  await act(async () => root.render(createElement(MapsView)))
+  await act(async () => button('Romans 14:24').click())
+  expect(useAppStore.getState()).toMatchObject({ activity: 'bible', book: 'Rom', referenceEdition: 'WEB', chapter: 14, activeVerse: 24 })
+})
+
+it('opens the labelled KJV citation when the reader uses an unverified import and keeps its parallel editions', async () => {
+  const imported = 'imp_study'
+  Object.assign(window.api, { getPersonMap: async () => ({ personId: 25, name: 'Paul', displayName: 'Paul', stops: [{
+    placeId: rome.id, journey: null, order: null, role: 'visit', label: 'Arrival in Rome', source: 'Reviewed passage', refs: ['Acts.28.16']
+  }] }) })
+  useAppStore.setState({ primary: imported, parallels: [imported, 'BSB', 'KJV'], translations: [{ id: 'KJV' }, { id: imported }] as Translation[] })
+  const s = useAppStore.getState()
+  s.goToVerse('Acts', 28, 16, imported)
+  expect(useAppStore.getState().primary).toBe(imported)
+  s.openPersonMap(25)
+  await act(async () => root.render(createElement(MapsView)))
+  await act(async () => button('Acts 28:16 (KJV)').click())
+  expect(useAppStore.getState()).toMatchObject({ activity: 'bible', primary: 'KJV', parallels: ['KJV', 'BSB', imported],
+    book: 'Acts', chapter: 28, activeVerse: 16, referenceEdition: 'KJV' })
+})
 it('centers a Timeline place outside the opening frame, then opens an unlocated record with its references', async () => {
   useAppStore.getState().focusPlace(rome.id)
   await act(async () => root.render(createElement(MapsView)))
@@ -103,4 +199,23 @@ it('shows passage citations in native edition numbering and restores the passage
   await act(async () => button('Back to passage').click())
   expect(useAppStore.getState()).toMatchObject({ activity: 'bible', book: 'Rom', referenceEdition: 'WEB',
     chapter: 14, activeVerse: 24, parallels: ['WEB', 'KJV'] })
+})
+
+it('refits the person’s places and never offers a line across an unknown stop or between journeys', async () => {
+  const stop = (p: PlaceItem, order: number, journey: string) => ({
+    placeId: p.id, role: 'visit' as const, label: p.name, refs: ['Acts.13.13'], source: 'Test', order, journey
+  })
+  const stops = [stop(rome, 1, 'First journey'), stop(nod, 2, 'First journey'), stop(adria, 3, 'First journey'),
+    stop(adria, 2, 'Second journey')]
+  Object.assign(window.api, { getPersonMap: async () => ({ personId: 25, name: 'Traveler', stops }) })
+  useAppStore.getState().openPersonMap(25)
+  await act(async () => root.render(createElement(MapsView)))
+  const map = host.querySelector('svg[aria-label="Atlas map"]')!
+  const overview = map.getAttribute('viewBox')
+  expect(button('2. Nod')).toBeTruthy()
+  expect(host.querySelector('aside')!.textContent).not.toContain('Sequence only')
+  await act(async () => button('1. Rome').click())
+  expect(map.getAttribute('viewBox')).not.toBe(overview)
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Fit mapped places"]')!.click())
+  expect(map.getAttribute('viewBox')).toBe(overview)
 })

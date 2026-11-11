@@ -42,14 +42,16 @@ After that first time, it opens like any other app.
 
 ### Updating later
 
-When a new version is out, a bar appears at the top of the window. **Download** fetches the
-installer straight into your Downloads folder while you carry on reading — the app does not close
-and nothing is installed for you. When you are ready, quit Open Bible Study, open the `.dmg` and
-drag the new copy into Applications, replacing the old one. (macOS will not let an app replace
-itself while it is running, which is why installing is a separate step you control.)
+When launch checks are enabled, the app checks GitHub for a new version once a day. If a newer
+version is available, **Download** in the bar at the top of the reader saves the installer to
+your Downloads folder. You can keep reading while it downloads. **Show in Finder** reveals the
+file. When you are ready, quit Open Bible Study, open the `.dmg`, and drag the new copy into
+Applications. Choose **Replace** when prompted, then reopen the app.
 
-You can also press **In browser** to download it the ordinary way instead, or turn the update
-check off entirely in the About screen.
+Use **In browser** if you prefer to download with your browser. In **About**, you can turn off
+launch checks or choose **Check now** at any time. In versions 0.4.0 and 0.4.1, a manual check
+can show the new version without a download button. In that case, download the Mac installer
+from [GitHub Releases](https://github.com/mando222/bibleStudy/releases/latest).
 
 <details>
 <summary>If macOS says the app <em>"is damaged and can't be opened"</em></summary>

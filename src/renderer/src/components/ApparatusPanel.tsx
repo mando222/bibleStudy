@@ -1,162 +1,48 @@
+import { BOOK_BY_ID } from '@shared/books'
+import { mapPassage } from '@shared/passageMapping'
 import { useAppStore } from '@/store/useAppStore'
 import { useApparatus } from '@/hooks/useApparatus'
 import { readerChapter } from '@/lib/passage'
-import { BOOK_BY_ID } from '@shared/books'
-import ScriptureRef from './ScriptureRef'
-import { CompareIcon } from './icons'
-
-const CRITICAL = 'text-sky-600 dark:text-sky-400'
-const TR = 'text-amber-600 dark:text-amber-400'
-const QERE = 'text-emerald-600 dark:text-emerald-400'
-const KETIV = 'text-amber-600 dark:text-amber-400'
+import OriginalVerseComparison, { GreekVerseReadings, MasoreticPairs } from './OriginalVerseComparison'
 
 export default function ApparatusPanel(): JSX.Element {
-  const sourceBook = useAppStore((s) => s.book)
-  const sourceChapter = useAppStore((s) => s.chapter)
-  const sourceEdition = useAppStore((s) => s.referenceEdition || s.primary)
-  const verse = useAppStore((s) => s.activeVerse)
-  const native = readerChapter(sourceBook, sourceChapter, verse, sourceEdition, 'KJV')
+  const sourceBook = useAppStore(s => s.book)
+  const sourceChapter = useAppStore(s => s.chapter)
+  const sourceEdition = useAppStore(s => s.referenceEdition || s.primary)
+  const verse = useAppStore(s => s.activeVerse)
+  const native = sourceEdition.startsWith('imp_') ? null : readerChapter(sourceBook, sourceChapter, verse, sourceEdition, 'KJV')
   const book = native?.book ?? sourceBook
   const chapter = native?.chapter ?? sourceChapter
-  const selectStrongs = useAppStore((s) => s.selectStrongs)
-  const { data, loading } = useApparatus(book, chapter, !!native)
-
+  const selected = verse == null || !native ? null : mapPassage({ book: sourceBook, chapter: sourceChapter, verse }, sourceEdition, 'KJV')
+  const selectStrongs = useAppStore(s => s.selectStrongs)
+  const goToVerse = useAppStore(s => s.goToVerse)
+  const query = useApparatus(book, chapter, !!native)
   const meta = BOOK_BY_ID[book]
-  const bookName = meta?.name ?? book
   const isOT = meta?.testament === 'OT'
+  const name = meta?.name ?? book
 
-  if (!native) return <p className="text-sm text-muted">No verified equivalent in the textual apparatus.</p>
-  if (loading) return <p className="text-sm text-muted">Comparing editions…</p>
-
-  if (data.length === 0) {
-    return (
-      <Empty>
-        {isOT
-          ? `No Ketiv/Qere variants recorded in ${bookName} ${chapter}.`
-          : `No differences between the Critical text and Textus Receptus in ${bookName} ${chapter}.`}
-      </Empty>
-    )
-  }
-
-  // ---- OT: Ketiv (written) vs Qere (read) ----
-  if (isOT) {
-    return (
-      <div>
-        <p className="text-sm text-muted leading-relaxed mb-3">
-          The Masoretic scribal variants in {bookName} {chapter}: the traditional reading (
-          <span className={QERE}>Qere</span>) beside the written consonantal text (
-          <span className={KETIV}>Ketiv</span>). Click a word for its lexicon entry.
-        </p>
-        <div className="flex gap-4 text-xs mb-3">
-          <span className={QERE}>■ Qere (read)</span>
-          <span className={KETIV}>■ Ketiv (written)</span>
-        </div>
-
-        <div className="space-y-3">
-          {data.map((v) => {
-            const pairs: [(typeof v.items)[number], (typeof v.items)[number]][] = []
-            for (let i = 0; i + 1 < v.items.length; i += 2) pairs.push([v.items[i], v.items[i + 1]])
-            return (
-              <div key={v.verse} className="border-t border-line/60 pt-2">
-                <ScriptureRef
-                  book={book}
-                  bookName={bookName}
-                  chapter={chapter}
-                  verse={v.verse}
-                  className="text-xs font-semibold text-accent hover:underline"
-                />
-                <div className="mt-1 text-[15px] leading-relaxed space-y-1.5">
-                  {pairs.map(([q, k], i) => (
-                    <div key={i} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                      <span className="text-[10px] uppercase tracking-wide text-faint">Qere</span>
-                      <span
-                        dir="rtl"
-                        onClick={() => q.strongs && selectStrongs(q.strongs)}
-                        title={q.strongs ?? undefined}
-                        className={`font-hebrew ${QERE} ${q.strongs ? 'cursor-pointer' : ''}`}
-                      >
-                        {q.surface}
-                      </span>
-                      <span className="text-faint">·</span>
-                      <span className="text-[10px] uppercase tracking-wide text-faint">Ketiv</span>
-                      <span
-                        dir="rtl"
-                        onClick={() => k.strongs && selectStrongs(k.strongs)}
-                        title={k.strongs ?? undefined}
-                        className={`font-hebrew ${KETIV} ${k.strongs ? 'cursor-pointer' : ''}`}
-                      >
-                        {k.surface}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-    )
-  }
-
-  // ---- NT: Critical (NA28) vs Textus Receptus ----
-  return (
-    <div>
-      <p className="text-sm text-muted leading-relaxed mb-3">
-        Words that differ between the <span className={CRITICAL}>Critical text (NA28)</span> and
-        the <span className={TR}>Textus Receptus</span> in {bookName} {chapter}. Click a word for its
-        lexicon entry.
-      </p>
-      <div className="flex gap-4 text-xs mb-3">
-        <span className={CRITICAL}>■ Critical only</span>
-        <span className={TR}>■ Textus Receptus only</span>
-      </div>
-
-      <div className="space-y-3">
-        {data.map((v) => (
-          <div key={v.verse} className="border-t border-line/60 pt-2">
-            <ScriptureRef
-              book={book}
-              bookName={bookName}
-              chapter={chapter}
-              verse={v.verse}
-              className="text-xs font-semibold text-accent hover:underline"
-            />
-            <div className="font-greek text-[15px] leading-relaxed mt-1">
-              {v.items.map((it, i) => {
-                const cls =
-                  it.side === 'both'
-                    ? 'text-ink'
-                    : `${it.side === 'critical' ? CRITICAL : TR} underline decoration-dotted underline-offset-2`
-                return (
-                  <span
-                    key={i}
-                    onClick={() => it.strongs && selectStrongs(it.strongs)}
-                    title={
-                      it.side === 'critical'
-                        ? `Critical only · ${it.translit ?? ''} ${it.strongs ?? ''}`
-                        : it.side === 'tr'
-                          ? `Textus Receptus only · ${it.translit ?? ''} ${it.strongs ?? ''}`
-                          : (it.translit ?? undefined)
-                    }
-                    className={`${cls} ${it.strongs ? 'cursor-pointer' : ''}`}
-                  >
-                    {it.surface}{' '}
-                  </span>
-                )
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function Empty({ children }: { children: React.ReactNode }): JSX.Element {
-  return (
-    <div className="mt-10 flex flex-col items-center text-center text-muted">
-      <CompareIcon className="w-8 h-8 text-faint mb-3" />
-      <p className="text-sm max-w-[17rem] leading-relaxed">{children}</p>
-    </div>
-  )
+  if (!native) return <section>
+    <p className="text-sm text-muted">No verified equivalent in the textual apparatus.</p>
+    {sourceEdition === 'LXX' && <OriginalVerseComparison book={sourceBook} chapter={sourceChapter} verse={verse ?? 1} translation="LXX" />}
+  </section>
+  if (query.loading) return <p role="status" className="text-sm text-muted">Comparing editions…</p>
+  if (query.error) return <button className="text-sm text-accent" onClick={query.retry}>Comparison unavailable · Retry</button>
+  const data = query.data ?? []
+  const firstOpen = data.find(v => v.verse === selected?.verse)?.verse ?? data[0]?.verse
+  return <section>
+    <p className="text-sm text-muted mb-2">{isOT ? 'Written and read forms recorded in the Masoretic tradition by STEPBible TAHOT.'
+      : 'Greek readings from STEPBible TAGNT, in your preferred order. Underlining spans the first through last difference between the recorded sequences. The comparison ignores final punctuation and paragraph marks.'}</p>
+    <OriginalVerseComparison key={[sourceBook, sourceChapter, verse, sourceEdition].join('/')}
+      book={sourceBook} chapter={sourceChapter} verse={verse ?? 1} translation={sourceEdition} />
+    {data.length === 0 ? <p className="mt-3 text-sm text-muted">{isOT
+      ? 'No Ketiv/Qere pairs recorded' : 'No differences in the bundled Greek word forms recorded'} for {name} {chapter}.</p> :
+      data.map(v => <details key={book + ':' + chapter + ':' + v.verse} open={v.verse === firstOpen}
+        className="border-t border-line/60 py-2">
+        <summary className="cursor-pointer text-sm font-medium">{name} {chapter}:{v.verse}</summary>
+        <div className="mt-2">{v.kind === 'greek' ?
+          <GreekVerseReadings readings={v.readings} chapter={chapter} verse={v.verse} onWord={selectStrongs} /> :
+          <MasoreticPairs pairs={v.pairs} onWord={selectStrongs} />}</div>
+        <button className="mt-2 text-xs text-accent hover:underline" onClick={() => goToVerse(book, chapter, v.verse)}>Open verse in reader</button>
+      </details>)}
+  </section>
 }

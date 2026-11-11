@@ -5,10 +5,11 @@ import { mapPassage } from '../src/shared/passageMapping'
 import { SOURCE_WORD_ALIGNMENT_VERSION } from '../src/shared/sourceWords'
 import { normSurface } from '../src/shared/verseUnits'
 import type { SourceWord } from '../src/shared/types'
+import { countSourceSpans } from '../src/main/db/sourceWordCoverage'
 
 type Language = SourceWord['language']
-type StoredToken = { position: number; surface: string; trailer: string; strongs: string | null; lemma: string | null; translit: string | null }
-type SourceRow = { keys: string[]; english: string; language: Language; id: string; strongs: string; text: string; translit: string; eligible: boolean }
+type StoredToken = { position: number; surface: string; trailer: string; strongs: string | null; lemma: string | null; translit: string | null; morph: string | null }
+type SourceRow = { keys: string[]; english: string; printed: string; language: Language; id: string; strongs: string; text: string; translit: string; morph: string; eligible: boolean }
 type WitnessToken = { original: string; strongs: string | null; morph: string | null; source_type: string | null }
 type Ref = { book: string; chapter: number; verse: number }
 
@@ -52,6 +53,20 @@ function onlyOccurrence(words: string[], phrase: string[]): number {
   return occurrence
 }
 
+/** A folded or untranslated source word can supply part of a different English token,
+ * even when that token is a single word (e.g. "cannot"). Require a complete row-for-row
+ * match of this verse before certifying any standalone substitution in it. */
+function completeAlignment(rows: SourceRow[], printed: StoredToken[]): boolean {
+  return rows.length === printed.length && new Set(rows.map(r => r.id)).size === rows.length &&
+    rows.every((row, i) => {
+      const token = printed[i]
+      return row.eligible && row.printed !== 'vvv' && /^[A-Za-z]+(?: [A-Za-z]+)*$/.test(row.printed) &&
+        token.position === i && row.printed === token.surface && row.text === token.lemma &&
+        row.strongs === token.strongs && row.translit === token.translit && !!row.morph &&
+        row.morph === token.morph && !/[\p{L}\p{N}]/u.test(token.trailer)
+    })
+}
+
 /** The original-language form, transliteration and English phrase must all come from ONE
  * publisher row. Reconciliation can split phrases or align only a fragment; abstain on either.
  * An intact row must match at its position, or be unique in both the source and printed verse. */
@@ -59,9 +74,10 @@ export function buildSourceWordSpans(db: DatabaseSync, path: string): void {
   const bookIds = new Map(BOOKS.map(b => [b.name, b.id]))
   const greekBooks = new Set(BOOKS.filter(b => b.testament === 'NT').map(b => b.id))
   bookIds.set('Psalm', 'Ps')
-  const tokens = db.prepare(`SELECT position, surface, trailer, strongs, lemma, translit FROM verse_tokens
+  const tokens = db.prepare(`SELECT position, surface, trailer, strongs, lemma, translit, morph FROM verse_tokens
     WHERE translation_id=? AND book_id=? AND chapter=? AND verse=? ORDER BY position`)
   const insert = db.prepare(`INSERT INTO source_word_spans VALUES(?,?,?,?,?,?,?,?,?)`)
+  const singleton = db.prepare('INSERT INTO source_word_singletons VALUES(?,?,?,?,?,?)')
   const witnessVerse = db.prepare(`SELECT original, strongs, morph, source_type FROM original_tokens
     WHERE edition=? AND book_id=? AND chapter=? AND verse=?`)
 
@@ -69,6 +85,7 @@ export function buildSourceWordSpans(db: DatabaseSync, path: string): void {
     const loc = [ref.book, ref.chapter, ref.verse]
     const bsb = tokens.all('BSB', ...loc) as StoredToken[]
     if (!bsb.length) return
+    const complete = completeAlignment(rows, bsb)
     const sourceKeys = rows.flatMap(row => row.keys)
     const printedKeys = bsb.flatMap(t => englishWords(t.surface))
     const sameOrder = sourceKeys.length === printedKeys.length && sourceKeys.every((w, i) => w === printedKeys[i])
@@ -118,6 +135,9 @@ export function buildSourceWordSpans(db: DatabaseSync, path: string): void {
           englishSpan(token.surface) !== row.english ||
           targetKeys.length !== row.keys.length || !targetKeys.every((w, i) => w === row.keys[i])) continue
       insert.run('BSB', ...loc, token.position, token.position, token.position, row.id, row.language)
+      const canStandAlone = complete && row.keys.length === 1 && !row.morph.includes('|') &&
+        !/^['’]/u.test(token.trailer)
+      if (canStandAlone) singleton.run('BSB', ...loc, token.position, row.id)
       if ((row.language === 'Greek') !== (edition === 'TR')) continue
       if (divineId(row.strongs)) {
         // Unlike general vocabulary, the four-letter personal name has a separately verifiable
@@ -151,6 +171,7 @@ export function buildSourceWordSpans(db: DatabaseSync, path: string): void {
       if (first == null || last == null || kjv[last].strongs !== row.strongs ||
           kjv.slice(first, last).some(t => t.strongs !== null) || !corroborated(row, witnesses())) continue
       insert.run('KJV', ...loc, first, last, token.position, row.id, row.language)
+      if (canStandAlone && first === last) singleton.run('KJV', ...loc, last, row.id)
     }
   }
 
@@ -178,13 +199,18 @@ export function buildSourceWordSpans(db: DatabaseSync, path: string): void {
       const translit = c[7].trim()
       const keys = englishWords(english)
       // A word omitted in English is still relevant to the repeated-lemma check.
-      if (!text && !keys.length) continue
-      rows.push({ keys, english: englishSpan(english), language, id, strongs: (greek ? 'G' : 'H') + num, text, translit,
+      if (!text && !english && !c[6].trim()) continue
+      rows.push({ keys, english: englishSpan(english), printed: english, language, id,
+        strongs: (greek ? 'G' : 'H') + num, text, translit, morph: c[9].trim(),
         eligible: ['Hebrew', 'Aramaic', 'Greek'].includes(language) && /^[1-9]\d*(?:\.\d+)?$/.test(id) &&
           /^\d+$/.test(num) && !!translit && text === c[6].trim() &&
           !/[\[\]{}]/.test(english) && /^[\p{L}\p{M}־׀׃’᾽']+$/u.test(text) })
     }
     if (ref) record(ref, rows)
+    const coverage = db.prepare('INSERT INTO source_word_coverage VALUES(?,?,?)')
+    for (const [id, editions] of countSourceSpans(db)) {
+      for (const [edition, count] of editions) coverage.run(id, edition, count)
+    }
     db.prepare("INSERT OR REPLACE INTO meta (key,value) VALUES ('source_word_alignment_version',?)")
       .run(SOURCE_WORD_ALIGNMENT_VERSION)
     db.exec('COMMIT')

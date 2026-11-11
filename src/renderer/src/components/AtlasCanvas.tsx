@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { boundedCamera, cameraBounds, fitPlaces, homeCamera, intersects, located, locationKind, locationLabel, mapShapes, project, zoomAt } from '@shared/atlas'
-import type { Camera, Frame, MapShape } from '@shared/atlas'
+import type { Camera, Frame, JourneySegment, MapShape } from '@shared/atlas'
 import type { PlaceItem } from '@shared/types'
 import type { PersonMapStop } from '@shared/passageStudy'
 import { useStudyQuery } from '@/hooks/useStudyQuery'
@@ -8,10 +8,11 @@ import { useStudyQuery } from '@/hooks/useStudyQuery'
 interface Props {
   places: PlaceItem[]
   focus: PlaceItem[] | null
+  overview: PlaceItem[] | null
   selected: PlaceItem | null
   onSelect: (place: PlaceItem) => void
   stops: PersonMapStop[]
-  connect: boolean
+  segments: JourneySegment[]
   regions: MapShape[]
 }
 const loadLand = async () => {
@@ -20,7 +21,7 @@ const loadLand = async () => {
   return mapShapes(JSON.parse(land))
 }
 
-export default function AtlasCanvas({ places, focus, selected, onSelect, stops, connect, regions }: Props): JSX.Element {
+export default function AtlasCanvas({ places, focus, overview, selected, onSelect, stops, segments, regions }: Props): JSX.Element {
   const land = useStudyQuery(loadLand)
   const svg = useRef<SVGSVGElement>(null)
   const [frame, setFrame] = useState<Frame>({ width: 800, height: 600 })
@@ -65,7 +66,6 @@ export default function AtlasCanvas({ places, focus, selected, onSelect, stops, 
     return () => el.removeEventListener('wheel', wheel)
   }, [zoom])
 
-  const byId = useMemo(() => new Map(places.filter(located).map(p => [p.id, p])), [places])
   const numbered = useMemo(() => {
     const result = new Map<number, string[]>()
     for (const stop of stops) if (stop.order != null) {
@@ -77,24 +77,6 @@ export default function AtlasCanvas({ places, focus, selected, onSelect, stops, 
     const pt = project(p.lon, p.lat)
     return intersects(bounds, { ...pt, width: 0, height: 0 })
   })
-  const sequence = useMemo(() => {
-    const links: { key: string; x1: number; y1: number; x2: number; y2: number }[] = []
-    if (!connect) return links
-    const journeys = new Map<string, Map<number, number>>()
-    for (const stop of stops) {
-      if (stop.journey == null || stop.order == null) continue
-      if (!journeys.has(stop.journey)) journeys.set(stop.journey, new Map())
-      journeys.get(stop.journey)!.set(stop.order, stop.placeId)
-    }
-    for (const [journey, order] of journeys) for (const [n, id] of order) {
-      const a = byId.get(id), b = byId.get(order.get(n + 1) ?? -1)
-      if (a && b) {
-        const from = project(a.lon, a.lat), to = project(b.lon, b.lat)
-        links.push({ key: journey + ':' + n, x1: from.x, y1: from.y, x2: to.x, y2: to.y })
-      }
-    }
-    return links
-  }, [connect, stops, byId])
 
   return <div className="relative flex-1 min-h-32 overflow-hidden bg-sky-100 dark:bg-slate-800">
     <svg ref={svg} viewBox={[bounds.x, bounds.y, bounds.width, bounds.height].join(' ')}
@@ -121,8 +103,11 @@ export default function AtlasCanvas({ places, focus, selected, onSelect, stops, 
         <text x={r.bounds.x + r.bounds.width / 2} y={r.bounds.y + r.bounds.height / 2}
           fontSize={11 * pixel} textAnchor="middle" className="fill-amber-800 dark:fill-amber-300">{r.name}</text>
       </g>)}
-      {sequence.map(({ key, ...line }) => <line key={key} {...line} className="stroke-accent pointer-events-none"
-        strokeDasharray={3 * pixel + ' ' + 4 * pixel} strokeWidth={1.7 * pixel} />)}
+      {segments.map(({ key, from, to }) => {
+        const a = project(from.lon, from.lat), b = project(to.lon, to.lat)
+        return <line key={key} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="stroke-accent pointer-events-none"
+          strokeDasharray={3 * pixel + ' ' + 4 * pixel} strokeWidth={1.7 * pixel} />
+      })}
       {shown.map(p => {
         const { x, y } = project(p.lon, p.lat)
         const order = numbered.get(p.id)?.join('/')
@@ -147,7 +132,8 @@ export default function AtlasCanvas({ places, focus, selected, onSelect, stops, 
     <div className="absolute top-3 right-3 flex gap-1">
       {[{ title: 'Zoom in', label: '+', click: () => zoom(1.4) },
         { title: 'Zoom out', label: '−', click: () => zoom(1 / 1.4) },
-        { title: 'Reset to Near East', label: '⌂', click: () => setCamera(homeCamera) }].map(b =>
+        { title: overview ? 'Fit mapped places' : 'Reset to Near East', label: '⌂',
+          click: () => setCamera(overview ? fitPlaces(overview, frameRef.current) : homeCamera) }].map(b =>
         <button key={b.title} title={b.title} aria-label={b.title} onClick={b.click}
           className="w-8 h-8 rounded border border-line bg-panel shadow-sm hover:text-accent">{b.label}</button>)}
     </div>

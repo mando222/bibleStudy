@@ -34,6 +34,7 @@ interface Reading {
 export interface EditionWord extends Reading {
   edition: string
   order: number
+  displaced: boolean
   nativeChapter: number
   nativeVerse: number
   analysis: string
@@ -74,7 +75,8 @@ export function greekReadings(
       const native = (edition === 'NA' ? ref.native : edition === 'TR' ? ref.kjv : null) ?? ref
       let order = ref.position
       if (m[2] && !m[4]) {
-        // Both arrows specify the anchor after which to place the moved word.
+        // TAGNT's displacement is a reconstruction hint. The builder checks the
+        // resulting verse against its own edition or records unresolved word order.
         order += (m[2] === '«' ? -1 : 1) * Number(m[3]) + 0.5
       }
       words.set(edition, {
@@ -86,6 +88,7 @@ export function greekReadings(
         uncertainAliases: [],
         edition,
         order,
+        displaced: Boolean(m[2] && !m[4]),
         nativeChapter: m[4] ? Number(m[3]) : native.chapter,
         nativeVerse: m[4] ? Number(m[4]) : native.verse
       })

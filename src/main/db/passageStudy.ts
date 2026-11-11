@@ -1,8 +1,10 @@
 import type { DatabaseSync } from 'node:sqlite'
 import { bibleDb } from './bible'
+import { atlasIdentity, type MapName } from './personMapNames'
 import { getImportedChapter } from './user'
 import { mapPassage } from '../../shared/passageMapping'
-import { reviewedSettings, stopsForPerson } from '../../shared/reviewedPlaces'
+import { reviewedAssociations, reviewedSettings, stopsForPerson } from '../../shared/reviewedPlaces'
+import type { MappedPerson } from '../../shared/types'
 import type {
   ContextEntity, ContextEvent, ContextPlace, PassageContext, PersonMap, StudyRange
 } from '../../shared/passageStudy'
@@ -107,10 +109,44 @@ export function getPassageContext(range: StudyRange): PassageContext {
   return readPassageContext(db, range)
 }
 
+// These IDs come from the reviewed evidence. Joining the place catalog keeps the picker,
+// profiles and maps usable with older offline databases that may lack a particular place.
+const reviewedPairs = JSON.stringify(reviewedAssociations.flatMap(association =>
+  association.people.map(personId => [personId, association.placeId])))
+
+const reviewedLocations = `
+  FROM json_each(?) evidence
+  JOIN places ON places.id = json_extract(evidence.value, '$[1]')
+  JOIN people ON people.id = json_extract(evidence.value, '$[0]')`
+
+const identityColumns = `people.id, people.name, people.gender, parent.name AS parentName,
+  EXISTS(SELECT 1 FROM people other WHERE other.name=people.name AND other.id<>people.id) AS hasNamesake`
+const parentJoin = 'LEFT JOIN people parent ON parent.id=people.father_id'
+
+export function getMappedPeople(): MappedPerson[] {
+  const db = bibleDb()
+  if (!db) throw new Error('Bible database not available')
+  const rows = db.prepare(`SELECT ${identityColumns}, count(DISTINCT places.id) AS mappedPlaceCount
+    ${reviewedLocations} ${parentJoin} GROUP BY people.id`)
+    .all(reviewedPairs) as unknown as (MapName & { mappedPlaceCount: number })[]
+  return rows.map(row => ({ ...atlasIdentity(row), mappedPlaceCount: row.mappedPlaceCount }))
+    .sort((a, b) => a.displayName.localeCompare(b.displayName, 'en') || a.id - b.id)
+}
+
+export function mappedPlaceIds(db: DatabaseSync, personId: number): Set<number> {
+  const rows = db.prepare(`SELECT DISTINCT places.id ${reviewedLocations} WHERE people.id=?`)
+    .all(reviewedPairs, personId)
+  return new Set(rows.map(row => Number(row.id)))
+}
+
 export function getPersonMap(personId: number): PersonMap | null {
   const db = bibleDb()
   if (!db) throw new Error('Bible database not available')
   if (!Number.isSafeInteger(personId)) return null
-  const person = db.prepare('SELECT name FROM people WHERE id=?').get(personId)
-  return person ? { personId, name: String(person.name), stops: stopsForPerson(personId) } : null
+  const person = db.prepare(`SELECT ${identityColumns} FROM people ${parentJoin} WHERE people.id=?`)
+    .get(personId) as unknown as MapName | undefined
+  if (!person) return null
+  const places = mappedPlaceIds(db, personId)
+  const stops = stopsForPerson(personId).filter(stop => places.has(stop.placeId))
+  return { personId, name: person.name, displayName: atlasIdentity(person).displayName, stops }
 }

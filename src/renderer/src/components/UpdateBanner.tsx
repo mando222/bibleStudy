@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type RefObject } from 'react'
 import type { UpdateInfo, UpdateProgress } from '@shared/types'
 import { SparkleIcon } from './icons'
 
@@ -11,13 +11,13 @@ type Stage =
 const mb = (bytes: number): string => (bytes / 1_048_576).toFixed(1)
 const isMac = navigator.userAgent.includes('Mac')
 
-/**
- * A slim, dismissible bar shown when a newer release exists. The check itself is opt-out and
- * silent (see src/main/updates.ts) — this renders nothing at all when there's nothing to say,
- * which includes every offline launch.
- */
-export default function UpdateBanner(): JSX.Element | null {
-  const [info, setInfo] = useState<UpdateInfo | null>(null)
+/** The download controls for a newer release found by a launch or manual check. */
+export default function UpdateBanner({ info, bannerRef, dismissed, onDismiss }: {
+  info: UpdateInfo
+  bannerRef: RefObject<HTMLDivElement>
+  dismissed: boolean
+  onDismiss: () => void
+}): JSX.Element | null {
   const [showNotes, setShowNotes] = useState(false)
   const [stage, setStage] = useState<Stage>({ at: 'idle' })
 
@@ -31,24 +31,7 @@ export default function UpdateBanner(): JSX.Element | null {
     []
   )
 
-  useEffect(() => {
-    let cancelled = false
-    // Off the startup path: the reader is usable immediately whether or not this ever resolves.
-    const t = window.setTimeout(() => {
-      window.updates
-        ?.check()
-        .then((u) => {
-          if (!cancelled) setInfo(u)
-        })
-        .catch(() => undefined)
-    }, 3000)
-    return () => {
-      cancelled = true
-      window.clearTimeout(t)
-    }
-  }, [])
-
-  if (!info) return null
+  if (dismissed) return null
 
   const download = async (): Promise<void> => {
     if (!info.assetName) return
@@ -61,11 +44,17 @@ export default function UpdateBanner(): JSX.Element | null {
 
   const dismiss = (): void => {
     void window.updates?.dismiss(info.latest)
-    setInfo(null)
+    onDismiss()
   }
 
   return (
-    <div className="relative shrink-0 border-b border-accent/30 bg-accent-soft/60 px-3 py-1.5 flex items-center gap-2 text-sm">
+    <div
+      ref={bannerRef}
+      role="region"
+      aria-label="Available update"
+      tabIndex={-1}
+      className="relative shrink-0 border-b border-accent/30 bg-accent-soft/60 px-3 py-1.5 flex items-center gap-2 text-sm"
+    >
       <SparkleIcon className="w-4 h-4 text-accent shrink-0" />
       <span className="text-ink">
         Version <span className="font-semibold text-accent">{info.latest}</span> is available
@@ -131,6 +120,7 @@ export default function UpdateBanner(): JSX.Element | null {
       <button
         onClick={dismiss}
         title="Stop showing this until the next version"
+        aria-label="Dismiss update"
         className="w-6 h-6 rounded text-muted hover:text-accent hover:bg-elevated text-xs leading-none"
       >
         ✕

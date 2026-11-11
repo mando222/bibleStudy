@@ -16,6 +16,20 @@ Group changes under: **Added** (new features), **Changed** (changes to existing 
 
 _Nothing yet._
 
+## [0.4.2] - 2026-11-11
+
+### Added
+
+- **Settings → Preferred text order.** Choose which editions appear first in study comparisons and the automatic interlinear. Greek searches and word-frequency maps can also follow this preference. You can choose which Masoretic form appears first when a written and a read form are both recorded. Each translation’s restored words still follow its own verified source links.
+- **Compare source texts** in the reader’s Lexicon shows each available edition’s reading for the selected verse. **Variants** now includes Byzantine readings and differences between inflected forms of the same Greek word.
+
+### Fixed
+
+- An available update stays visible when you reopen the reader during the daily check interval. **About → Check now** also offers the installer when a newer version is available and reports when it cannot reach GitHub.
+- **Map a person** lists the 46 people with a documented location. Each entry counts distinct places and links to its supporting passages. The atlas distinguishes people who share a name, keeps unlocated places such as Eden in the list, and shows John Mark’s return to Jerusalem on his own map.
+- The reader’s **Lexicon** panel can show a word’s Greek, Hebrew, or Aramaic form at each verified occurrence. For example, BSB 1 John 2:1 shows *ἁμάρτητε* beside “you will not sin” and *ἁμάρτῃ* beside “does sin.” Each form comes from its own cited source row, and the English keeps the negation.
+- Greek word-order checks correct passages including **1 Corinthians 15:19** in the Textus Receptus and Byzantine editions. Comparisons label unresolved readings. The Masoretic interlinear identifies supplied Hebrew forms, and the Septuagint interlinear shows the Greek with separately mapped translation lines. It flags known gaps in Swete’s digitization.
+
 ## [0.4.1] - 2026-11-11
 
 ### Added

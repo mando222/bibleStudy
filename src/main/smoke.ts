@@ -1,21 +1,24 @@
 import { app } from 'electron'
 import {
   getChapter,
+  getSourceWordCoverage,
   getStrongs,
   listEditions,
   getInterlinear,
   getConcordance,
   getLexiconEntries,
   getChapterApparatus,
+  getOriginalVerseReadings,
   getMapRegions,
   getVocab,
   getGrammarLessons
 } from './db/bible'
 import { getPeople, getPerson, getPlaces, getEvents } from './db/graph'
-import { getPassageContext, getPersonMap } from './db/passageStudy'
+import { getMappedPeople, getPassageContext, getPersonMap } from './db/passageStudy'
 import { aiDb } from './ai/vectors'
 import { openUserDb } from './db/user'
 import { getWordFrequency, getWordFrequencyPassages } from './db/wordFrequency'
+import { restoredVerseSegments } from '../shared/sourceWords'
 
 /**
  * Post-package smoke test (run with `--smoke-test`). Exercises the REAL packaged code paths a
@@ -43,13 +46,43 @@ export async function runSmokeTest(): Promise<void> {
       if (f.occurrences !== 116 || f.forms.length !== 5 || verses.find(v => v.verse === 16)?.occurrences !== 3)
         throw new Error('Greek word frequency index missing or inconsistent')
     }],
+    ['Two uses of G264 keep their own Greek form and the published negation', () => {
+      const ref = { translation: 'BSB', book: '1John', chapter: 2 }
+      const verse = getChapter(ref).verses.find(v => v.verse === 1)
+      if (!verse || !getSourceWordCoverage('G264').some(r => r.translation === 'BSB' && r.occurrences >= 2))
+        throw new Error('G264 source evidence unavailable')
+      const parts = restoredVerseSegments(verse, ref, true, {}, ['G264'])
+      if (!parts.some(s => s.display === 'you will not sin' && s.annotation === 'ἁμάρτητε') ||
+          !parts.some(s => s.display === 'does sin' && s.annotation === 'ἁμάρτῃ'))
+        throw new Error('G264 forms or English wording do not match 1 John 2:1')
+    }],
     ['scholarly lexicons (Abbott-Smith on G26)', () => { if (!getLexiconEntries('G26').length) throw new Error('no lexicon entries') }],
     ['interlinear editions present', () => { if (listEditions().length < 5) throw new Error('editions missing') }],
+    ['John 1:18 displays the recorded God and Son readings by edition', () => {
+      const verse = getOriginalVerseReadings({ translation: 'BSB', book: 'John', chapter: 1, verse: 18 })
+      if (verse.kind !== 'greek' || !verse.readings.NA?.words.some(w => w.strongs === 'G2316' && w.surface === 'θεὸς') ||
+          !(['TR', 'BYZ'] as const).every(id => verse.readings[id]?.words.some(w => w.strongs === 'G5207')))
+        throw new Error('the expected edition readings are missing')
+    }],
+    ['Printed Greek word order at 1 Corinthians 15:19', () => {
+      const verse = getOriginalVerseReadings({ translation: 'KJV', book: '1Cor', chapter: 15, verse: 19 })
+      if (verse.kind !== 'greek') throw new Error('Greek comparison unavailable')
+      for (const id of ['TR', 'BYZ'] as const) {
+        const reading = verse.readings[id]
+        const words = reading?.words.map(w => w.surface).join(' ').normalize('NFC')
+        if (!reading || reading.orderStatus || !words?.includes('ἠλπικότες ἐσμὲν'))
+          throw new Error('the verified sequence is missing in ' + id)
+      }
+    }],
     [
-      'LXX interlinear is tagged',
+      'Swete interlinear preserves Greek forms and omits inferred glosses',
       () => {
-        const il = getInterlinear('Gen', 1, 'LXX')
-        if (!il.verses[0]?.tokens.some((t) => t.strongs)) throw new Error('LXX untagged')
+        const il = getInterlinear('Gen', 1, 'LXX', [], true)
+        const word = il.verses[0]?.tokens.find(t => t.lemma === 'ἐποίησεν')
+        if (!word || word.strongs || word.gloss || word.surface || word.parses || word.morph)
+          throw new Error('the Swete reading is missing or includes an inferred analysis')
+        const issue = getInterlinear('Exod', 20, 'LXX').verses.find(v => v.verse === 1)
+        if (!issue?.sourceIssue || issue.tokens.length) throw new Error('chapter numeral presented as Greek verse')
       }
     ],
     [
@@ -64,7 +97,7 @@ export async function runSmokeTest(): Promise<void> {
       'OT Ketiv/Qere apparatus (1 Chronicles 1)',
       () => {
         const app = getChapterApparatus('1Chr', 1)
-        if (!app.some((v) => v.items.some((it) => it.side === 'ketiv')))
+        if (!app.some((v) => v.kind === 'masoretic' && v.pairs.some(pair => pair.ketiv)))
           throw new Error('no Ketiv/Qere')
       }
     ],
@@ -98,7 +131,11 @@ export async function runSmokeTest(): Promise<void> {
           !getPassageContext({ edition: 'KJV', book: 'Gen', chapter: 4, firstVerse: 16 }).places.some(p => p.name === 'Nod'))
         throw new Error('atlas catalog or verse index missing')
     }],
-    ['Paul’s cited journey distinguishes Paul from John', () => {
+    ['Person maps list cited locations and preserve Paul’s documented stops', () => {
+      const people = getMappedPeople()
+      if (!people.some(p => p.id === 2479 && p.mappedPlaceCount >= 3) ||
+          !people.some(p => p.id === 78 && p.mappedPlaceCount === 1) || people.some(p => p.id === 13))
+        throw new Error('person map directory does not match its evidence')
       const stops = getPersonMap(2479)?.stops.filter(s => s.order != null).map(s => s.placeId)
       if (stops?.join(',') !== '919,936,69') throw new Error('unexpected Acts 13 sequence')
     }],

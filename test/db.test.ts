@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { KNOWN_FEATURE_TYPES } from '../src/shared/mapFeatures'
+import { readPrintedOrder } from '../data-pipeline/greekOrder'
 // Load node:sqlite at runtime — Vite's static resolver doesn't yet know this new builtin.
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite')
 
@@ -73,6 +74,27 @@ suite('bible.sqlite integrity', () => {
     expect(one("SELECT native_chapter,native_verse FROM original_tokens WHERE edition='BYZ' AND book_id='Rom' AND chapter=16 AND verse=25")).toMatchObject({native_chapter:14,native_verse:24})
     expect(one("SELECT original FROM original_tokens WHERE edition='TR' AND book_id='Matt' AND chapter=1 AND verse=1 AND strongs='G1138'").original).toBe('Δαβὶδ')
   })
+
+  it.skipIf(!existsSync('data-pipeline/sources/SCR-ASCII.ZIP') || !existsSync('data-pipeline/sources/BYZ-ASCII.ZIP'))(
+    'matches every unflagged Scrivener and Byzantine sequence to the publisher’s own native verse', () => {
+      const alphabet = Object.fromEntries(Array.from('abgdezhyiklmnxoprstufcqw', (c, i) => [c, 'αβγδεζηθικλμνξοπρστυφχψω'[i]]))
+      for (const [edition, archive] of [['TR','SCR'], ['BYZ','BYZ']] as const) {
+        const printed = readPrintedOrder(readFileSync('data-pipeline/sources/' + archive + '-ASCII.ZIP'), edition)
+        const checked = all(`SELECT t.book_id book, min(t.native_chapter) nc, min(t.native_verse) nv,
+          group_concat(t.original,' ' ORDER BY t.position) text FROM original_tokens t
+          LEFT JOIN greek_order_uncertainties u USING(edition,book_id,chapter,verse)
+          WHERE t.edition=? AND u.edition IS NULL GROUP BY t.book_id,t.chapter,t.verse`, edition)
+        expect(checked.length).toBeGreaterThan(6500)
+        for (const row of checked) {
+          const key = [row.book, row.nc, row.nv].join('.')
+          const native = printed.get(key)?.join(' ').replace(/[a-z]/g, c => alphabet[c])
+          const surface = String(row.text).normalize('NFD').toLowerCase().replace(/\p{M}/gu, '')
+            .replace(/ς/g, 'σ').replace(/[^\p{L}\s]/gu, '').trim().replace(/\s+/g, ' ')
+          if (surface !== native) throw new Error('Edition order mismatch at ' + edition + ' ' + key)
+        }
+      }
+    }
+  )
 
   it('TR vs Critical actually differ (Comma Johanneum, 1 John 5:7)', () => {
     const tr = n("SELECT COUNT(*) n FROM original_tokens WHERE edition='TR' AND book_id='1John' AND chapter=5 AND verse=7")

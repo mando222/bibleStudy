@@ -1,4 +1,5 @@
 import { bibleDb } from './bible'
+import { mappedPlaceIds } from './passageStudy'
 import type {
   PersonListItem,
   PersonDetail,
@@ -70,6 +71,7 @@ export function getPerson(id: number): PersonDetail | null {
     birthYear: (p.birth_year as number) ?? null,
     deathYear: (p.death_year as number) ?? null,
     verseCount: p.verse_count as number,
+    mappedPlaceCount: mappedPlaceIds(d, id).size,
     summary: (p.summary as string) ?? null,
     father: refOf(p.father_id),
     mother: refOf(p.mother_id),

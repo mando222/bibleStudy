@@ -1,15 +1,19 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { StrongsEntry } from '@shared/types'
 import { useStrongs } from '@/hooks/useStrongs'
 import ResultPages from './ResultPages'
 import { CONCORDANCE_PAGE_SIZE, useConcordance } from '@/hooks/useConcordance'
 import { useLexicons } from '@/hooks/useLexicons'
+import { useStudyQuery } from '@/hooks/useStudyQuery'
 import { useAppStore, type SelectedOccurrence } from '@/store/useAppStore'
 import { BOOK_BY_ID } from '@shared/books'
+import { isDivineNameId } from '@shared/lexiconId'
+import { termEnabled } from '@shared/sourceWords'
 import { HashIcon } from './icons'
 import StrongsText from './StrongsText'
 import Snippet from './Snippet'
 import WordFrequency, { useFrequencySettings } from './WordFrequency'
+import OriginalVerseComparison from './OriginalVerseComparison'
 
 export default function LexiconCard({ id, inWords = false }: { id: string | null; inWords?: boolean }): JSX.Element {
   const { entry, loading, error, retry } = useStrongs(id)
@@ -39,9 +43,13 @@ export default function LexiconCard({ id, inWords = false }: { id: string | null
     )
   }
 
-  if (error) return <p role="alert" className="text-sm text-muted">Couldn’t load {id}. {error} <button className="text-accent underline" onClick={retry}>Try again</button></p>
-  if (!entry) {
-    return <p className="text-sm text-muted">No lexicon entry found for {id}.</p>
+  if (error || !entry) {
+    return <>
+      {occurrence && <Occurrence details={occurrence} />}
+      {!inWords && <OriginalFormControl id={id} />}
+      {error ? <p role="alert" className="text-sm text-muted">Couldn’t load {id}. {error} <button className="text-accent underline" onClick={retry}>Try again</button></p>
+        : <p className="mt-3 text-sm text-muted">No lexicon entry found for {id}.</p>}
+    </>
   }
 
   const isHeb = entry.language === 'hebrew'
@@ -58,6 +66,7 @@ export default function LexiconCard({ id, inWords = false }: { id: string | null
       </div>
 
       {occurrence && <Occurrence details={occurrence} />}
+      {!inWords && <OriginalFormControl id={entry.id} />}
       <div className="mt-3 text-[11px] uppercase tracking-wider text-faint">Dictionary headword</div>
       <div
         dir={isHeb ? 'rtl' : 'ltr'}
@@ -89,6 +98,32 @@ export default function LexiconCard({ id, inWords = false }: { id: string | null
   )
 }
 
+function OriginalFormControl({ id }: { id: string }): JSX.Element {
+  const coverage = useStudyQuery(useCallback(() => window.api.getSourceWordCoverage(id), [id]))
+  const restoring = useAppStore(s => s.restoreSourceWords)
+  const divineName = isDivineNameId(id)
+  const selected = useAppStore(s => s.sourceFormIds.includes(id) || (divineName && termEnabled(id, s.sourceWordTerms)))
+  const setSourceForm = useAppStore(s => s.setSourceForm)
+  const editions = coverage.data?.filter(row => row.occurrences > 0)
+  const active = restoring && selected
+
+  return <section className="mt-3" aria-label="Restore in reader">
+    <label className="flex items-start gap-2 text-sm text-ink">
+      <input type="checkbox" className="mt-1 accent-accent" checked={active}
+        disabled={!active && !editions?.length} onChange={e => setSourceForm(id, e.target.checked)} />
+      {divineName ? 'Show YHWH at verified occurrences' : 'Show this word’s source form at each verified occurrence'}
+    </label>
+    <div className="mt-1 text-xs text-muted" role="status">
+      {coverage.loading ? 'Checking source records…' : coverage.error ? <>
+        Source records unavailable. <button className="text-accent underline" onClick={coverage.retry}>Try again</button>
+      </> : editions?.length ? <>
+        Verified occurrences · {editions.map(row => `${row.translation} ${row.occurrences.toLocaleString()}`).join(' · ')}
+        {!divineName && <p>The reader keeps the published wording alongside the form when needed.</p>}
+      </> : 'No verified source forms are available for this word.'}
+    </div>
+  </section>
+}
+
 function Occurrence({ details }: { details: SelectedOccurrence }): JSX.Element {
   const { translation, book, chapter, verse, surface, sourceWord } = details
   const ref = `${BOOK_BY_ID[book]?.name ?? book} ${chapter}:${verse}`
@@ -99,17 +134,24 @@ function Occurrence({ details }: { details: SelectedOccurrence }): JSX.Element {
       <p className="mt-1 text-ink">{surface}</p>
       {sourceWord ? (
         <>
-          <div className="mt-2 text-xs text-muted">{sourceWord.language} form in this verse</div>
+          <div className="mt-2 text-xs text-muted">{sourceWord.language} form in the Berean source for this verse</div>
           <div className="flex flex-wrap items-baseline gap-x-2">
-            <bdi dir={rtl ? 'rtl' : 'ltr'} className={`text-2xl ${rtl ? 'font-hebrew' : 'font-greek'}`}>{sourceWord.text}</bdi>
+            <bdi dir={rtl ? 'rtl' : 'ltr'} lang={sourceWord.language === 'Greek' ? 'grc' : sourceWord.language === 'Aramaic' ? 'arc' : 'he'}
+              className={`text-2xl ${rtl ? 'font-hebrew' : 'font-greek'}`}>{sourceWord.text}</bdi>
             <span className="text-sm text-muted">Publisher transliteration · <i>{sourceWord.translit}</i></span>
           </div>
           <p className="mt-1 text-xs text-muted">
-            {sourceWord.evidence === 'corroborated' ? 'Corroborated by Berean aligned text' : 'Berean aligned text'}
+            Berean translation table ({sourceWord.edition})
             {' · '}{BOOK_BY_ID[sourceWord.book]?.name ?? sourceWord.book} {sourceWord.chapter}:{sourceWord.verse} · row {sourceWord.rowId}
           </p>
+          {sourceWord.evidence === 'corroborated' && <p className="mt-1 text-xs text-muted">
+            {isDivineNameId(sourceWord.strongs)
+              ? 'The KJV tag and Masoretic text identify the four consonants יהוה.'
+              : `Corroborated by the KJV word tag and the ${rtl ? 'Masoretic text' : 'Greek Textus Receptus'}.`}
+          </p>}
         </>
       ) : <p className="mt-1 text-xs text-muted">{details.derived ? 'Inferred Strong’s link. ' : ''}An exact source form is unavailable for this selection.</p>}
+      <OriginalVerseComparison book={book} chapter={chapter} verse={verse} translation={translation} />
     </section>
   )
 }

@@ -1,4 +1,4 @@
-import { Fragment, useMemo } from 'react'
+import { Fragment, useMemo, type ReactNode } from 'react'
 import type { ChapterRef, Highlight, Verse, VerseToken } from '@shared/types'
 import { restoredVerseSegments, type VerseSegment } from '@shared/sourceWords'
 import { useAppStore } from '@/store/useAppStore'
@@ -25,9 +25,10 @@ export default function VerseView({ v, translation, book, chapter, literary = fa
   const selected = useAppStore(s => s.selectedStrongs)
   const enabled = useAppStore(s => s.restoreSourceWords)
   const terms = useAppStore(s => s.sourceWordTerms)
+  const sourceFormIds = useAppStore(s => s.sourceFormIds)
   const comparison = useWordComparison()
-  const parts = useMemo(() => restoredVerseSegments(v, { translation, book, chapter }, enabled, terms),
-    [v, translation, book, chapter, enabled, terms])
+  const parts = useMemo(() => restoredVerseSegments(v, { translation, book, chapter }, enabled, terms, sourceFormIds),
+    [v, translation, book, chapter, enabled, terms, sourceFormIds])
   const inspect = (token: VerseToken): void => {
     if (!token.strongs || window.getSelection()?.isCollapsed === false) return
     selectStrongs(token.strongs, {
@@ -59,40 +60,52 @@ export default function VerseView({ v, translation, book, chapter, literary = fa
   </>
   const renderParts = (pieces: VerseSegment[]) => (
     <span style={bg}>
-      {pieces.map(({ original, display, token }, index) => {
+      {pieces.map(({ original, display, annotation, token }, index) => {
         const linked = token?.strongs ? token : undefined
-        const changed = original !== display
+        const changed = original !== display || annotation !== undefined
         const source = changed ? linked?.sourceWord : undefined
+        const native = source && (annotation || display === source.text) ? (
+          <bdi dir={source.language === 'Greek' ? 'ltr' : 'rtl'}
+            lang={source.language === 'Greek' ? 'grc' : source.language === 'Hebrew' ? 'he' : 'arc'}
+            className={source.language === 'Greek' ? 'font-greek' : 'font-hebrew'}>{source.text}</bdi>
+        ) : null
         const preview = (anchor: HTMLElement, mode: 'hover' | 'focus' | 'explore') => {
-          if (source) comparison?.show({ anchor, source, translation, display }, mode)
+          if (source) comparison?.show({ anchor, source, translation, display: annotation ?? display, alongside: !!annotation }, mode)
         }
+        const renderWord = (text: ReactNode, comparisonLink: boolean, wholePart: boolean) => (
+          <span data-scripture-part={wholePart ? '' : undefined} data-published={wholePart && changed ? original : undefined}
+            data-aligned-english={annotation && !comparisonLink ? '' : undefined}
+            title={token?.derived ? 'Inferred word mapping' : undefined}
+            data-restored-word={comparisonLink ? '' : undefined}
+            data-source-row={comparisonLink && source ? source.language + ':' + source.rowId : undefined}
+            aria-haspopup={comparisonLink ? 'dialog' : undefined}
+            aria-description={comparisonLink ? 'Down Arrow explores translations. Enter opens the lexicon.' : undefined}
+            onMouseEnter={comparisonLink ? e => { if (!e.buttons) preview(e.currentTarget, 'hover') } : undefined}
+            onMouseLeave={comparisonLink ? e => comparison?.leave(e.relatedTarget) : undefined}
+            onPointerDown={comparisonLink ? () => comparison?.dismiss() : undefined}
+            onFocus={comparisonLink ? e => { if (e.currentTarget.matches(':focus-visible')) preview(e.currentTarget, 'focus') } : undefined}
+            onBlur={comparisonLink ? e => comparison?.leave(e.relatedTarget) : undefined}
+            role={linked ? 'button' : undefined} tabIndex={linked ? 0 : undefined}
+            onClick={linked ? () => inspect(linked) : undefined}
+            onKeyDown={linked ? e => {
+              if (comparisonLink && e.key === 'ArrowDown') { e.preventDefault(); preview(e.currentTarget, 'explore') }
+              else if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                if (comparisonLink) comparison?.dismiss()
+                inspect(linked)
+              }
+            } : undefined}
+            className={linked ? `cursor-pointer rounded-sm hover:bg-accent-soft/60 ${comparisonLink ? 'text-accent font-medium' : ''}
+              ${selected === linked.strongs ? 'bg-accent-soft text-accent' : ''}
+              ${token?.derived ? 'underline decoration-dotted decoration-accent/40 underline-offset-4' : ''}` : undefined}>
+            {text}
+          </span>
+        )
         return (
           <Fragment key={index}>
-            <span data-scripture-part="" data-published={changed ? original : undefined}
-              title={token?.derived ? 'Inferred word mapping' : undefined}
-              data-restored-word={source ? '' : undefined}
-              aria-haspopup={source ? 'dialog' : undefined}
-              aria-description={source ? 'Down Arrow explores translations. Enter opens the lexicon.' : undefined}
-              onMouseEnter={source ? e => { if (!e.buttons) preview(e.currentTarget, 'hover') } : undefined}
-              onMouseLeave={source ? e => comparison?.leave(e.relatedTarget) : undefined}
-              onPointerDown={source ? () => comparison?.dismiss() : undefined}
-              onFocus={source ? e => { if (e.currentTarget.matches(':focus-visible')) preview(e.currentTarget, 'focus') } : undefined}
-              onBlur={source ? e => comparison?.leave(e.relatedTarget) : undefined}
-              role={linked ? 'button' : undefined} tabIndex={linked ? 0 : undefined}
-              onClick={linked ? () => inspect(linked) : undefined}
-              onKeyDown={linked ? e => {
-                if (source && e.key === 'ArrowDown') { e.preventDefault(); preview(e.currentTarget, 'explore') }
-                else if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  if (source) comparison?.dismiss()
-                  inspect(linked)
-                }
-              } : undefined}
-              className={linked ? `cursor-pointer rounded-sm hover:bg-accent-soft/60 ${changed ? 'text-accent font-medium' : ''}
-                ${selected === linked.strongs ? 'bg-accent-soft text-accent' : ''}
-                ${token?.derived ? 'underline decoration-dotted decoration-accent/40 underline-offset-4' : ''}` : undefined}>
-              {display}
-            </span>
+            {annotation ? <span data-scripture-part="" data-published={original} data-aligned-phrase={source?.english}>
+              {renderWord(display, false, false)}<span className="text-[0.88em] text-accent"> [{renderWord(native, true, false)}]</span>
+            </span> : renderWord(native ?? display, !!source, true)}
             {strongsVisible && token?.strongs && (
               <sup onClick={() => inspect(token)} data-label={token.strongs.replace(/^[GH]/, '')}
                 aria-label={`Strong's ${token.strongs}`} title={`Strong's ${token.strongs}${token.derived ? ' (inferred)' : ''}`}

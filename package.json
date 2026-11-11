@@ -1,6 +1,6 @@
 {
   "name": "open-bible-study",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Open-source, local, offline Bible study app (Logos-lite) with Strong's numbers, interlinear, and original-language tools.",
   "author": {
     "name": "Open Bible Study",
@@ -17,7 +17,7 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "test": "vitest run",
-    "test:release-db": "vitest run test/db.test.ts test/studySearch.test.ts test/assistantSources.test.ts test/sourceWordIntegrity.test.ts test/wordFrequency.test.ts test/lexiconDirectory.test.ts test/atlasCatalog.test.ts test/passageStudy.test.ts",
+    "test:release-db": "vitest run test/db.test.ts test/apparatus.test.ts test/sweteInterlinear.test.ts test/studySearch.test.ts test/assistantSources.test.ts test/sourceWordIntegrity.test.ts test/wordFrequency.test.ts test/lexiconDirectory.test.ts test/atlasCatalog.test.ts test/mappedPeople.test.ts test/passageStudy.test.ts",
     "test:watch": "vitest",
     "db:build": "cross-env NODE_NO_WARNINGS=1 NODE_OPTIONS=--experimental-sqlite tsx data-pipeline/build.ts",
     "dist": "electron-vite build && electron-builder",
@@ -44,6 +44,7 @@
     "electron": "^43.0.0",
     "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
+    "fflate": "^0.8.2",
     "jsdom": "^29.1.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",

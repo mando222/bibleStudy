@@ -102,7 +102,10 @@ export function literaryGroups(parts: VerseSegment[], layout: VerseLayout, liter
       if (from === position && to === finish) groups[group].parts.push(part)
       else {
         const slice = part.original.slice(from - position, to - position)
-        groups[group].parts.push({ original: slice, display: slice, token: to === finish ? part.token : undefined })
+        // The supplemental form belongs at the end of the published phrase, even if the
+        // edition starts a poetic line inside that phrase.
+        groups[group].parts.push({ original: slice, display: slice, token: to === finish ? part.token : undefined,
+          ...(to === finish && part.annotation ? { annotation: part.annotation } : {}) })
       }
       from = to
     }

@@ -13,6 +13,7 @@ interface Target {
   source: SourceWord
   translation: string
   display: string
+  alongside: boolean
 }
 interface ComparisonControls {
   show: (target: Target, mode: 'hover' | 'focus' | 'explore') => void
@@ -30,6 +31,7 @@ export function WordComparisonProvider({ children, location }: { children: React
   const id = useId()
   const restoring = useAppStore(s => s.restoreSourceWords)
   const terms = useAppStore(s => s.sourceWordTerms)
+  const sourceFormIds = useAppStore(s => s.sourceFormIds)
   const cancelTimer = useCallback(() => window.clearTimeout(timer.current), [])
   const dismiss = useCallback(() => {
     cancelTimer()
@@ -41,7 +43,7 @@ export function WordComparisonProvider({ children, location }: { children: React
     show(word, mode) {
       cancelTimer()
       const open = () => {
-        if (!word.anchor.isConnected || word.anchor.dataset.published !== word.source.english ||
+        if (!word.anchor.isConnected || word.anchor.dataset.sourceRow !== word.source.language + ':' + word.source.rowId ||
             !word.anchor.hasAttribute('data-restored-word') || window.getSelection()?.isCollapsed === false) return
         explore.current = mode === 'explore'
         setTarget(word)
@@ -56,7 +58,7 @@ export function WordComparisonProvider({ children, location }: { children: React
     }
   }), [cancelTimer, dismiss])
 
-  useEffect(() => { dismiss(); return cancelTimer }, [location, restoring, terms, dismiss, cancelTimer])
+  useEffect(() => { dismiss(); return cancelTimer }, [location, restoring, terms, sourceFormIds, dismiss, cancelTimer])
   useLayoutEffect(() => {
     if (!target || !panel.current) return
     target.anchor.setAttribute('aria-controls', id)
@@ -135,20 +137,23 @@ function ComparisonContent({ target, close }: { target: Target; close: () => voi
   return <>
     <div className="flex items-start justify-between gap-3">
       <div>
-        <h2 className="text-lg font-serif font-semibold leading-tight">{display}</h2>
+        <h2 className="text-lg font-serif font-semibold leading-tight"><bdi>{display}</bdi></h2>
         <p className="mt-0.5 text-xs text-muted">{book} {source.chapter}:{source.verse}</p>
       </div>
       <button type="button" aria-label="Close translation comparison" onClick={close}
         className="px-1 text-muted hover:text-ink">✕</button>
     </div>
     <dl className="mt-2 divide-y divide-line text-sm">
-      <ComparisonRow edition={current} abbrev={current?.abbrev ?? translation} label="Verified wording" text={source.english} />
+      <ComparisonRow edition={current} abbrev={current?.abbrev ?? translation}
+        label={target.alongside ? 'Aligned wording' : 'Verified wording'} text={source.english} />
       {(expanded ? ordered : ordered.slice(0, 3)).map(edition =>
         <OtherReading key={edition.id} edition={edition} target={target} />)}
     </dl>
     {ordered.length > 3 && <button type="button" onClick={() => setExpanded(!expanded)} aria-expanded={expanded}
       className="mt-1 text-xs text-accent hover:underline">{expanded ? 'Fewer translations' : 'More translations'}</button>}
     <ComparisonSourceDetails source={source} translation={translation} display={display} />
+    {target.alongside && <p className="mt-2 text-xs text-muted">The source record links this form to the wording above.
+      The full translation stays visible because this word may account for only part of its meaning.</p>}
   </>
 }
 
@@ -191,14 +196,15 @@ function OtherReading({ edition, target }: { edition: Translation; target: Targe
   if (!reading || reading.verse !== number) return <ComparisonRow {...row} label="Verse unavailable" text="No text at this reference in this edition." />
 
   const segments = restoredVerseSegments(reading, { book: native.book, chapter: native.chapter, translation: edition.id },
-    true, { [source.strongs]: true })
+    true, { [source.strongs]: true }, [source.strongs])
   const matched = segments.filter(s => {
     const other = s.token?.sourceWord
-    return s.display === target.display && s.original !== s.display && other?.edition === source.edition &&
+    return (s.annotation || s.original !== s.display) && other?.edition === source.edition &&
       other.rowId === source.rowId && other.language === source.language && other.strongs === source.strongs &&
       other.text === source.text && other.book === source.book && other.chapter === source.chapter && other.verse === source.verse
   })
-  if (matched.length === 1) return <ComparisonRow {...row} label="Verified wording" text={matched[0].original} />
+  if (matched.length === 1) return <ComparisonRow {...row}
+    label={matched[0].annotation ? 'Aligned wording' : 'Verified wording'} text={matched[0].original} />
   return <ComparisonRow {...row} label={imported ? 'Same reference · imported numbering unverified' : 'Verse context · no verified word link'}
     text={reading.text} />
 }

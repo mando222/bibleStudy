@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 import { usePagedQuery } from '@/hooks/usePagedQuery'
 import ResultPages from './ResultPages'
-import { useAppStore } from '@/store/useAppStore'
+import { originalTextEdition, useAppStore } from '@/store/useAppStore'
 import { SearchIcon } from './icons'
 import Snippet from './Snippet'
 
@@ -13,8 +13,7 @@ export default function SearchPanel(): JSX.Element {
 
   const [q, setQ] = useState('')
   const [scope, setScope] = useState<Scope>('all')
-  const originalEdition = useAppStore((s) => s.interlinearEdition)
-  const greekEdition = originalEdition === 'TR' || originalEdition === 'BYZ' ? originalEdition : 'NA'
+  const greekEdition = useAppStore(s => originalTextEdition(s, 'NT', s.interlinear ? s.interlinearEdition : '') || undefined)
   const text = q.trim()
   const fetchPage = useCallback((offset: number) =>
     window.api.search({ text, translation: primary, testament: scope, greekEdition, limit: 150, offset }),

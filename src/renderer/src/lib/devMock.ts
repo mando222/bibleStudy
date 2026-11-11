@@ -1,3 +1,6 @@
+import { compareGreekReadings, type GreekReadings } from '@shared/apparatus'
+import { mapPassage } from '@shared/passageMapping'
+import { defaultTextPreference } from '@shared/textPreference'
 /**
  * Dev-only mock of `window.api`, used ONLY when the renderer runs in a plain
  * browser (no Electron preload) during development — e.g. previewing the UI at
@@ -18,8 +21,7 @@ import type {
   Note,
   NotebookApi,
   SearchResponse,
-  UpdatesApi,
-  VerseVariant
+  UpdatesApi
 } from '@shared/types'
 
 interface MockData {
@@ -29,7 +31,20 @@ interface MockData {
   search: SearchResponse
   editions: Edition[]
   interlinear: Record<string, InterlinearContent>
-  apparatus: Record<string, VerseVariant[]>
+}
+
+function demoReadings(data: MockData, book: string, chapter: number) {
+  const verses = new Map<number, GreekReadings>()
+  for (const id of defaultTextPreference.nt) {
+    for (const v of data.interlinear[`${id}/${book}/${chapter}`]?.verses ?? []) {
+      const readings = verses.get(v.verse) ?? {}
+      readings[id] = { nativeRefs: [], orderStatus: 'unknown', words: v.tokens.map(t => ({
+        surface: t.lemma ?? '', strongs: t.strongs, translit: t.translit, gloss: t.gloss
+      })) }
+      verses.set(v.verse, readings)
+    }
+  }
+  return verses
 }
 
 export async function installDevMock(): Promise<void> {
@@ -63,6 +78,7 @@ export async function installDevMock(): Promise<void> {
       return ref.translation === 'BSB' || ref.translation === 'KJV' ? verse : { ...verse, tokens: null }
     },
     getStrongs: async (id) => (data.strongs[id.toUpperCase()] as never) ?? null,
+    getSourceWordCoverage: async () => [],
     browseLexicon: async () => ({ total: 0, entries: [] }),
     getWordFrequency: async ({ id, edition }) => ({
       id, edition, language: edition === 'MT' ? 'Hebrew / Aramaic' : 'Greek', coverage: 'unavailable',
@@ -76,6 +92,7 @@ export async function installDevMock(): Promise<void> {
     getPlaces: async () => [],
     getPassageContext: async () => ({ status: 'unavailable', people: [], places: [], events: [] }),
     getPersonMap: async () => null,
+    getMappedPeople: async () => [],
     getPlaceVerses: async () => [],
     getEvents: async () => [],
     getMapLand: async () => '',
@@ -134,7 +151,18 @@ export async function installDevMock(): Promise<void> {
       return { total: hits.length, hits, translation: 'KJV', derived: false }
     },
     listEditions: async () => data.editions ?? [],
-    getChapterApparatus: async (book, chapter) => data.apparatus?.[`${book}/${chapter}`] ?? [],
+    getOriginalVerseReadings: async ({ book, chapter, verse, translation }) => {
+      const ref = mapPassage({ book, chapter, verse }, translation, 'KJV')
+      if (!ref || translation.startsWith('imp_')) return { kind: 'unmapped' }
+      const readings = demoReadings(data, ref.book, ref.chapter).get(ref.verse)
+      if (!readings) throw new Error('No original readings in the demo for this verse.')
+      return { kind: 'greek', ref, readings }
+    },
+    getChapterApparatus: async (book, chapter) => {
+      const verses = demoReadings(data, book, chapter)
+      if (!verses.size) throw new Error('No original readings in the demo for this chapter.')
+      return [...verses].flatMap(([v, readings]) => compareGreekReadings(v, readings) ?? [])
+    },
     getInterlinear: async (book, chapter, edition, translations = [], includeParses = false) => {
       const base = data.interlinear?.[`${edition}/${book}/${chapter}`] ?? {
         book,

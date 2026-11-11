@@ -4,6 +4,7 @@ import type {
   WordFrequencyForm, WordFrequencyPassageQuery, WordFrequencyQuery
 } from '@shared/wordFrequency'
 import { describeFrequencyMorph } from '@shared/frequencyMorphology'
+import type { NtText } from '@shared/textPreference'
 import { BOOK_BY_ID } from '@shared/books'
 import { useStudyQuery } from '@/hooks/useStudyQuery'
 import { useAppStore } from '@/store/useAppStore'
@@ -24,25 +25,31 @@ function QueryError({ error, retry }: { error: string; retry: () => void }) {
 
 /** Keep display choices while another Words entry loads or the reader opens its definition. */
 export function useFrequencySettings() {
-  const [greekEdition, setGreekEdition] = useState<WordFrequencyEdition>('NA')
   const [metric, setMetric] = useState<FrequencyMetric>('rate')
-  return { greekEdition, setGreekEdition, metric, setMetric }
+  return { metric, setMetric }
 }
 
 export default function WordFrequency({ id, settings }: { id: string; settings: ReturnType<typeof useFrequencySettings> }): JSX.Element {
-  const { greekEdition, setGreekEdition, metric, setMetric } = settings
+  const { metric, setMetric } = settings
+  const greekChoice = useAppStore(s => s.frequencyGreekEdition)
+  const setGreekChoice = useAppStore(s => s.setFrequencyGreekEdition)
+  const order = useAppStore(s => s.preferredTextOrder.nt)
+  const available = useAppStore(s => s.originalEditions)
+  const greekEditions = available ? order.filter(id => available.some(edition => edition.id === id)) : order
+  const selected = greekChoice && greekEditions.includes(greekChoice) ? greekChoice : ''
   const isMT = id.startsWith('H')
-  const edition = isMT ? 'MT' : greekEdition
+  const edition = isMT ? 'MT' : selected || greekEditions[0]
   return (
     <section aria-label="Word frequency" className="mt-4 space-y-3">
       <label className={labelStyle}>Source edition
-        {isMT ? <span className="text-sm text-ink">{editionNames.MT}</span> : (
-          <select className={selectStyle} value={edition} onChange={e => setGreekEdition(e.target.value as WordFrequencyEdition)}>
-            {(['NA', 'TR', 'BYZ'] as const).map(ed => <option key={ed} value={ed}>{editionNames[ed]}</option>)}
+        {isMT ? <span className="text-sm text-ink">{editionNames.MT}</span> : edition ? (
+          <select className={selectStyle} value={selected} onChange={e => setGreekChoice(e.target.value as NtText | '')}>
+            <option value="">Use global setting · {editionNames[greekEditions[0]]}</option>
+            {greekEditions.map(ed => <option key={ed} value={ed}>{editionNames[ed]}</option>)}
           </select>
-        )}
+        ) : <span>No Greek source edition is available.</span>}
       </label>
-      <EditionFrequency key={`${id}:${edition}`} id={id} edition={edition} metric={metric} onMetric={setMetric} />
+      {edition && <EditionFrequency key={`${id}:${edition}`} id={id} edition={edition} metric={metric} onMetric={setMetric} />}
     </section>
   )
 }

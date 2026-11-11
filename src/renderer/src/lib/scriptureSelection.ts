@@ -11,6 +11,18 @@ function overlapOf(span: HTMLElement, range: Range): Range {
   return overlap
 }
 
+function publishedFragment(span: HTMLElement, overlap: Range): string {
+  const displayed = overlap.toString()
+  if (!displayed || span.dataset.published === undefined) return displayed
+  const printed = span.querySelector<HTMLElement>('[data-aligned-english]')
+  if (printed && overlap.intersectsNode(printed)) {
+    const selected = overlapOf(printed, overlap).toString()
+    if (selected) return selected
+  }
+  // Selecting only the added source form cites its whole aligned phrase.
+  return span.dataset.alignedPhrase ?? span.dataset.published
+}
+
 /** Extract the published text covered by a DOM range in one edition's reading column.
  * A partial selection of a transliteration denotes its entire aligned English span.
  * Unchanged text keeps the precise character offsets the reader selected.
@@ -22,8 +34,7 @@ export function publishedSelection(container: HTMLElement, range: Range) {
     let text = ''
     for (const span of row.querySelectorAll<HTMLElement>('[data-scripture-part]')) {
       if (!range.intersectsNode(span)) continue
-      const fragment = overlapOf(span, range).toString()
-      if (fragment) text += span.dataset.published ?? fragment
+      text += publishedFragment(span, overlapOf(span, range))
     }
     if (text) verses.push({ verse: Number(row.dataset.verse), text })
   }
@@ -52,7 +63,10 @@ export function publishedCopy(reader: HTMLElement, selection: Selection): string
 
   const changes = [...reader.querySelectorAll<HTMLElement>('[data-scripture-part][data-published]')]
     .filter(span => range.intersectsNode(span))
-    .map(span => ({ overlap: overlapOf(span, range), published: span.dataset.published! }))
+    .map(span => {
+      const overlap = overlapOf(span, range)
+      return { overlap, published: publishedFragment(span, overlap) }
+    })
     .filter(({ overlap }) => overlap.toString().length > 0)
   if (!changes.length || !selection.anchorNode || !selection.focusNode) return
 

@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import WordFrequency, { useFrequencySettings } from '../src/renderer/src/components/WordFrequency'
 import LexiconCard from '../src/renderer/src/components/LexiconCard'
+import SourceWordSettings from '../src/renderer/src/components/SourceWordSettings'
 import WordsView from '../src/renderer/src/components/WordsView'
 import StudyPanel from '../src/renderer/src/components/StudyPanel'
 import { useAppStore } from '../src/renderer/src/store/useAppStore'
@@ -78,6 +79,35 @@ const passage: WordFrequencyVerse = {
 }
 
 describe('word frequency in Words', () => {
+  it('follows the available Greek text order, keeps an explicit choice across Words visits and uses MT for Hebrew IDs', async () => {
+    const getWordFrequency = vi.fn(async (query: WordFrequencyQuery) => summary(query))
+    Object.assign(window.api, { getWordFrequency })
+    useAppStore.setState({ preferredTextOrder: { nt: ['BYZ', 'TR', 'NA'], ot: ['LXX', 'MT'], masoretic: ['ketiv', 'qere'] },
+      originalEditions: [
+        { id: 'NA', name: 'Critical', language: 'grc', testament: 'NT' },
+        { id: 'TR', name: 'Textus Receptus', language: 'grc', testament: 'NT' },
+        { id: 'MT', name: 'Masoretic', language: 'hbo', testament: 'OT' },
+        { id: 'LXX', name: 'Septuagint', language: 'grc', testament: 'OT' }
+      ] })
+    await act(async () => root.render(createElement(StudyFrequency, { id: 'G26' })))
+    expect(select('Source edition').value).toBe('')
+    expect(select('Source edition').options[0].textContent).toContain('Textus Receptus')
+    expect(getWordFrequency).toHaveBeenLastCalledWith({ id: 'G26', edition: 'TR' })
+    await change('Source edition', 'NA')
+    await act(async () => root.render(null))
+    await act(async () => root.render(createElement(StudyFrequency, { id: 'H430' })))
+    expect(getWordFrequency).toHaveBeenLastCalledWith({ id: 'H430', edition: 'MT' })
+    await act(async () => root.render(createElement(StudyFrequency, { id: 'G25' })))
+    expect(getWordFrequency).toHaveBeenLastCalledWith({ id: 'G25', edition: 'NA' })
+    expect(select('Source edition').value).toBe('NA')
+    await change('Source edition', '')
+    expect(getWordFrequency).toHaveBeenLastCalledWith({ id: 'G25', edition: 'TR' })
+    const state = useAppStore.getState()
+    expect(useAppStore.persist.getOptions().partialize!(state)).not.toHaveProperty('frequencyGreekEdition')
+    await act(async () => state.setPreferredTextOrder({ ...state.preferredTextOrder, nt: ['NA', 'BYZ', 'TR'] }))
+    expect(getWordFrequency).toHaveBeenLastCalledWith({ id: 'G25', edition: 'NA' })
+  })
+
   it('opens the study beside the concordance, shows every parse and match, and navigates using the reader reference', async () => {
     const getWordFrequency = vi.fn(async (q: WordFrequencyQuery) => summary(q))
     Object.assign(window.api, { getStrongs: async () => ({ id: 'G26', language: 'greek', lemma: 'ἀγάπη' }),
@@ -211,6 +241,53 @@ describe('word frequency in Words', () => {
     await act(async () => root.render(createElement(LexiconCard, { id: 'G26' })))
     expect(host.textContent).toContain('Concordance')
     expect(host.textContent).not.toContain('Word frequency')
+  })
+
+  it('enables verified occurrences from the reader card and removes a selected ID independently of the presets', async () => {
+    const coverage = vi.fn(async () => [{ translation: 'BSB', occurrences: 42 }])
+    Object.assign(window.api, { getStrongs: async () => ({ id: 'G264', language: 'greek', lemma: 'ἁμαρτάνω', occurrences: 0 }),
+      getSourceWordCoverage: coverage, getLexiconEntries: async () => [],
+      getConcordance: async () => ({ translation: 'KJV', total: 0, hits: [] }) })
+    useAppStore.setState({ sourceWordTerms: { G25: true } })
+    await act(async () => root.render(createElement(LexiconCard, { id: 'G264' })))
+    const check = host.querySelector<HTMLInputElement>('[aria-label="Restore in reader"] input')!
+    expect(coverage).toHaveBeenCalledWith('G264')
+    expect(host.textContent).toContain('BSB 42')
+    expect(check.checked).toBe(false)
+    await act(async () => check.click())
+    expect(useAppStore.getState()).toMatchObject({ restoreSourceWords: true, sourceFormIds: ['G264'], sourceWordTerms: { G25: true } })
+    const snapshot = useAppStore.persist.getOptions().partialize!(useAppStore.getState())
+    expect(snapshot).toMatchObject({ sourceFormIds: ['G264'] })
+    const merge = useAppStore.persist.getOptions().merge!
+    expect(merge({ sourceFormIds: ['G0264', 'g264', 'ἁμαρτάνω', { G264: 'sin' }] }, useAppStore.getInitialState()).sourceFormIds).toEqual(['G264'])
+    expect(merge({ replacements: { G264: 'ἁμαρτάνω' } }, useAppStore.getInitialState()).sourceFormIds).toEqual([])
+    await act(async () => useAppStore.getState().toggleSourceWords())
+    expect(check.checked).toBe(false)
+    await act(async () => check.click())
+    expect(useAppStore.getState().sourceFormIds).toEqual(['G264'])
+    await act(async () => {
+      useAppStore.getState().setSourceWordSettingsOpen(true)
+      root.render(createElement(SourceWordSettings))
+    })
+    expect(host.textContent).toContain('G264ἁμαρτάνω')
+    await click('[aria-label="Remove G264 from original forms"]')
+    expect(useAppStore.getState()).toMatchObject({ restoreSourceWords: true, sourceFormIds: [], sourceWordTerms: { G25: true } })
+  })
+
+  it('requires verified coverage even for a lexicon entry with Strong’s matches, and preserves the fixed divine name', async () => {
+    Object.assign(window.api, { getStrongs: async (id: string) => ({ id, language: 'hebrew', lemma: 'word', occurrences: 900 }),
+      getSourceWordCoverage: async (id: string) => id === 'H3068' ? [{ translation: 'KJV', occurrences: 10 }] : [],
+      getLexiconEntries: async () => [], getConcordance: async () => ({ translation: 'KJV', total: 0, hits: [] }) })
+    await act(async () => root.render(createElement(LexiconCard, { id: 'H999' })))
+    const checkbox = () => host.querySelector<HTMLInputElement>('[aria-label="Restore in reader"] input')!
+    expect(checkbox().disabled).toBe(true)
+    expect(host.textContent).toContain('No verified source forms')
+    await act(async () => root.render(createElement(LexiconCard, { id: 'H3068' })))
+    await act(async () => checkbox().click())
+    expect(checkbox().checked).toBe(true)
+    expect(useAppStore.getState()).toMatchObject({ restoreSourceWords: true, sourceFormIds: [], sourceWordTerms: { H3068: true, H3069: true } })
+    await act(async () => checkbox().click())
+    expect(useAppStore.getState().sourceWordTerms).toEqual({ H3068: false, H3069: false })
   })
 
   it('browses extended Hebrew headwords and opens their scholarly definitions in both Words and the study pane', async () => {

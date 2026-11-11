@@ -13,7 +13,7 @@ export interface PassageContext {
 }
 export interface PersonMapStop {
   placeId: number
-  role: 'birthplace' | 'residence' | 'departure' | 'visit' | 'death'
+  role: 'birthplace' | 'origin' | 'residence' | 'departure' | 'visit' | 'death'
   label: string
   /** Canonical (KJV-coordinate) supporting verse keys. */
   refs: string[]
@@ -21,7 +21,7 @@ export interface PersonMapStop {
   journey: string | null
   order: number | null
 }
-export interface PersonMap { personId: number; name: string; stops: PersonMapStop[] }
+export interface PersonMap { personId: number; name: string; displayName: string; stops: PersonMapStop[] }
 export interface ReviewedSpeaker { label: string; detail: string; refs: string[]; disputed: boolean }
 export interface StudyStructure {
   title: string

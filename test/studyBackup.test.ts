@@ -83,7 +83,10 @@ describe('study storage', () => {
     user.addHistory('Gen', 3)
     const note = join(external, 'Reading.md')
     writeFileSync(note, '# Reading\n\nλόγος')
-    const state = JSON.stringify({ state: { theme: 'dark', chatMessages: [{ role: 'user', content: 'Study John' }] }, version: 0 })
+    const state = JSON.stringify({ state: {
+      theme: 'dark', chatMessages: [{ role: 'user', content: 'Study John' }],
+      preferredTextOrder: { nt: ['BYZ', 'TR', 'NA'], ot: ['LXX', 'MT'], masoretic: ['ketiv', 'qere'] }
+    }, version: 1 })
     writeFileSync(join(profile.root, 'ai-config.json'), '{"provider":"auto"}')
     const ai = aiDb()
     ai.exec(`INSERT INTO documents VALUES ('doc1','Study document',1,1,42);

@@ -21,6 +21,21 @@ describe('copying published Scripture with surrounding UI', () => {
     document.body.replaceChildren()
   })
 
+  it('copies the chosen English substring, the linked phrase for a source-only selection, and a full passage once', () => {
+    reader.innerHTML = '<p data-scripture-passage><span data-verse="1"><span data-scripture-part data-published="you will not sin">' +
+      '<span data-aligned-english>you will not sin</span> [<bdi>ἁμάρτητε</bdi>]</span><span data-scripture-part>.</span></span></p>'
+    const english = reader.querySelector('[data-aligned-english]')!.firstChild!
+    const greek = reader.querySelector('bdi')!.firstChild!
+    selection.setBaseAndExtent(english, 9, english, 12)
+    expect(publishedCopy(reader, selection)).toBe('not')
+    selection.setBaseAndExtent(greek, 0, greek, 4)
+    expect(publishedCopy(reader, selection)).toBe('you will not sin')
+    selection.setBaseAndExtent(english, 9, greek, 4)
+    expect(publishedCopy(reader, selection)).toBe('not sin')
+    selection.selectAllChildren(document.body)
+    expect(publishedCopy(reader, selection)).toBe('Compare you will not sin.Notes')
+  })
+
   it('copies selected headings and both published passages with Select All', () => {
     selection.selectAllChildren(document.body)
     expect(publishedCopy(reader, selection)).toBe('Compare Psalm 23 · The LORD is my shepherd. John 3 · God loved the world. Notes')

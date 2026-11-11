@@ -3,7 +3,7 @@ import { app, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { downloadToFile } from './download'
-import { isNewerVersion } from '../shared/semver'
+import { isNewerVersion, parseVersion } from '../shared/semver'
 import {
   isReleaseUrl,
   pickReleaseAsset,
@@ -19,16 +19,12 @@ import type { UpdateDownload, UpdateInfo, UpdatePrefs } from '../shared/types'
  *
  * The project is deliberately offline-first (see CLAUDE.md), so this is deliberately narrow:
  *   • nothing is sent — no identifiers, no telemetry, no query parameters;
- *   • it never blocks startup, and any failure (offline, rate-limited, DNS) is silent;
- *   • it runs at most once a day, and not at all when the user turns it off;
+ *   • it never blocks startup, and a failed launch check (offline, rate-limited, DNS) is silent;
+ *   • launch checks reuse a successful response for a day, and can be switched off;
  *   • the app never RUNS an installer. Downloading one is explicit, user-pressed, and writes to the
  *     user's own Downloads folder; installing is left entirely to them.
  *
- * Silent download-and-install (electron-updater) is intentionally NOT used: macOS builds are
- * unsigned (`identity: null` in electron-builder.yml) and Squirrel.Mac requires a signed,
- * notarized app, so it could never work there. See issue #1. Fetching the installer in-app is the
- * part of that we CAN do — on macOS a running app cannot replace its own bundle, so the download
- * has to be able to finish while the app is still open and be installed whenever the user quits.
+ * Installation is a separate, user-initiated step. See issue #1 for the distribution history.
  */
 
 const RELEASES_API = 'https://api.github.com/repos/mando222/bibleStudy/releases/latest'
@@ -39,6 +35,7 @@ interface UpdateConfig {
   checkOnLaunch: boolean
   dismissedVersion?: string
   lastCheckedAt?: number
+  latestRelease?: Release
 }
 
 const DEFAULTS: UpdateConfig = { checkOnLaunch: true }
@@ -65,55 +62,91 @@ function writeConfig(patch: Partial<UpdateConfig>): UpdateConfig {
   return next
 }
 
-interface GhRelease {
-  tag_name?: string
-  name?: string
-  body?: string
-  html_url?: string
-  draft?: boolean
-  prerelease?: boolean
-  assets?: ReleaseAsset[]
+interface Release {
+  tag_name: string
+  body: string
+  html_url: string
+  assets: ReleaseAsset[]
 }
 
-/**
- * Look for a newer release. Returns null whenever there's nothing to show — disabled, throttled,
- * already dismissed, offline, or simply up to date — so callers never have to handle errors.
- */
-export async function checkForUpdate(force = false): Promise<UpdateInfo | null> {
-  const cfg = readConfig()
-  if (!force && !cfg.checkOnLaunch) return null
-  if (!force && Date.now() - (cfg.lastCheckedAt ?? 0) < DAY_MS) return null
+// Keep only the fields we need. A study profile can be restored on another platform, so keep
+// the list of assets and select the installer on the machine where the offer will be shown.
+function parseRelease(value: unknown): Release | null {
+  if (typeof value !== 'object' || value === null) return null
+  const release = value as Partial<Release> & { draft?: boolean; prerelease?: boolean }
+  const tag = typeof release.tag_name === 'string' ? release.tag_name.trim() : ''
+  if (release.draft || release.prerelease || parseVersion(tag)?.prerelease.length !== 0) return null
+  const assets = Array.isArray(release.assets) ? release.assets : []
+  return {
+    tag_name: tag,
+    body: typeof release.body === 'string' ? release.body.trim().slice(0, 4000) : '',
+    html_url: typeof release.html_url === 'string' && isReleaseUrl(release.html_url)
+      ? release.html_url
+      : `https://github.com/mando222/bibleStudy/releases/tag/${tag}`,
+    assets: assets
+      .filter((asset) => asset && typeof asset.name === 'string' &&
+        typeof asset.browser_download_url === 'string' && isReleaseUrl(asset.browser_download_url))
+      .map(({ name, browser_download_url }) => ({ name, browser_download_url }))
+  }
+}
 
-  let release: GhRelease
+async function fetchLatestRelease(): Promise<Release> {
+  let res: Response
   try {
-    const res = await fetch(RELEASES_API, {
+    res = await fetch(RELEASES_API, {
       headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'open-bible-study' },
       signal: AbortSignal.timeout(TIMEOUT_MS)
     })
-    if (!res.ok) return null
-    release = (await res.json()) as GhRelease
   } catch {
-    return null // offline, blocked, rate-limited — never surfaced to the user
+    throw new Error('Could not reach GitHub. Check your connection and try again.')
   }
-  writeConfig({ lastCheckedAt: Date.now() })
+  if (!res.ok) throw new Error(`GitHub returned HTTP ${res.status}. Try again later.`)
+  const release = parseRelease(await res.json().catch(() => null))
+  if (!release) throw new Error('GitHub did not return a valid stable release. Try again later.')
+  writeConfig({ latestRelease: release, lastCheckedAt: Date.now() })
+  return release
+}
 
-  const tag = release.tag_name ?? ''
-  if (!tag || release.draft || release.prerelease) return null
-
+function availableUpdate(release: Release | null, cfg: UpdateConfig, force: boolean): UpdateInfo | null {
+  if (!release || (!force && !cfg.checkOnLaunch)) return null
+  const tag = release.tag_name
   const current = app.getVersion()
   if (!isNewerVersion(tag, current)) return null
   if (!force && cfg.dismissedVersion && !isNewerVersion(tag, cfg.dismissedVersion)) return null
 
-  const asset = pickReleaseAsset(release.assets ?? [], process.platform, process.arch)
-  const releaseUrl = release.html_url ?? `https://github.com/mando222/bibleStudy/releases/tag/${tag}`
+  const asset = pickReleaseAsset(release.assets, process.platform, process.arch)
   return {
     current,
     latest: tag.replace(/^v/, ''),
-    notes: (release.body ?? '').trim().slice(0, 4000),
-    releaseUrl,
-    downloadUrl: asset?.browser_download_url ?? releaseUrl,
+    notes: release.body,
+    releaseUrl: release.html_url,
+    downloadUrl: asset?.browser_download_url ?? release.html_url,
     assetName: asset?.name ?? null
   }
+}
+
+let pendingRelease: Promise<Release> | null = null
+
+/** Launch checks can reuse the last known release offline. Manual checks always require a fresh response. */
+export async function checkForUpdate(force = false): Promise<UpdateInfo | null> {
+  const cfg = readConfig()
+  if (!force && !cfg.checkOnLaunch) return null
+  const cached = parseRelease(cfg.latestRelease)
+  const age = Date.now() - (cfg.lastCheckedAt ?? 0)
+  if (!force && cached && age >= 0 && age < DAY_MS) return availableUpdate(cached, cfg, false)
+
+  pendingRelease ??= fetchLatestRelease().finally(() => {
+    pendingRelease = null
+  })
+  let release: Release | null
+  try {
+    release = await pendingRelease
+  } catch (error) {
+    if (force) throw error
+    release = cached
+  }
+  // A dismissal or preference change may have happened while the request was in flight.
+  return availableUpdate(release, readConfig(), force)
 }
 
 export function registerUpdateIpc(): void {
@@ -150,8 +183,7 @@ let lastDownload: string | null = null
  * Fetch a release installer into the user's Downloads folder, reporting progress as it goes.
  *
  * Deliberately just a download. The file is written where a browser would have put it and then
- * shown in the file manager; nothing is mounted, unpacked or executed, and the running app is
- * never touched — on macOS it cannot be, since an app can't replace its own bundle while open.
+ * shown in the file manager when the user asks.
  */
 async function downloadInstaller(
   sender: Electron.WebContents,

@@ -2,7 +2,7 @@ import { ipcMain, dialog, BrowserWindow, app } from 'electron'
 import * as bible from './db/bible'
 import { getWordFrequency, getWordFrequencyPassages } from './db/wordFrequency'
 import * as graph from './db/graph'
-import { getPassageContext, getPersonMap } from './db/passageStudy'
+import { getMappedPeople, getPassageContext, getPersonMap } from './db/passageStudy'
 import type { StudyRange } from '../shared/passageStudy'
 import * as user from './db/user'
 import { exportMarkdown } from './export'
@@ -28,6 +28,7 @@ export function registerIpc(): void {
     user.isImported(ref.translation) ? user.getImportedComparisonVerse(ref) : bible.getComparisonVerse(ref)
   )
   ipcMain.handle('bible:getStrongs', (_e, id: string) => bible.getStrongs(id))
+  ipcMain.handle('bible:getSourceWordCoverage', (_e, id: string) => bible.getSourceWordCoverage(id))
   ipcMain.handle('bible:browseLexicon', (_e, opts) => bible.browseLexicon(opts))
   ipcMain.handle('bible:getWordFrequency', (_e, query) => getWordFrequency(query))
   ipcMain.handle('bible:getWordFrequencyPassages', (_e, query) => getWordFrequencyPassages(query))
@@ -37,6 +38,7 @@ export function registerIpc(): void {
   ipcMain.handle('bible:getPlaces', () => graph.getPlaces())
   ipcMain.handle('bible:getPassageContext', (_e, range: StudyRange) => getPassageContext(range))
   ipcMain.handle('bible:getPersonMap', (_e, id: number) => getPersonMap(id))
+  ipcMain.handle('bible:getMappedPeople', () => getMappedPeople())
   ipcMain.handle('bible:getPlaceVerses', (_e, id: number) => graph.getPlaceVerses(id))
   ipcMain.handle('bible:getEvents', () => graph.getEvents())
   ipcMain.handle('bible:getMapLand', () => bible.getMapLand())
@@ -62,6 +64,7 @@ export function registerIpc(): void {
     (_e, book: string, chapter: number, edition: string, translations?: string[], includeParses?: boolean) =>
       bible.getInterlinear(book, chapter, edition, translations ?? [], includeParses ?? false)
   )
+  ipcMain.handle('bible:getOriginalVerseReadings', (_e, ref: VerseRef) => bible.getOriginalVerseReadings(ref))
   ipcMain.handle('bible:getChapterApparatus', (_e, book: string, chapter: number) =>
     bible.getChapterApparatus(book, chapter)
   )

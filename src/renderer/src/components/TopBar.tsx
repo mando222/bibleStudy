@@ -12,6 +12,7 @@ import {
   InfoIcon,
   SparkleIcon,
   NotebookIcon,
+  SettingsIcon,
   PenIcon
 } from './icons'
 
@@ -26,6 +27,7 @@ export default function TopBar(): JSX.Element {
   const interlinear = useAppStore((s) => s.interlinear)
   const toggleInterlinear = useAppStore((s) => s.toggleInterlinear)
   const setAboutOpen = useAppStore((s) => s.setAboutOpen)
+  const setSettingsOpen = useAppStore(s => s.setSettingsOpen)
   const setAssistantOpen = useAppStore((s) => s.setAssistantOpen)
   const setNotebookOpen = useAppStore((s) => s.setNotebookOpen)
   const book = useAppStore((s) => s.book)
@@ -134,6 +136,12 @@ export default function TopBar(): JSX.Element {
         title="Toggle light / dark"
       >
         {theme === 'light' ? <MoonIcon className="w-4 h-4" /> : <SunIcon className="w-4 h-4" />}
+      </button>
+
+      <button type="button" title="Settings" aria-label="Settings" aria-haspopup="dialog"
+        onClick={() => setSettingsOpen(true)}
+        className="flex items-center gap-1.5 p-2 rounded-md hover:bg-elevated text-sm text-muted">
+        <SettingsIcon className="w-4 h-4" /><span className="hidden xl:inline">Settings</span>
       </button>
 
       <button
