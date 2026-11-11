@@ -17,6 +17,9 @@ import { greekReadings, parseStepReference } from './step'
 import { WordFrequencyIndex, parseHebrewFrequency, type HebrewWord } from './wordFrequency'
 import { buildSourceWordSpans } from './sourceWords'
 import { buildWordDirectory } from './wordDirectory'
+import { nativeChapter, type ChapterBlock } from './literaryLayout'
+import literarySourceHashes from './assets/literary-source-hashes.json'
+import { buildStudyIndex } from './studyIndex'
 import { foldLatinHomoglyphs } from '../src/shared/originalText'
 import {
   cleanLexBody,
@@ -253,30 +256,6 @@ async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url)
   if (!res.ok) throw new Error(`GET ${url} → ${res.status} ${res.statusText}`)
   return (await res.json()) as T
-}
-
-/** helloao verse content is an array of strings + formatting/footnote objects. */
-function verseText(content: unknown[]): string {
-  const pieces: string[] = []
-  for (const el of content) {
-    if (typeof el === 'string') pieces.push(el)
-    else if (el && typeof el === 'object' && typeof (el as { text?: unknown }).text === 'string') {
-      pieces.push((el as { text: string }).text)
-    }
-    // {noteId}, {lineBreak}, {heading} etc. are skipped for plain reading text.
-  }
-  return pieces
-    .join(' ')
-    // Wycliffe's transcription marks phrase groups with a backtick ("his `oon bigetun sone").
-    .replace(/`/g, '')
-    // The KJV source marks paragraph starts with a pilcrow inside the verse content. It's
-    // typography, not Scripture, and this reader flows verses inline — so ~3k KJV verses used to
-    // begin with a stray "¶ ".
-    .replace(/¶/g, ' ')
-    .replace(/\s+/g, ' ')
-    .replace(/\s+([,.;:!?’”'")\]])/g, '$1')
-    .replace(/([“‘("[])\s+/g, '$1')
-    .trim()
 }
 
 /** Extract the JSON object literal out of an openscriptures `var X = {...};` file. */
@@ -619,18 +598,13 @@ interface CompleteBook {
   id: string
   chapters: { chapter: { number: number; content: ChapterBlock[] } }[]
 }
-interface ChapterBlock {
-  type?: string
-  number?: number
-  content?: unknown[]
-}
 interface Complete {
   books: CompleteBook[]
 }
 
 async function downloadCached(name: string, url: string): Promise<string> {
   const p = join(HERE, 'sources', name)
-  const expected = (wordSourceHashes as Record<string,string>)[name]
+  const expected = (wordSourceHashes as Record<string,string>)[name] ?? (literarySourceHashes as Record<string,string>)[name]
   const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
   if (!existsSync(p) || (expected && digest(readFileSync(p)) !== expected)) {
     const r = await fetch(url)
@@ -1208,8 +1182,8 @@ async function buildTheographic(
 
   // Places (with a derived active year-window)
   const insPl = db.prepare(
-    `INSERT OR REPLACE INTO places (id,name,lat,lon,feature_type,comment,verse_count,verses,start_year,end_year)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`
+    `INSERT OR REPLACE INTO places (id,name,lat,lon,feature_type,aliases,precision,ambiguous,identification_note,comment,verse_count,verses,start_year,end_year)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   )
   db.exec('BEGIN')
   for (const pl of places) {
@@ -1218,13 +1192,22 @@ async function buildTheographic(
     if (id == null) continue
     const vs = resolveVerses(f.verses)
     const win = placeWindow(f)
+    const name = String(f.kjvName || f.esvName || f.placeLookup || `Place ${id}`).trim()
+    // Some source alias fields contain a transcription note instead of a place name.
+    const extraNames = typeof f.aliases === 'string' && !f.aliases.startsWith('4b is just') ? f.aliases.split(',') : []
+    const aliases = [...new Set([f.esvName, f.displayTitle, ...extraNames]
+      .filter((v): v is string => typeof v === 'string').map(v => v.trim()).filter(v => v && v !== name))]
     insPl.run(
       id,
-      (f.kjvName as string) || (f.esvName as string) || (f.placeLookup as string) || `Place ${id}`,
+      name,
       flt(f.openBibleLat ?? f.latitude),
       flt(f.openBibleLong ?? f.longitude),
       (f.featureType as string) || null,
-      ((f.comment as string) || '').slice(0, 200) || null,
+      JSON.stringify(aliases),
+      (f.precision as string) || null,
+      f.ambiguous === true ? 1 : 0,
+      (f.recogitoComments as string) || null,
+      (f.comment as string) || null,
       vs.length,
       JSON.stringify(vs),
       win.start,
@@ -1458,13 +1441,17 @@ async function main(): Promise<void> {
     'INSERT INTO verses_fts (text, translation_id, book_id, chapter, verse) VALUES (?,?,?,?,?)'
   )
 
+  const insLayout = db.prepare(
+    'INSERT INTO verse_layout (translation_id, book_id, chapter, verse, marks) VALUES (?,?,?,?,?)'
+  )
+
   const summary: { id: string; verses: number; chapters: number; books: number }[] = []
 
   for (const t of TRANSLATIONS) {
     process.stdout.write(`• ${t.id}: fetching…`)
-    const data = await fetchJson<Complete>(
-      `https://bible.helloao.org/api/${t.helloaoId}/complete.json`
-    )
+    const path = await downloadCached(`helloao_${t.helloaoId}.json`,
+      `https://bible.helloao.org/api/${t.helloaoId}/complete.json`)
+    const data = JSON.parse(readFileSync(path, 'utf8')) as Complete
     insTrans.run(t.id, t.abbrev, t.name, 'eng', t.license, t.attribution, t.sortOrder)
 
     let verseCount = 0
@@ -1476,16 +1463,8 @@ async function main(): Promise<void> {
       for (const wrap of book.chapters) {
         const ch = wrap.chapter
         chapterSet.add(`${meta.id}:${ch.number}`)
-        // Accumulate text by verse number (a verse may span multiple blocks).
-        const byVerse = new Map<number, string>()
-        for (const block of ch.content) {
-          if (block.type !== 'verse' || typeof block.number !== 'number' || !block.content) continue
-          const text = verseText(block.content)
-          if (!text) continue
-          const prev = byVerse.get(block.number)
-          byVerse.set(block.number, prev ? `${prev} ${text}` : text)
-        }
-        for (const [verse, text] of byVerse) {
+        for (const [verse, { text, layout }] of nativeChapter(ch.content)) {
+          if (layout.length) insLayout.run(t.id, meta.id, ch.number, verse, JSON.stringify(layout))
           insVerse.run(t.id, meta.id, ch.number, verse, text)
           insFts.run(text, t.id, meta.id, ch.number, verse)
           verseCount++
@@ -1691,6 +1670,7 @@ async function main(): Promise<void> {
 
   process.stdout.write('• Theographic (people / places / events → Genealogies, Maps, Timelines)…')
   const theo = await buildTheographic(db)
+  buildStudyIndex(db)
   process.stdout.write(` ${theo.people} people · ${theo.places} places · ${theo.events} events\n`)
 
   process.stdout.write('• Map basemap (Natural Earth land, public domain)…')

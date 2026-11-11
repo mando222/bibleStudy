@@ -35,6 +35,16 @@ CREATE TABLE verses (
 
 CREATE INDEX idx_verses_loc ON verses (translation_id, book_id, chapter);
 
+-- Structural markup in the publisher's native verse coordinates. No verse text is stored here.
+CREATE TABLE verse_layout (
+  translation_id TEXT NOT NULL,
+  book_id TEXT NOT NULL,
+  chapter INTEGER NOT NULL,
+  verse INTEGER NOT NULL,
+  marks TEXT NOT NULL,
+  PRIMARY KEY (translation_id, book_id, chapter, verse)
+) WITHOUT ROWID;
+
 -- Word-level tokens for translations that carry Strong's / interlinear data.
 -- Populated for KJV (+Strong's) in the Strong's task; empty otherwise.
 CREATE TABLE verse_tokens (
@@ -240,6 +250,10 @@ CREATE TABLE places (
   lat          REAL,
   lon          REAL,
   feature_type TEXT,
+  aliases      TEXT NOT NULL DEFAULT '[]',
+  precision    TEXT,              -- Theographic location precision (may be unspecified)
+  ambiguous    INTEGER NOT NULL DEFAULT 0, -- this name identifies multiple places
+  identification_note TEXT,       -- source notes on the separate Recogito match
   comment      TEXT,
   verse_count  INTEGER NOT NULL DEFAULT 0,
   verses       TEXT NOT NULL DEFAULT '[]',
@@ -258,6 +272,14 @@ CREATE TABLE events (
   verses       TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX idx_events_sort ON events (sort_key);
+
+-- Canonical (KJV-numbered) references cited by Theographic people, places and events.
+CREATE TABLE study_references (
+  ref TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('person','place','event')),
+  entity_id INTEGER NOT NULL,
+  PRIMARY KEY (ref,kind,entity_id)
+) WITHOUT ROWID;
 
 -- Cross-references (Treasury of Scripture Knowledge, public domain, via OpenBible.info). A "from"
 -- verse links to a ranked list of related "to" verses (which may be a small range), keyed to our

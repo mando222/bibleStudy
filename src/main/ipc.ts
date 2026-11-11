@@ -2,6 +2,8 @@ import { ipcMain, dialog, BrowserWindow, app } from 'electron'
 import * as bible from './db/bible'
 import { getWordFrequency, getWordFrequencyPassages } from './db/wordFrequency'
 import * as graph from './db/graph'
+import { getPassageContext, getPersonMap } from './db/passageStudy'
+import type { StudyRange } from '../shared/passageStudy'
 import * as user from './db/user'
 import { exportMarkdown } from './export'
 import type {
@@ -33,6 +35,8 @@ export function registerIpc(): void {
   ipcMain.handle('bible:getPerson', (_e, id: number) => graph.getPerson(id))
   ipcMain.handle('bible:getAncestry', (_e, id: number) => graph.getAncestry(id))
   ipcMain.handle('bible:getPlaces', () => graph.getPlaces())
+  ipcMain.handle('bible:getPassageContext', (_e, range: StudyRange) => getPassageContext(range))
+  ipcMain.handle('bible:getPersonMap', (_e, id: number) => getPersonMap(id))
   ipcMain.handle('bible:getPlaceVerses', (_e, id: number) => graph.getPlaceVerses(id))
   ipcMain.handle('bible:getEvents', () => graph.getEvents())
   ipcMain.handle('bible:getMapLand', () => bible.getMapLand())

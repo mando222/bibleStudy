@@ -1,5 +1,6 @@
 // Shared domain + IPC contract types, used by main, preload, and renderer.
 import type { WordFrequency, WordFrequencyQuery, WordFrequencyPassageQuery, WordFrequencyVerse } from './wordFrequency'
+import type { StudyRange, PassageContext, PersonMap } from './passageStudy'
 
 export type TextDirection = 'ltr' | 'rtl'
 
@@ -60,6 +61,8 @@ export interface WordParse {
 }
 
 export interface Verse {
+  /** Formatting supplied by this edition, at offsets into text. */
+  layout?: import('./literaryLayout').VerseLayout
   verse: number
   text: string
   tokens: VerseToken[] | null // null when the translation has no word-level data
@@ -377,8 +380,14 @@ export interface PersonDetail extends PersonListItem {
 export interface PlaceItem {
   id: number
   name: string
-  lat: number
-  lon: number
+  lat: number | null
+  lon: number | null
+  aliases: string[]
+  precision: string | null
+  ambiguous: boolean
+  identificationNote: string | null
+  comment: string | null
+  firstRef: string | null
   featureType: string | null
   verseCount: number
   startYear: number | null // earliest year this place appears active (derived; null = no signal)
@@ -543,6 +552,8 @@ export interface BibleApi {
   getPerson(id: number): Promise<PersonDetail | null>
   getAncestry(id: number): Promise<PersonRef[]>
   getPlaces(): Promise<PlaceItem[]>
+  getPassageContext(range: StudyRange): Promise<PassageContext>
+  getPersonMap(personId: number): Promise<PersonMap | null>
   getPlaceVerses(id: number): Promise<string[]>
   getEvents(): Promise<EventItem[]>
   getMapLand(): Promise<string>

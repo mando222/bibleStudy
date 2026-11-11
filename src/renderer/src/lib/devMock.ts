@@ -74,6 +74,8 @@ export async function installDevMock(): Promise<void> {
     getPerson: async () => null,
     getAncestry: async () => [],
     getPlaces: async () => [],
+    getPassageContext: async () => ({ status: 'unavailable', people: [], places: [], events: [] }),
+    getPersonMap: async () => null,
     getPlaceVerses: async () => [],
     getEvents: async () => [],
     getMapLand: async () => '',

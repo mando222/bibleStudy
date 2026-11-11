@@ -2,6 +2,8 @@ import { studyStorageKey } from '../lib/studyPreferences'
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { mapPassage } from '@shared/passageMapping'
+import { plainDisplay, overrideDisplay, type DisplayFlags, type DisplayOverrides, type ReadingFeature } from '@shared/readingDisplay'
+import type { StudyRange } from '@shared/passageStudy'
 import { lexiconId } from '@shared/lexiconId'
 import type { SourceWordTerms } from '@shared/sourceWords'
 import { BOOK_BY_ID } from '@shared/books'
@@ -11,6 +13,8 @@ export type Theme = 'light' | 'dark'
 export type StudyTab = 'lexicon' | 'notes' | 'search' | 'apparatus' | 'crossrefs'
 /** Far-right workspace tabs. 'bible' is the reader; the rest are their own full-window views. */
 export type Activity = 'bible' | 'genealogies' | 'timelines' | 'maps' | 'words' | 'learn'
+type AtlasTarget = { kind: 'passage'; passage: StudyRange } | { kind: 'person'; personId: number }
+export type StudyInspector = { mode: 'context' | 'compare'; range: StudyRange }
 
 /** Which sub-module of the Learn (Greek & Hebrew) activity is showing. */
 export type LearnModule = 'alphabet' | 'flashcards' | 'drills' | 'grammar'
@@ -52,6 +56,18 @@ export interface SelectedOccurrence {
 }
 
 interface AppState {
+  displayDefaults: DisplayFlags
+  displayOverrides: DisplayOverrides
+  setDisplayDefault: (feature: ReadingFeature, value: boolean) => void
+  setDisplayOverride: (edition: string, feature: ReadingFeature, value: boolean | null) => void
+  studyInspector: StudyInspector | null
+  inspectStudy: (study: StudyInspector | null) => void
+  atlasTarget: AtlasTarget | null
+  atlasOrigin: { activity: Activity; passage?: StudyRange; personId?: number } | null
+  openPassageMap: (passage: StudyRange) => void
+  openPersonMap: (personId: number) => void
+  clearAtlasTarget: () => void
+  returnFromAtlas: () => void
   theme: Theme
   toggleTheme: () => void
 
@@ -181,20 +197,46 @@ export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
       theme: 'light',
+      displayDefaults: plainDisplay,
+      displayOverrides: {},
+      setDisplayDefault: (feature, value) => set(s => ({ displayDefaults: { ...s.displayDefaults, [feature]: value } })),
+      setDisplayOverride: (edition, feature, value) => set(s => ({ displayOverrides: overrideDisplay(s.displayOverrides, edition, feature, value) })),
+      studyInspector: null,
+      inspectStudy: (studyInspector) => set({ studyInspector }),
+      atlasTarget: null,
+      atlasOrigin: null,
+      openPassageMap: (passage) => set({
+        activity: 'maps', focusPlaceId: null, atlasTarget: { kind: 'passage', passage },
+        atlasOrigin: { activity: 'bible', passage }
+      }),
+      openPersonMap: (personId) => set(s => ({
+        activity: 'maps', focusPlaceId: null, atlasTarget: { kind: 'person', personId },
+        atlasOrigin: s.activity === 'maps' ? s.atlasOrigin : { activity: s.activity,
+          ...(s.activity === 'genealogies' ? { personId } : s.studyInspector ? { passage: s.studyInspector.range } : {}) }
+      })),
+      clearAtlasTarget: () => set({ atlasTarget: null, atlasOrigin: null, focusPlaceId: null }),
+      returnFromAtlas: () => set(s => {
+        const origin = s.atlasOrigin
+        const range = origin?.passage
+        return { activity: origin?.activity ?? 'bible', atlasOrigin: null, atlasTarget: null,
+          focusPlaceId: null, focusPersonId: origin?.personId ?? null,
+          ...(range ? { book: range.book, chapter: range.chapter, referenceEdition: range.edition,
+            activeVerse: range.firstVerse ?? null, scrollToVerse: range.firstVerse ?? null } : {}) }
+      }),
       toggleTheme: () => set({ theme: get().theme === 'light' ? 'dark' : 'light' }),
       activity: 'bible',
-      setActivity: (activity) => set({ activity }),
+      setActivity: (activity) => set({ activity, atlasTarget: null, atlasOrigin: null, focusPlaceId: null }),
       focusPersonId: null,
       focusPerson: (focusPersonId) => set({ focusPersonId, activity: 'genealogies' }),
       focusPlaceId: null,
-      focusPlace: (focusPlaceId) => set({ focusPlaceId, activity: 'maps' }),
+      focusPlace: (focusPlaceId) => set({ focusPlaceId, activity: 'maps', atlasTarget: null, atlasOrigin: null }),
       clearFocus: () => set({ focusPersonId: null, focusPlaceId: null }),
 
       translations: [],
       setTranslations: (translations) => set((state) => {
         if (!translations.length) return { translations }
         const available = new Set(translations.map(t => t.id))
-        const selected = state.parallels.filter(id => available.has(id))
+        const selected = [...new Set(state.parallels.filter(id => available.has(id)))]
         if (!selected.length) selected.push(translations[0].id)
         const primary = selected[0]
         const lostSource = state.referenceEdition.startsWith('imp_') && !available.has(state.referenceEdition)
@@ -247,7 +289,7 @@ export const useAppStore = create<AppState>()(
       strongsVisible: false,
       toggleStrongs: () => set({ strongsVisible: !get().strongsVisible }),
       interlinear: false,
-      toggleInterlinear: () => set({ interlinear: !get().interlinear }),
+      toggleInterlinear: () => set({ interlinear: !get().interlinear, studyInspector: null }),
       interlinearEdition: '',
       setInterlinearEdition: (interlinearEdition) => set({ interlinearEdition }),
       interlinearStack: [],
@@ -267,7 +309,7 @@ export const useAppStore = create<AppState>()(
         set({
           selectedOccurrence: null,
           selectedStrongs: strongsBack[strongsBack.length - 1],
-          studyTab: 'lexicon',
+          studyTab: 'lexicon', studyInspector: null,
           strongsBack: strongsBack.slice(0, -1),
           strongsForward: selectedStrongs ? [...strongsForward, selectedStrongs] : strongsForward
         })
@@ -278,7 +320,7 @@ export const useAppStore = create<AppState>()(
         set({
           selectedOccurrence: null,
           selectedStrongs: strongsForward[strongsForward.length - 1],
-          studyTab: 'lexicon',
+          studyTab: 'lexicon', studyInspector: null,
           strongsForward: strongsForward.slice(0, -1),
           strongsBack: selectedStrongs ? [...strongsBack, selectedStrongs] : strongsBack
         })
@@ -305,12 +347,12 @@ export const useAppStore = create<AppState>()(
         const available = mapPassage({ book, chapter, verse }, sourceEdition, readingEdition(s))
         const showSource = !available && s.translations.some((t) => t.id === sourceEdition)
         set({
-          book, chapter, referenceEdition: sourceEdition, activeVerse: verse, scrollToVerse: verse, activity: 'bible',
-          ...(showSource ? { primary: sourceEdition, parallels: [sourceEdition, ...s.parallels.slice(1)], interlinear: false } : {})
+          book, chapter, referenceEdition: sourceEdition, activeVerse: verse, scrollToVerse: verse, activity: 'bible', studyInspector: null,
+          ...(showSource ? { primary: sourceEdition, parallels: [sourceEdition, ...s.parallels.slice(1).filter(id => id !== sourceEdition)], interlinear: false } : {})
         })
       },
       focusVerse: (book, chapter, verse, referenceEdition) =>
-        set({ book, chapter, referenceEdition, activeVerse: verse, scrollToVerse: null }),
+        set({ book, chapter, referenceEdition, activeVerse: verse, scrollToVerse: null, studyInspector: null }),
       openSearchHit: (hit) => {
         const s = get()
         const translation = hit.translation ?? s.primary
@@ -321,18 +363,21 @@ export const useAppStore = create<AppState>()(
           : { interlinear: false, primary: translation, parallels: [translation, ...s.parallels.slice(1).filter((id) => id !== translation)] }
         set({
           ...reader, book: hit.book, chapter: hit.chapter, referenceEdition: edition ?? translation,
-          activeVerse: hit.verse, scrollToVerse: hit.verse, activity: 'bible'
+          activeVerse: hit.verse, scrollToVerse: hit.verse, activity: 'bible', studyInspector: null
         })
       },
       clearScroll: () => set({ scrollToVerse: null }),
 
       goTo: (book, chapter, edition) => set({
-        book, chapter, referenceEdition: edition ?? readingEdition(get(), book), activeVerse: null, scrollToVerse: null, activity: 'bible'
+        book, chapter, referenceEdition: edition ?? readingEdition(get(), book), activeVerse: null, scrollToVerse: null, activity: 'bible', studyInspector: null
       }),
       setPrimary: (id) => get().setParallels([id, ...get().parallels.slice(1)]),
-      setParallels: (ids) => {
+      setParallels: (items) => {
+        const ids = [...new Set(items)]
         if (!ids.length) return
-        set({ parallels: ids, primary: ids[0], referenceEdition: get().referenceEdition || get().primary })
+        const inspector = get().studyInspector
+        set({ parallels: ids, primary: ids[0], referenceEdition: get().referenceEdition || get().primary,
+          ...(inspector && (!ids.includes(inspector.range.edition) || (inspector.mode === 'compare' && ids.length < 2)) ? { studyInspector: null } : {}) })
       },
       selectStrongs: (id, occurrence) => {
         id = id && lexiconId(id)
@@ -342,21 +387,37 @@ export const useAppStore = create<AppState>()(
           set({
             selectedStrongs: id,
             selectedOccurrence: occurrence ?? null,
-            studyTab: 'lexicon',
+            studyTab: 'lexicon', studyInspector: null,
             strongsBack: cur ? [...get().strongsBack, cur] : get().strongsBack,
             strongsForward: []
           })
         } else if (!id) {
           set({ selectedStrongs: null, selectedOccurrence: null })
         } else {
-          set({ selectedStrongs: id, selectedOccurrence: occurrence ?? null, studyTab: 'lexicon' })
+          set({ selectedStrongs: id, selectedOccurrence: occurrence ?? null, studyTab: 'lexicon', studyInspector: null })
         }
       },
-      setStudyTab: (tab) => set({ studyTab: tab })
+      setStudyTab: (tab) => set({ studyTab: tab, studyInspector: null })
     }),
     {
       name: studyStorageKey(),
       version: 1,
+      merge: (saved, current) => {
+        const previous = (saved ?? {}) as Partial<AppState>
+        const defaults = { ...plainDisplay, ...previous.displayDefaults }
+        const overrides = { ...previous.displayOverrides }
+        // The earlier Reading display menu showed publisher headings with literary layout.
+        // Preserve that appearance once, when restoring preferences from those builds.
+        if (previous.displayDefaults && previous.displayDefaults.headings === undefined) {
+          defaults.headings = defaults.literary
+          for (const [edition, flags] of Object.entries(overrides)) {
+            if (flags.literary !== undefined && flags.headings === undefined) {
+              overrides[edition] = { ...flags, headings: flags.literary }
+            }
+          }
+        }
+        return { ...current, ...previous, displayDefaults: defaults, displayOverrides: overrides }
+      },
       migrate: (saved) => {
         const previous = (saved ?? {}) as Partial<AppState> & {
           quickReplace?: boolean; quickReplaceConfig?: unknown; replacements?: unknown
@@ -375,6 +436,8 @@ export const useAppStore = create<AppState>()(
         : {}),
       partialize: (s) => ({
         theme: s.theme,
+        displayDefaults: s.displayDefaults,
+        displayOverrides: s.displayOverrides,
         activity: s.activity,
         referenceEdition: s.referenceEdition,
         primary: s.primary,

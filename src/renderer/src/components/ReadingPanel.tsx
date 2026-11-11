@@ -11,6 +11,8 @@ import { WordComparisonProvider } from './RestoredWordComparison'
 import VersePopover from './VersePopover'
 import InterlinearReader from './InterlinearReader'
 import { BookIcon, SparkleIcon } from './icons'
+import { ReadingTools, StructuredPassages } from './ReadingTools'
+import { chooseColumn, editionDisplay } from '@shared/readingDisplay'
 
 export default function ReadingPanel(): JSX.Element {
   const parallels = useAppStore((s) => s.parallels)
@@ -46,6 +48,9 @@ export default function ReadingPanel(): JSX.Element {
   const columns = parallels.map((edition) => source.verse == null
     ? mapChapterStart(source, source.edition, edition)
     : mapPassage({ ...source, verse: source.verse }, source.edition, edition))
+  // Open tools in the edition the reader selected, or in the lead visible column for a navigator jump.
+  const scopeEdition = parallels.includes(source.edition) ? source.edition : parallels[0]
+  const scope = parallels.includes(source.edition) ? source : columns[0]
 
   // Align on the visible verse. Equal pixel offsets can be chapters apart in differently wrapped text.
   const onScroll = (idx: number): void => {
@@ -79,6 +84,8 @@ export default function ReadingPanel(): JSX.Element {
   return (
     <div ref={reader} className="h-full flex flex-col bg-bg">
       <WordComparisonProvider location={JSON.stringify([location, interlinear])}>
+      {!interlinear && scope && <ReadingTools range={{ edition: scopeEdition, book: scope.book, chapter: scope.chapter,
+        ...(source.verse != null && scope.verse != null ? { firstVerse: scope.verse } : {}) }}/>}
       {interlinear ? (
         <div className="flex-1 min-h-0">
           <InterlinearReader book={book} chapter={chapter} />
@@ -187,9 +194,7 @@ function ColumnHeader({
     : parallels.map((id) => ({ id, label: id, title: id }))
   const currentName = translations.find((t) => t.id === translation)?.name
   const setColumn = (id: string): void => {
-    const p = [...parallels]
-    p[index] = id
-    setParallels(p)
+    setParallels(chooseColumn(parallels, index, id))
   }
   return (
     <div className="h-9 shrink-0 border-b border-line bg-panel px-2 flex items-center gap-1">
@@ -236,6 +241,11 @@ function Column({ translation, index, canRemove, book, chapter, alignTo, takeScr
   const meta = useAppStore((s) => s.translations.find((x) => x.id === translation))
   const strongsVisible = useAppStore((s) => s.strongsVisible)
   const sourceWords = useAppStore(s => s.restoreSourceWords)
+  const defaults = useAppStore(s => s.displayDefaults)
+  const overrides = useAppStore(s => s.displayOverrides)
+  const display = editionDisplay(defaults, overrides, translation)
+  const inspect = useAppStore(s => s.inspectStudy)
+  const hasParallel = useAppStore(s => s.parallels.length >= 2)
   const highlights = useHighlights(translation, book, chapter)
   const { byVerse, loading: notesLoading, error: notesError, retry: retryNotes } = useNotes(book, chapter, translation, data?.verses)
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -318,7 +328,7 @@ function Column({ translation, index, canRemove, book, chapter, alignTo, takeScr
   return (
     <div className="flex-1 min-w-0 flex flex-col min-h-0">
       <ColumnHeader translation={translation} index={index} canRemove={canRemove} />
-      <div className="shrink-0 px-2 text-xs text-muted" aria-label="Native passage">{bookName} {chapter} · {translation}</div>
+      <div className="shrink-0 px-2 text-xs text-muted" aria-label="Native passage">{bookName}{display.chapterNumbers && ` ${chapter}`} · {translation}</div>
       <div
         ref={(el) => {
           containerRef.current = el
@@ -357,19 +367,22 @@ function Column({ translation, index, canRemove, book, chapter, alignTo, takeScr
             This chapter isn&rsquo;t available in {meta?.name ?? translation}.
           </StateBlock>
         ) : (
+          <>
+          {display.structured && <StructuredPassages edition={translation} book={book} chapter={chapter} verses={data.verses.map(v => v.verse)} />}
           <div
             data-scripture-passage=""
             dir={rtl ? 'rtl' : 'ltr'}
             className={`text-scripture text-ink hyphens-auto ${
               // Anything that changes word widths mid-line — Strong's numbers, replacements —
               // makes justified spacing lurch. Left-align reads cleaner then.
-              strongsVisible || sourceWords ? 'text-left leading-[2.15]' : 'text-justify'
+              strongsVisible || sourceWords || (display.literary && data.verses.some(v => v.layout?.some(m => m.kind !== 'speaker'))) ? 'text-start leading-[2.15]' : 'text-justify'
             } ${rtl ? 'font-hebrew text-right' : 'font-serif'}`}
           >
             {data.verses.map((v) => (
               <VerseView
                 key={v.verse}
                 v={v}
+                literary={display.literary} speakers={display.speakers} headings={display.headings} verseNumbers={display.verseNumbers}
                 translation={translation} book={book} chapter={chapter}
                 highlight={highlights.get(v.verse)}
                 hasNote={byVerse.has(v.verse)}
@@ -377,18 +390,20 @@ function Column({ translation, index, canRemove, book, chapter, alignTo, takeScr
               />
             ))}
           </div>
+          </>
         )}
       </div>
 
       {sel && (
-        <button
+        <div
           style={{ top: Math.max(sel.y - 34, 0), left: sel.x }}
           onMouseDown={(e) => e.preventDefault()} // keep the text selection intact
-          onClick={askAboutSelection}
-          className="absolute z-30 flex items-center gap-1 rounded-md bg-accent text-white text-xs font-medium px-2 py-1 shadow-lg hover:opacity-90"
+          className="absolute z-30 flex items-center gap-2 rounded-md bg-panel border border-line text-accent text-xs font-medium px-2 py-1 shadow-lg"
         >
-          <SparkleIcon className="w-3.5 h-3.5" /> Ask
-        </button>
+          <button onClick={askAboutSelection} className="flex items-center gap-1"><SparkleIcon className="w-3.5 h-3.5" /> Ask</button>
+          {(['context', ...(hasParallel ? ['compare' as const] : [])] as const).map(mode =>
+            <button key={mode} onClick={() => { inspect({ mode, range: { edition: translation, book, chapter, firstVerse: Math.min(sel.v1, sel.v2), lastVerse: Math.max(sel.v1, sel.v2) } }); setSel(null) }}>{mode === 'context' ? 'Context' : 'Compare layout'}</button>)}
+        </div>
       )}
 
       {menu && (
@@ -405,7 +420,7 @@ function Column({ translation, index, canRemove, book, chapter, alignTo, takeScr
           notesLoading={notesLoading} notesError={notesError} retryNotes={retryNotes}
           onClose={() => {
             setMenu(null)
-            containerRef.current?.querySelector<HTMLElement>(`[data-verse="${menu.verse}"] sup button`)?.focus({ preventScroll: true })
+            containerRef.current?.querySelector<HTMLElement>(`[data-verse="${menu.verse}"] [data-verse-action]`)?.focus({ preventScroll: true })
           }}
         />
       )}

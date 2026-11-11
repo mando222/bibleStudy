@@ -12,6 +12,7 @@ import {
   getGrammarLessons
 } from './db/bible'
 import { getPeople, getPerson, getPlaces, getEvents } from './db/graph'
+import { getPassageContext, getPersonMap } from './db/passageStudy'
 import { aiDb } from './ai/vectors'
 import { openUserDb } from './db/user'
 import { getWordFrequency, getWordFrequencyPassages } from './db/wordFrequency'
@@ -90,7 +91,22 @@ export async function runSmokeTest(): Promise<void> {
         if (!detail || detail.verses.length < 50) throw new Error('Moses verse refs missing')
       }
     ],
-    ['Maps: geolocated places', () => { if (getPlaces().length < 500) throw new Error('few places') }],
+    ['Atlas includes Rome and the unlocated land of Nod', () => {
+      const places = getPlaces()
+      if (!places.some(p => p.name === 'Rome' && p.lon != null) ||
+          !places.some(p => p.name === 'Nod' && p.lat == null) ||
+          !getPassageContext({ edition: 'KJV', book: 'Gen', chapter: 4, firstVerse: 16 }).places.some(p => p.name === 'Nod'))
+        throw new Error('atlas catalog or verse index missing')
+    }],
+    ['Paul’s cited journey distinguishes Paul from John', () => {
+      const stops = getPersonMap(2479)?.stops.filter(s => s.order != null).map(s => s.placeId)
+      if (stops?.join(',') !== '919,936,69') throw new Error('unexpected Acts 13 sequence')
+    }],
+    ['Psalm 23 preserves edition-specific layout', () => {
+      const verse = getChapter({ translation: 'BSB', book: 'Ps', chapter: 23 }).verses[0]
+      if (verse.layout?.filter(mark => mark.kind === 'poetry').length !== 2 ||
+          !verse.layout.some(mark => mark.kind === 'superscription')) throw new Error('missing BSB poetry or superscription')
+    }],
     [
       'Maps: place year-windows derived',
       () => {

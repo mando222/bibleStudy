@@ -36,6 +36,7 @@ export default function VersePopover({
 }: Props): JSX.Element {
   const bump = useAppStore((s) => s.bumpUserData)
   const askAssistantAbout = useAppStore((s) => s.askAssistantAbout)
+  const inspect = useAppStore(s => s.inspectStudy)
   const [noteText, setNoteText] = useState(note?.body ?? '')
   const canonical = mapPassage({ book, chapter, verse }, translation, 'KJV')
   const [saveError, setSaveError] = useState('')
@@ -164,6 +165,9 @@ export default function VersePopover({
 
         {saveError && <p role="alert" className="text-xs">{saveError}</p>}
         <div className="border-t border-line pt-2 mt-2">
+          <button className="w-full text-left px-1 py-1.5 text-sm text-muted hover:text-accent" onClick={() => {
+            inspect({ mode: 'context', range: { edition: translation, book, chapter, firstVerse: verse } }); onClose()
+          }}>Passage context</button>
           <button
             onClick={() => {
               askAssistantAbout({

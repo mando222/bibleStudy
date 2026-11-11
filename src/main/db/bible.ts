@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
+import type { VerseLayout } from '../../shared/literaryLayout'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
@@ -37,6 +38,7 @@ import type {
 
 let db: DatabaseSync | null = null
 let hasVerifiedSourceWords = false
+let hasLiteraryLayout = false
 
 function resolveDbPath(): string | null {
   // app.getAppPath() is the app root when launched as `electron .`, but the SCRIPT'S directory when
@@ -60,6 +62,7 @@ export function openBibleDb(): boolean {
   if (!path) return false
   db = new DatabaseSync(path, { readOnly: true })
   db.exec('PRAGMA foreign_keys = OFF;')
+  hasLiteraryLayout = hasTable('verse_layout')
   hasVerifiedSourceWords = hasTable('source_word_spans') && hasTable('meta') &&
     db.prepare("SELECT value FROM meta WHERE key = 'source_word_alignment_version'").get()?.value === SOURCE_WORD_ALIGNMENT_VERSION
   return true
@@ -128,10 +131,18 @@ export function getChapter(ref: ChapterRef): ChapterContent {
     }
   }
 
+  const layout = new Map<number, VerseLayout>()
+  if (hasLiteraryLayout) {
+    const rows = d.prepare('SELECT verse, marks FROM verse_layout WHERE translation_id=? AND book_id=? AND chapter=?')
+      .all(ref.translation, ref.book, ref.chapter)
+    for (const row of rows) layout.set(Number(row.verse), JSON.parse(String(row.marks)) as VerseLayout)
+  }
+
   const verses: Verse[] = verseRows.map((r) => ({
     verse: r.verse,
     text: r.text,
-    tokens: tokensByVerse.get(r.verse) ?? null
+    tokens: tokensByVerse.get(r.verse) ?? null,
+    layout: layout.get(r.verse)
   }))
 
   return {

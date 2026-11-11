@@ -3,6 +3,9 @@ import { useEditions, useInterlinear } from '@/hooks/useInterlinear'
 import { useVerseNavigation } from '@/hooks/useVerseNavigation'
 import { useAppStore } from '@/store/useAppStore'
 import { readerChapter } from '@/lib/passage'
+import { mapPassage } from '@shared/passageMapping'
+import { editionDisplay } from '@shared/readingDisplay'
+import { ReadingDisplay } from './ReadingTools'
 import { BOOK_BY_ID } from '@shared/books'
 import InterlinearVerse from './InterlinearVerse'
 import { BookIcon } from './icons'
@@ -25,10 +28,14 @@ export default function InterlinearReader({
 
   const fromEdition = useAppStore((s) => s.referenceEdition || s.primary)
   const activeVerse = useAppStore((s) => s.activeVerse)
+  const inspect = useAppStore(s => s.inspectStudy)
   const testament = BOOK_BY_ID[book]?.testament ?? 'NT'
   const applicable = editions.filter((e) => e.testament === testament)
   // Use the stored choice if it applies to this testament, else the default (first applicable).
   const effective = applicable.find((e) => e.id === stored)?.id ?? applicable[0]?.id ?? ''
+  const defaults = useAppStore(s => s.displayDefaults)
+  const overrides = useAppStore(s => s.displayOverrides)
+  const display = editionDisplay(defaults, overrides, effective)
 
   // All bundled translations can be stacked: Strong's-tagged ones align word-for-word, the rest
   // show as a verse line beneath the grid.
@@ -48,7 +55,7 @@ export default function InterlinearReader({
       <div className="max-w-5xl mx-auto px-8 py-6">
         <div className="flex flex-wrap items-center gap-3 mb-5">
           <span className="text-[11px] uppercase tracking-wider text-faint">
-            Interlinear · {native && `${BOOK_BY_ID[native.book]?.name ?? native.book} ${native.chapter} · `}base text
+            Interlinear · {native && <>{BOOK_BY_ID[native.book]?.name ?? native.book}{display.chapterNumbers && ` ${native.chapter}`} · </>}base text
           </span>
           <select
             aria-label="Interlinear base text"
@@ -62,11 +69,16 @@ export default function InterlinearReader({
               </option>
             ))}
           </select>
+          {effective && <ReadingDisplay editionIds={[effective]} interlinear />}
           {data && data.verses.length > 0 && (
             <span className="text-xs text-faint">
               {data.direction === 'rtl' ? 'Hebrew · read right-to-left' : 'Greek'}
             </span>
           )}
+          {native && data?.verses.length ? <button className="text-xs text-muted hover:text-accent" onClick={() => {
+            const selected = activeVerse == null ? null : mapPassage({ book, chapter, verse: activeVerse }, fromEdition, effective)
+            inspect({ mode: 'context', range: { ...native, edition: effective, firstVerse: selected?.verse } })
+          }}>Context</button> : null}
           <button
             onClick={toggleParses}
             title="Switch between the single best-guess analysis and every Scripture-attested parse of each word"
@@ -129,6 +141,7 @@ export default function InterlinearReader({
               key={v.verse}
               v={{ verse: v.verse, text: '', tokens: v.tokens }}
               onSelectVerse={() => useAppStore.getState().focusVerse(data.book, data.chapter, v.verse, effective)}
+              verseNumbers={display.verseNumbers}
               rtl={data.direction === 'rtl'}
               stack={wordStack}
               labels={labels}

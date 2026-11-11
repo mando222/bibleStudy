@@ -96,18 +96,24 @@ export function getAncestry(id: number): PersonRef[] {
   return chain.reverse() // earliest ancestor first
 }
 
-/** Geolocated places for the map. (SELECT * so derived start_year/end_year are read when present.) */
+/** The full atlas directory includes unlocated places and their references. */
 export function getPlaces(): PlaceItem[] {
   const rows = db()
     .prepare(
-      `SELECT * FROM places WHERE lat IS NOT NULL AND lon IS NOT NULL ORDER BY verse_count DESC`
+      `SELECT *, json_extract(verses, '$[0]') AS first_ref FROM places ORDER BY verse_count DESC, name, id`
     )
     .all() as Record<string, unknown>[]
   return rows.map((r) => ({
     id: r.id as number,
     name: r.name as string,
-    lat: r.lat as number,
-    lon: r.lon as number,
+    lat: (r.lat as number) ?? null,
+    lon: (r.lon as number) ?? null,
+    aliases: JSON.parse((r.aliases as string) || '[]'),
+    precision: (r.precision as string) ?? null,
+    ambiguous: Boolean(r.ambiguous),
+    identificationNote: (r.identification_note as string) ?? null,
+    comment: (r.comment as string) ?? null,
+    firstRef: (r.first_ref as string) ?? null,
     featureType: (r.feature_type as string) ?? null,
     verseCount: r.verse_count as number,
     startYear: (r.start_year as number) ?? null,

@@ -10,6 +10,7 @@ export default function InterlinearVerse({
   labels = {},
   lines = [],
   onSelectVerse,
+  verseNumbers = true,
   showParses = false
 }: {
   v: Verse
@@ -18,6 +19,7 @@ export default function InterlinearVerse({
   labels?: Record<string, string>
   lines?: { id: string; text: string; ref?: string }[]
   onSelectVerse?: () => void
+  verseNumbers?: boolean
   showParses?: boolean
 }): JSX.Element {
   const selectStrongs = useAppStore((s) => s.selectStrongs)
@@ -35,11 +37,11 @@ export default function InterlinearVerse({
   }
 
   return (
-    <div className="mb-4" data-verse={v.verse} tabIndex={-1}>
-      <div dir={rtl ? 'rtl' : 'ltr'} className="flex flex-wrap gap-x-2.5 gap-y-3 items-start">
-        <button onClick={onSelectVerse} aria-label={`Select verse ${v.verse}`} className="text-xs font-sans font-semibold text-accent/70 pt-1.5 tabular-nums">
-          {v.verse}
-        </button>
+    <div className="mb-4 group/verse" data-verse={v.verse} tabIndex={-1}>
+      <div dir={rtl ? 'rtl' : 'ltr'} className="relative flex flex-wrap gap-x-2.5 gap-y-3 items-start">
+        <button type="button" onClick={onSelectVerse} aria-label={`Select verse ${v.verse}`} title="Select verse"
+          className={`reader-marker text-xs font-sans font-semibold text-accent/70 tabular-nums ${verseNumbers ? 'pt-1.5' : 'absolute top-1 -start-5 rounded px-1 opacity-0 group-hover/verse:opacity-100 focus-visible:opacity-100'}`}
+          data-label={verseNumbers ? v.verse : '⋯'} />
         {(v.tokens ?? []).map((tok) => {
         const isHeb = tok.strongs?.startsWith('H') ?? false
         const isSel = selected != null && selected === tok.strongs

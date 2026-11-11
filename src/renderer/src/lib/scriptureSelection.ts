@@ -38,6 +38,11 @@ export function publishedCopy(reader: HTMLElement, selection: Selection): string
   const range = selection.getRangeAt(0)
   const passageOf = (node: Node) => (node instanceof Element ? node : node.parentElement)
     ?.closest<HTMLElement>('[data-scripture-passage]')
+  // An unnumbered heading or psalm superscription can be copied by itself as printed.
+  const titleOf = (node: Node) => (node instanceof Element ? node : node.parentElement)
+    ?.closest('[data-literary-kind="heading"], [data-literary-kind="superscription"]')
+  const startTitle = titleOf(range.startContainer)
+  if (startTitle && startTitle === titleOf(range.endContainer)) return
   const start = passageOf(range.startContainer)
   const end = passageOf(range.endContainer)
   if (start && end && reader.contains(start) && reader.contains(end)) {

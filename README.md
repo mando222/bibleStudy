@@ -11,6 +11,13 @@ Installers for **macOS, Windows, and Linux**.
   Smith (1876), plus the **Septuagint** (Greek OT) and **Masoretic Hebrew** as readable, searchable
   editions. **Parallel columns** with synced scrolling and a per-column translation picker.
 - 🌗 Warm light / dark "paper" theme.
+- **Reading display** has independent switches for literary layout, speaker guides, and structured
+  passages. Set them for all columns or override one translation. Literary layout follows each
+  edition's recorded paragraphs, poetry, headings, and superscriptions. Try **Psalm 23** with
+  BSB and KJV, then choose **Compare layout**. An edition without markup stays in plain text.
+- **Context** opens the cited people, places, and events for a chapter, verse, or selected range.
+  **Map this passage** follows its place references. Reviewed study notes include the speakers
+  and letter in Acts 15 and the generations in Matthew 1. Notes and labels do not alter quotations.
 
 **Original languages**
 - 🔢 **Strong's numbers** — toggle on/off; click any word (tagged or not) to open its lexicon entry.
@@ -38,7 +45,10 @@ Installers for **macOS, Windows, and Linux**.
 **People, places & history**
 - 🌳 **Genealogies** — browse biblical people; click one to see their family and **every verse that
   mentions them**.
-- 🗺️ **Maps** — the places of Scripture plotted by coordinates; click one for its verses (offline).
+- 🗺️ **Maps** — search the whole offline atlas by name or alias, including unlocated places such as
+  Nod. Select a located place to center it. Proposed sites, broad areas, and approximate historical
+  boundaries are labeled. **Map a person** shows cited associations where available. Paul in Acts 13
+  and Ruth and Naomi in Ruth 1 have numbered stops; optional dotted lines indicate sequence only.
 - 🕰️ **Timelines** — biblical events in order, each linked to the passage that records it.
 
 **Study**

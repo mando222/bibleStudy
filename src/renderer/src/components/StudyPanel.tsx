@@ -6,6 +6,7 @@ import NotesPanel from './NotesPanel'
 import SearchPanel from './SearchPanel'
 import ApparatusPanel from './ApparatusPanel'
 import CrossRefsPanel from './CrossRefsPanel'
+import PassageInspector from './PassageInspector'
 
 const TABS: { id: StudyTab; label: string; Icon: typeof HashIcon }[] = [
   { id: 'lexicon', label: 'Lexicon', Icon: HashIcon },
@@ -79,6 +80,7 @@ function useFittingTabLabels(
 
 export default function StudyPanel(): JSX.Element {
   const studyTab = useAppStore((s) => s.studyTab)
+  const inspector = useAppStore(s => s.studyInspector)
   const setStudyTab = useAppStore((s) => s.setStudyTab)
   const selectedStrongs = useAppStore((s) => s.selectedStrongs)
   const strongsBack = useAppStore((s) => s.strongsBack)
@@ -102,7 +104,7 @@ export default function StudyPanel(): JSX.Element {
             onClick={() => setStudyTab(id)}
             title={label}
             className={`flex-1 flex items-center justify-center gap-1.5 px-1 text-xs font-medium border-b-2 -mb-px whitespace-nowrap overflow-hidden transition-colors ${
-              studyTab === id
+              !inspector && studyTab === id
                 ? 'border-accent text-accent'
                 : 'border-transparent text-muted hover:text-ink'
             }`}
@@ -115,7 +117,7 @@ export default function StudyPanel(): JSX.Element {
       </div>
 
       <div className="flex-1 min-h-0">
-        {studyTab === 'search' ? (
+        {inspector ? <PassageInspector inspector={inspector}/> : studyTab === 'search' ? (
           <SearchPanel />
         ) : (
           <div className="h-full overflow-y-auto p-4 text-sm text-muted leading-relaxed">

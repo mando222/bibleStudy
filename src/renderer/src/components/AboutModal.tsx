@@ -45,12 +45,14 @@ const DERIVED: Source[] = [
 ]
 
 const STUDY_DATA: Source[] = [
+  { what: 'Literary layout and edition-supplied speaker marks', detail: 'Each translation’s own published formatting', license: 'Same source and license as the corresponding edition', url: 'https://bible.helloao.org/docs/reference/translations/standard.html' },
+  { what: 'Reviewed guides and personal journeys', detail: 'Verse-cited study notes authored for Open Bible Study', license: 'MIT — this project', url: 'https://github.com/mando222/bibleStudy' },
   { what: 'People, places & events', detail: 'Genealogies, Maps & Timelines — with verse references', license: 'CC BY-SA 4.0 — Theographic Bible Metadata', url: 'https://github.com/robertrouse/theographic-bible-metadata' },
   { what: 'Place coordinates', detail: 'Biblical geocoding (via Theographic)', license: 'CC BY — OpenBible.info', url: 'https://www.openbible.info/geo/' },
   { what: "Easton's Bible Dictionary", detail: 'Public-domain person summaries', license: 'Public Domain (1897)', url: 'https://www.ccel.org/ccel/easton/ebd2.html' },
   { what: 'Map basemap', detail: 'Natural Earth 1:50m land polygons', license: 'Public Domain — naturalearthdata.com', url: 'https://www.naturalearthdata.com' },
   { what: 'Cross-references', detail: 'Treasury of Scripture Knowledge', license: 'CC BY — OpenBible.info', url: 'https://www.openbible.info/labs/cross-references/' },
-  { what: 'Kingdoms overlay', detail: 'Approximate empire extents for the map time slider', license: 'CC0 — this project', url: 'https://www.naturalearthdata.com' }
+  { what: 'Kingdoms overlay', detail: 'Hand-drawn approximate empire extents for the map time slider', license: 'CC0 — this project', url: 'https://github.com/mando222/bibleStudy/blob/main/data-pipeline/assets/regions.geojson' }
 ]
 
 const LEARN: Source[] = [

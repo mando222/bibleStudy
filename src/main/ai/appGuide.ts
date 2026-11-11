@@ -31,6 +31,16 @@ export const APP_GUIDE: GuideSection[] = [
     body: "Use the '+' (add a parallel translation) control in the top toolbar to add columns and read translations side by side. Columns scroll together. Remove a column with the × on its header."
   },
   {
+    title: "Read poetry and compare passage layouts",
+    keywords: "reading display literary layout poetry indentation paragraph heading superscription speakers quotation structured genealogy letter compare layout",
+    body: "Open Reading display above the translation columns. Literary layout, Speaker guides, and Structured passages are independent switches. Apply them to all translations or choose a particular edition to override the defaults. With two or more columns open, choose Compare layout for a passage. Psalm 23 is a useful example: the BSB and KJV record different line layouts. A missing layout is left plain. Acts 15 includes reviewed speaker notes and a letter outline."
+  },
+  {
+    title: "Map a passage or person",
+    keywords: "atlas maps location unknown birthplace journey travel route passage context place map person Paul Ruth Naomi",
+    body: "Choose Context in the reader or select a range of verses and choose Context. Map this passage opens its places and supporting verses in the offline atlas. Maps also searches by name or alias; places without coordinates still have reference cards. Choose Map a person there, or Map this person in a Family profile, to see documented places. Numbered stops indicate a cited sequence. The optional dotted connector does not identify a road. Try Paul in Acts 13:13–14 or Ruth and Naomi in Ruth 1."
+  },
+  {
     title: "Restore source words and the divine name",
     keywords: "restore words replace agape divine names yahweh yhwh tetragrammaton lord god elohim adonai jehovah",
     body: "Turn on Restore words in the reader toolbar. Where a verified source alignment identifies the Hebrew divine name, the reader shows YHWH. Use Choose words to restore to enable other terms. Hover over a restored word to compare translations, or focus the word and press Down Arrow. Each translation shows its verified wording or the verse for context. Source-word evidence identifies the publisher’s row. Copies and assistant selections quote the published translation."

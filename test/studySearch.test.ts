@@ -42,7 +42,9 @@ describe.skipIf(!existsSync('resources/bible.sqlite'))('real Scripture search an
     for (const translation of ['KJV', 'BSB']) {
       const ref = { translation, book: 'Ps', chapter: 23, verse: 1 }
       const verse = getComparisonVerse(ref)
-      expect(verse).toEqual(getChapter(ref).verses.find(v => v.verse === ref.verse))
+      const native = getChapter(ref).verses.find(v => v.verse === ref.verse)!
+      expect(verse).toEqual({ verse: native.verse, text: native.text, tokens: native.tokens })
+      expect(native.layout?.some(mark => mark.kind === 'poetry')).toBe(true)
       expect(verse?.tokens?.find(t => t.sourceWord)?.sourceWord?.rowId).toBe('344393')
     }
     expect(getComparisonVerse({ translation: 'ASV', book: 'Ps', chapter: 23, verse: 1 }))

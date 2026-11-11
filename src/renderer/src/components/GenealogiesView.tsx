@@ -22,6 +22,7 @@ export default function GenealogiesView(): JSX.Element {
   const focusPersonId = useAppStore((s) => s.focusPersonId)
   const clearFocus = useAppStore((s) => s.clearFocus)
   const setActivePerson = useAppStore((s) => s.setActivePerson)
+  const openPersonMap = useAppStore(s => s.openPersonMap)
 
   // Arriving from another view (e.g. a Timeline participant) focuses that person.
   useEffect(() => {
@@ -32,20 +33,21 @@ export default function GenealogiesView(): JSX.Element {
   }, [focusPersonId, clearFocus])
 
   useEffect(() => {
+    let current = true
     const t = setTimeout(() => {
-      window.api.getPeople(q.trim(), 400).then(setList).catch(() => setList([]))
+      window.api.getPeople(q.trim(), 400).then(rows => { if (current) setList(rows) }).catch(() => { if (current) setList([]) })
     }, 180)
-    return () => clearTimeout(t)
+    return () => { current = false; clearTimeout(t) }
   }, [q])
 
   useEffect(() => {
-    if (id == null) {
-      setPerson(null)
-      setAncestry([])
-      return
-    }
-    window.api.getPerson(id).then(setPerson).catch(() => setPerson(null))
-    window.api.getAncestry(id).then(setAncestry).catch(() => setAncestry([]))
+    setPerson(null)
+    setAncestry([])
+    if (id == null) return
+    let current = true
+    window.api.getPerson(id).then(row => { if (current) setPerson(row) }).catch(() => {})
+    window.api.getAncestry(id).then(rows => { if (current) setAncestry(rows) }).catch(() => {})
+    return () => { current = false }
   }, [id])
 
   // Expose the selected person to the assistant as live context.
@@ -91,6 +93,7 @@ export default function GenealogiesView(): JSX.Element {
         {person ? (
           <div className="max-w-2xl">
             <h1 className="font-serif text-2xl text-ink">{person.name}</h1>
+            <button className="mt-1 text-xs text-accent underline" onClick={() => openPersonMap(person.id)}>Map this person</button>
             <div className="text-sm text-muted mt-0.5">
               {[person.gender, years(person.birthYear, person.deathYear)].filter(Boolean).join(' · ')}
             </div>

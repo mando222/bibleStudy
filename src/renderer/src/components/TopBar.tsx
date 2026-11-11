@@ -1,5 +1,6 @@
 import { readingEdition, useAppStore } from '@/store/useAppStore'
 import { readerChapter } from '@/lib/passage'
+import { editionDisplay } from '@shared/readingDisplay'
 import { BOOK_BY_ID } from '@shared/books'
 import HistoryPanel from './HistoryPanel'
 import {
@@ -31,6 +32,8 @@ export default function TopBar(): JSX.Element {
   const chapter = useAppStore((s) => s.chapter)
 
   const edition = useAppStore(readingEdition)
+  const showChapter = useAppStore(s => s.activity !== 'bible' ||
+    editionDisplay(s.displayDefaults, s.displayOverrides, edition).chapterNumbers)
   const fromEdition = useAppStore((s) => s.referenceEdition || s.primary)
   const activeVerse = useAppStore((s) => s.activeVerse)
   const native = readerChapter(book, chapter, activeVerse, fromEdition, edition)
@@ -48,7 +51,7 @@ export default function TopBar(): JSX.Element {
       <div className="h-5 w-px bg-line mx-1.5" />
 
       <div className="font-serif text-[15px] text-ink px-1 whitespace-nowrap">
-        {bookName} <span className="text-accent">{native?.chapter ?? chapter}</span>{(native ? edition : fromEdition) === 'LXX' && ' (LXX)'}
+        {bookName}{showChapter && <> <span className="text-accent">{native?.chapter ?? chapter}</span></>}{(native ? edition : fromEdition) === 'LXX' && ' (LXX)'}
       </div>
 
       <div className="flex-1" />

@@ -63,6 +63,13 @@ The 0.4.0 word index uses the [July 18 snapshot of STEPBible](https://github.com
 - **Kingdoms overlay** — the approximate empire/kingdom extents shown on the map time slider are
   hand-authored for this project and released **CC0 / public domain**. They are deliberately coarse
   and are not a scholarly boundary source.
+- **Reading layouts and edition-supplied speaker markings** come from each named edition's
+  [Free Use Bible API source](https://bible.helloao.org/docs/reference/translations/standard.html).
+  They are stored separately from the verse text. Paragraphs, poetry, headings, and markings
+  are only displayed where that edition supplies them.
+- **Reviewed study notes and journeys** are authored for Open Bible Study and distributed under
+  the project license. The displayed verse references identify the evidence for each outline,
+  speaker attribution, and personal location. Numbered stops indicate sequence, not roads.
 
 ## Learn (Greek & Hebrew)
 
