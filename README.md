@@ -1,124 +1,46 @@
 # Open Bible Study
 
-A **local, offline, open-source** Bible study desktop app — a free "Logos-lite" for deep
-original-language study. Everything runs on your machine; your notes and highlights stay yours.
-Installers for **macOS, Windows, and Linux**.
-
-The [Android app](docs/ANDROID.md) includes the offline study library, parallel translations,
-word-frequency maps, atlas, people, timelines, language lessons, and personal study tools.
-Read, Search, Words, and Library are available from its bottom navigation. Get the first Android APK from the same GitHub release as the desktop installers. After installation, open the phone’s in-app settings gear and choose **App updates** to download future versions.
+Open Bible Study is a free, open-source Bible study app for macOS, Windows, Linux, and Android. Read translations side by side, follow a passage back to its Hebrew, Aramaic, or Greek wording, and keep your notes alongside the text. The scripture library, dictionaries, and maps are included in the download and work offline. Your study notes stay on your device.
 
 ## Features
 
-**Reading**
-- 📖 **Translations** — KJV, Berean Standard Bible, World English Bible, Young's Literal, Julia
-  Smith (1876), plus the **Septuagint** (Greek OT) and **Masoretic Hebrew** as readable, searchable
-  editions. **Parallel columns** with synced scrolling and a per-column translation picker.
-  Scroll in either direction to continue into the adjacent available chapter, including in the interlinear.
-- 🌗 Warm light / dark "paper" theme.
-- **Reading display** has independent switches for literary layout, speaker guides, and structured
-  passages. Set them for all columns or override one translation. Literary layout follows each
-  edition's recorded paragraphs, poetry, headings, and superscriptions. Try **Psalm 23** with
-  BSB and KJV, then choose **Compare layout**. An edition without markup stays in plain text.
-- **Context** opens the cited people, places, and events for a chapter, verse, or selected range.
-  **Map this passage** follows its place references. Reviewed study notes include the speakers
-  and letter in Acts 15 and the generations in Matthew 1. Notes and labels do not alter quotations.
+- **Read and compare translations.** The library includes 11 editions, among them the King James Version, Berean Standard Bible, World English Bible, Masoretic Hebrew, and Greek Septuagint. Scroll across chapters in parallel columns. Show or hide headings, chapter and verse numbers, or speaker guides. Compare how each edition lays out a poem or paragraph. You can also import compatible MySword or e-Sword Bible modules you own.
+- **Study a word in context.** Select a linked word to see its Strong’s entry, dictionary definitions, and other verses where it occurs. The interlinear shows the original form, transliteration, and available grammatical details. Compare Greek New Testament variants and the written and read forms of the Masoretic Text. Greek and Hebrew lessons include vocabulary review and reading practice.
+- **Check a restored word.** In BSB and KJV, **Restore words** can show a source form where the app has verified the link to that occurrence. Hover on desktop or tap on Android to see the exact wording that edition printed. In BSB Genesis 4:16, “of the LORD” displays as “of YHWH.” The tip on *YHWH* shows “the LORD,” and copying the passage gives you the published wording.
+- **Find where a word occurs.** Search for an exact phrase, an original-script word, or a Strong’s number. In the **Words** tab, a frequency map counts occurrences across the forms of a word in the selected original-language text. Compare books by count or by uses per 1,000 tagged words, filter by grammatical form, and open a matching verse.
+- **Explore people, places, and events.** Open **Context** to see who and what a passage mentions. Follow cross-references to related verses or use the timeline to explore events in order. The atlas maps passages and documented journeys and labels uncertain locations. Genealogies show siblings and group children by recorded parentage. Jacob’s family, for example, shows the children of Leah, Rachel, Bilhah, and Zilpah.
+- **Keep a study notebook.** Highlight verses, save bookmarks, write verse notes, and organize longer studies in a Markdown notebook. Export a backup to move your work to another device.
+- **Ask the desktop assistant.** The optional AI assistant runs on your computer after a model download. Ask about a selected passage or search documents you add, then follow its citations back to the text.
 
-**Original languages**
-- 🔢 **Strong's numbers** — toggle on/off; click any word (tagged or not) to open its lexicon entry.
-- 🔤 **Interlinear** — word-by-word original with transliteration, Strong's, morphology and gloss;
-  selectable base edition (Masoretic · Septuagint · Textus Receptus · Byzantine · Critical), stack
-  translations at verified word occurrences, and a "best guess ⇄ all Scripture-attested parses" toggle.
-  A complete translated verse appears wherever word links are partial or unavailable.
-- 📚 **Lexicons** — Strong's plus scholarly **BDB · Abbott-Smith · LSJ**, with a full-verse
-  **concordance** for every word.
-- **Restore words** — select a word in the reader and use the right-hand lexicon panel to show its
-  Hebrew, Aramaic or Greek form at verified occurrences. In BSB 1 John 2:1, G264 has two different
-  forms. The reader keeps “you will not sin” with *ἁμάρτητε* and “does sin” with *ἁμάρτῃ*.
-  The source details identify the publisher’s row. A translation without a verified link keeps
-  its published wording. The toolbar also offers transliterated terms, including *ēgapēsen* for
-  “loved” in BSB John 3:16. The verified four-letter Hebrew name appears as YHWH.
-  Hover over a restored word on desktop or tap it on Android to see how that translation
-  printed it at that spot. In BSB Genesis 4:16, the tip on *YHWH* shows “the LORD”,
-  and “of” stays in the verse. Open **Compare translations** for other editions. On desktop,
-  you can also focus the word with the arrow keys and press Down Arrow to explore the tip.
-  Copies and assistant quotations use the published text.
-- 🅰️ **Words tab** — browse the lexicon by number, transliteration, or meaning. Select an entry
-  and open **Word frequency** to see where its Hebrew, Aramaic, or Greek forms occur. Each use
-  counts once, even when the word occurs several times in a verse. Compare books by uses per
-  1,000 tagged words or by total uses, then select a book and chapter to see the matching text.
-  The map follows the selected original-language edition independently of your English translation.
-  **Word to map** offers shortcuts for love, husband and wife, and marriage and weddings.
-  A word such as Greek *gynē* counts in all its senses, including both “woman” and “wife.”
-  **Grammatical form** filters the selected entry. A book and chapter stay selected even when
-  that form has zero matches there.
+The app code uses the MIT License. The bundled texts and reference works carry their own licenses. [Code license](LICENSE) · [Data sources and credits](docs/attribution.md)
 
-**Textual apparatus**
-- In **Settings → Preferred text order**, rank the three Greek New Testament editions, the
-  Masoretic Text and Greek Septuagint, and the written (Ketiv) and read (Qere) forms.
-  The automatic interlinear opens your highest-ranked available edition. Greek word-frequency
-  maps also follow this preference until you select an edition for the map.
-- **Variants** shows where the bundled Greek editions differ and where a Masoretic written and
-  read pair is recorded. From a word in the right-hand Lexicon, **Compare source texts** shows
-  the full verse in your preferred order. Try **John 1:18** to see which editions print “God”
-  and which print “Son.” Each restored word in a translation still uses its own source link.
-  A source note identifies readings whose word order could not be verified.
+## Installation
 
-**People, places & history**
-- 🌳 **Genealogies** shows siblings and groups children by their recorded mother in both Family
-  and Tree. Jacob’s profile distinguishes the children of Leah, Rachel, Bilhah, and Zilpah.
-  Follow a name to open that person or a verse link to read the evidence. A child whose mother
-  is unrecorded appears in a separate group. Each profile lists the verses that reference the person.
-- 🗺️ **Maps** — search the whole offline atlas by name or alias, including unlocated places such as
-  Nod. Select a located place to center it. Proposed sites, broad areas, and approximate historical
-  boundaries are labeled. **Map a person** lists people with at least one location supported by a
-  cited passage, including places whose coordinates are unknown. Paul in Acts 13 and Ruth and
-  Naomi in Ruth 1 have numbered stops. Optional dotted lines show the order given in the passage.
-- 🕰️ **Timelines** — biblical events in order, each linked to the passage that records it.
+**[Download the latest release](https://github.com/mando222/bibleStudy/releases/latest)** and open **Assets** to find the file for your device.
 
-**Study**
-- 🔎 **Search** accepts text, a **Strong's number** (`G26`, `H430`), or a **Greek/Hebrew word**
-  (accents and points optional — `θεος` finds `θεὸς`). Use quotation marks for an exact word or phrase.
-  In **Words**, typing a Strong’s number selects its language and lists the exact entry first.
-- ✍️ **Notes & highlighting** — verse highlights and notes in a **separate** `user.sqlite`, so app
-  updates never touch your data.
-- **Back up or move your study work** in **About → Study backup**. Save the `.obsbackup` file, then restore it on the destination computer. Restore opens a new profile and keeps a recovery copy of the previous work.
-- ✨ **AI assistant (opt-in, fully local)** — a grounded, offline study assistant that cites the
-  verses it uses (clickable), links Greek/Hebrew words and Strong's numbers, answers "how do I…"
-  questions about the app, lets you **select a passage and ask about it**, and does **RAG** over
-  your own PDFs/notes + the verse corpus (semantic search). No account, no cloud.
+| Platform | File to download | How to install |
+| --- | --- | --- |
+| macOS · Apple Silicon | `*-mac-arm64.dmg` | Open the disk image, drag **Open Bible Study** into **Applications**, then open it from there. If macOS blocks the first launch, go to **System Settings → Privacy & Security → Open Anyway**. |
+| Windows | `*-setup.exe` | Run the installer and follow the prompts. If SmartScreen appears, choose **More info → Run anyway**. |
+| Linux · x86-64 | `*.AppImage` | In the downloaded file’s properties, allow it to run as a program, then open it. |
+| Debian or Ubuntu · amd64 | `*.deb` | Open the downloaded package with your system’s package installer and choose **Install**. |
+| Android · 7 or later | `Open-Bible-Study-Android-<version>.apk` | Tap the downloaded APK. If prompted, allow your browser or file manager to install apps, then tap **Install**. Open the app once to prepare the offline library. |
 
-## Tech
+### Updating
 
-Electron 43 · React 18 · TypeScript · electron-vite · Tailwind CSS · Zustand · **`node:sqlite`**
-(Node's built-in SQLite — no native module to compile) · `sqlite-vec` (vector search) ·
-`node-llama-cpp` (bundled GGUF inference). Text lives in a bundled read-only
-`resources/bible.sqlite`, built by the data pipeline; user data lives in a separate `user.sqlite`.
+On desktop, open **About → Check now**. When an update is available, download the installer, quit the app, and install the new version over the existing copy. On Android, open the **Settings** gear and choose **App updates → Check now → Download update**. Tap **Install update** and confirm in Android. Updating in place preserves your notes and highlights. [Detailed installation guide](docs/INSTALL.md) · [Android guide](docs/ANDROID.md)
 
-## Getting started
+<details>
+<summary>Run the desktop app from source</summary>
 
-```bash
-npm install          # no native builds required
-npm run db:build     # download open data + build resources/bible.sqlite (a few minutes)
-npm run dev          # launch the app
+Use Node.js 22.13 or later in the 22.x series. The database build downloads the source texts and prepares the offline library.
+
+```sh
+git clone https://github.com/mando222/bibleStudy.git
+cd bibleStudy
+npm ci
+npm run db:build
+npm run dev
 ```
 
-Other scripts: `npm run typecheck`, `npm test`, `npm run build` (compile), `npm run dist:mac`
-(or `dist:win` / `dist:linux`) to build an installer. Releases are cut by bumping `version` in
-`package.json` and pushing to `main` (CI gates on typecheck, tests, data integrity, and a
-packaged-app smoke test on all three OSes). See [docs/RELEASING.md](docs/RELEASING.md) and
-[docs/INSTALL.md](docs/INSTALL.md).
-
-## Data & licensing
-
-Only **public-domain / openly-licensed** data is bundled, each credited in the app's **About**
-screen. Sources include the helloao Free Use Bible API, OpenScriptures Strong's (CC-BY-SA),
-STEPBible **TAHOT/TAGNT** + **BDB/Abbott-Smith/LSJ** lexicons (CC-BY), the **Swete Septuagint** via
-First1KGreek (CC-BY-SA), and **Theographic Bible Metadata** for people/places/events (CC-BY-SA,
-place coordinates from OpenBible.info). Copyrighted, non-CATSS, and other closed sources are
-deliberately excluded.
-
-**NKJV and NASB are copyrighted and cannot be bundled** — the app includes an **importer** so users
-who own them (MySword / e-Sword modules) can load their own licensed copies.
-
-The application code is licensed under the [MIT License](LICENSE).
+</details>
