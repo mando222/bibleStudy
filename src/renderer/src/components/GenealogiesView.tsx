@@ -1,9 +1,14 @@
-import { useEffect, useState } from 'react'
-import type { PersonListItem, PersonDetail, PersonRef } from '@shared/types'
+import { familyName } from '@shared/familyEvidence'
+import { useCallback, useEffect, useState } from 'react'
+import type { PersonDetail, PersonRef } from '@shared/types'
 import { useAppStore } from '@/store/useAppStore'
 import { SearchIcon } from './icons'
 import VerseRefs from './VerseRefs'
+import { catalogRefLabel } from '@shared/books'
+import { usePagedQuery } from '@/hooks/usePagedQuery'
+import ResultPages from './ResultPages'
 import FamilyTree from './FamilyTree'
+import { ChildrenByParent, PersonLinks, SiblingList } from './FamilyRelations'
 
 const years = (b: number | null, d: number | null): string => {
   const f = (y: number): string => (y < 0 ? `${-y} BC` : `${y} AD`)
@@ -14,7 +19,9 @@ const years = (b: number | null, d: number | null): string => {
 /** Genealogies: browse biblical people; click one to see relationships and every verse about them. */
 export default function GenealogiesView(): JSX.Element {
   const [q, setQ] = useState('')
-  const [list, setList] = useState<PersonListItem[]>([])
+  const query = q.trim()
+  const directory = usePagedQuery(query, useCallback((offset: number) => window.api.getPeoplePage(query, 60, offset), [query]), 150)
+  const list = directory.data?.people ?? []
   const [id, setId] = useState<number | null>(null)
   const [person, setPerson] = useState<PersonDetail | null>(null)
   const [ancestry, setAncestry] = useState<PersonRef[]>([])
@@ -33,14 +40,6 @@ export default function GenealogiesView(): JSX.Element {
   }, [focusPersonId, clearFocus])
 
   useEffect(() => {
-    let current = true
-    const t = setTimeout(() => {
-      window.api.getPeople(q.trim(), 400).then(rows => { if (current) setList(rows) }).catch(() => { if (current) setList([]) })
-    }, 180)
-    return () => { current = false; clearTimeout(t) }
-  }, [q])
-
-  useEffect(() => {
     setPerson(null)
     setAncestry([])
     if (id == null) return
@@ -56,7 +55,7 @@ export default function GenealogiesView(): JSX.Element {
   }, [person, setActivePerson])
 
   return (
-    <div className="h-full flex bg-bg">
+    <div data-directory={id != null ? 'detail' : 'list'} className="h-full flex bg-bg">
       <div className="w-[22rem] shrink-0 border-r border-line flex flex-col bg-panel">
         <div className="p-3 border-b border-line">
           <h2 className="font-serif text-lg text-ink mb-2">People</h2>
@@ -65,12 +64,17 @@ export default function GenealogiesView(): JSX.Element {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search a name…"
+              aria-label="Find a person by name or alias" placeholder="Name or alias…"
               className="w-full bg-elevated border border-line rounded-md pl-8 pr-2 py-1.5 text-sm text-ink outline-none focus:border-accent placeholder:text-faint"
             />
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div className="px-3 text-xs text-muted" aria-live="polite">
+          {directory.loading ? 'Finding people…' : directory.error ? <p role="alert">{directory.error} <button onClick={directory.retry}>Retry</button></p> :
+            directory.data && directory.data.total <= 60 ? `${directory.data.total} people` : null}
+          {directory.data && <ResultPages offset={directory.offset} size={60} count={list.length} total={directory.data.total} onPage={directory.setOffset} />}
+        </div>
+        <div key={directory.offset + ':' + query} className="flex-1 overflow-y-auto">
           {list.map((p) => (
             <button
               key={p.id}
@@ -79,10 +83,10 @@ export default function GenealogiesView(): JSX.Element {
                 id === p.id ? 'bg-accent-soft' : ''
               }`}
             >
-              <div className="text-sm text-ink">{p.name}</div>
+              <div className="text-sm text-ink">{p.displayName}</div>
               <div className="text-xs text-faint">
-                {years(p.birthYear, p.deathYear)}
-                {p.verseCount ? ` · ${p.verseCount} verses` : ''}
+                {[p.firstRef && catalogRefLabel(p.firstRef), years(p.birthYear, p.deathYear),
+                  p.verseCount ? `${p.verseCount} verse${p.verseCount === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ')}
               </div>
             </button>
           ))}
@@ -90,9 +94,10 @@ export default function GenealogiesView(): JSX.Element {
       </div>
 
       <div className="flex-1 min-w-0 overflow-y-auto p-6">
+        {import.meta.env.VITE_STUDY_MOBILE === 'true' && id != null && <button data-phone-back className="directory-back" onClick={()=>setId(null)}>‹ All people</button>}
         {person && person.id === id ? (
           <div className="max-w-2xl">
-            <h1 className="font-serif text-2xl text-ink">{person.name}</h1>
+            <h1 className="font-serif text-2xl text-ink">{familyName(person)}</h1>
             {person.mappedPlaceCount > 0
               ? <button className="mt-1 text-xs text-accent underline" onClick={() => openPersonMap(person.id)}>Map this person</button>
               : <p className="mt-1 text-xs text-muted">No documented location in the atlas.</p>}
@@ -108,6 +113,7 @@ export default function GenealogiesView(): JSX.Element {
                 {(['family', 'tree'] as const).map((m) => (
                   <button
                     key={m}
+                    aria-pressed={mode === m}
                     onClick={() => setMode(m)}
                     className={`px-2.5 py-0.5 rounded text-xs border ${
                       mode === m
@@ -122,15 +128,16 @@ export default function GenealogiesView(): JSX.Element {
               {mode === 'family' ? (
                 <div>
                   <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-                    <Rel label="Father" people={person.father ? [person.father] : []} onPick={setId} />
+                    <Rel label={person.id === 905 ? 'Father in the genealogy' : 'Father'} people={person.father ? [person.father] : []} onPick={setId} />
                     <Rel label="Mother" people={person.mother ? [person.mother] : []} onPick={setId} />
                     <Rel label="Spouses" people={person.spouses} onPick={setId} />
-                    <Rel label="Children" people={person.children} onPick={setId} />
                   </div>
+                  <ChildrenByParent person={person} onPick={setId} />
+                  <SiblingList people={person.siblings} onPick={setId} />
                   {ancestry.length > 1 && (
                     <div className="mt-4 border-t border-line/60 pt-3">
                       <div className="text-[11px] uppercase tracking-wider text-faint mb-1.5">
-                        Lineage — {ancestry.length} generations traced from Scripture
+                        Paternal lineage · {ancestry.length} catalog entries
                       </div>
                       <div className="flex flex-wrap items-center gap-x-1 gap-y-1 text-sm leading-relaxed">
                         {ancestry.map((a, i) => (
@@ -153,8 +160,16 @@ export default function GenealogiesView(): JSX.Element {
                   )}
                 </div>
               ) : (
-                <FamilyTree person={person} />
+                <>
+                  <FamilyTree person={person} onPick={setId} />
+                  <SiblingList people={person.siblings} onPick={setId} />
+                </>
               )}
+              {person.id === 905 && <div className="mt-2 text-sm text-muted">
+                Mark also mentions sisters whose names are unrecorded.
+                <VerseRefs refs={['Mark.6.3']} followReader />
+              </div>}
+              <p className="mt-3 text-xs text-muted">Family relationships from the Theographic catalog. Verse links identify reviewed relationships.</p>
             </div>
 
             <div className="mt-6">
@@ -189,17 +204,7 @@ function Rel({
     <div>
       <div className="text-[11px] uppercase tracking-wider text-faint mb-1">{label}</div>
       {people.length ? (
-        <div className="flex flex-wrap gap-1.5">
-          {people.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => onPick(p.id)}
-              className="text-sm text-accent hover:underline"
-            >
-              {p.name}
-            </button>
-          ))}
-        </div>
+        <PersonLinks people={people} onPick={onPick} />
       ) : (
         <span className="text-sm text-faint">—</span>
       )}

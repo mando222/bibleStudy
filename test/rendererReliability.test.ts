@@ -12,6 +12,9 @@ import SearchPanel from '../src/renderer/src/components/SearchPanel'
 import InterlinearReader from '../src/renderer/src/components/InterlinearReader'
 import NotebookPanel from '../src/renderer/src/components/NotebookPanel'
 import CrossRefsPanel from '../src/renderer/src/components/CrossRefsPanel'
+import HistoryPanel from '../src/renderer/src/components/HistoryPanel'
+import { parsePosition, readPosition, readerViewKey, savePosition } from '../src/renderer/src/lib/readingPosition'
+import { publishedSelection } from '../src/renderer/src/lib/scriptureSelection'
 import { useChapter } from '../src/renderer/src/hooks/useChapter'
 import { useHighlights, useNotes } from '../src/renderer/src/hooks/useUserData'
 import { useNotebookDocument } from '../src/renderer/src/hooks/useNotebookDocument'
@@ -30,6 +33,11 @@ let host: HTMLDivElement
 let root: Root
 beforeEach(() => {
   vi.useFakeTimers()
+  Object.defineProperties(HTMLDialogElement.prototype, {
+    showModal: { configurable: true, value(this: HTMLDialogElement) { this.open = true } },
+    close: { configurable: true, value(this: HTMLDialogElement) { this.open = false } }
+  })
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   host = document.createElement('div')
   document.body.append(host)
@@ -40,6 +48,9 @@ beforeEach(() => {
 })
 afterEach(async () => {
   await act(async () => root.unmount())
+  Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal')
+  Reflect.deleteProperty(HTMLDialogElement.prototype, 'close')
+  vi.unstubAllGlobals()
   host.remove()
   vi.useRealTimers()
   vi.restoreAllMocks()
@@ -55,6 +66,123 @@ async function change(element: HTMLInputElement | HTMLTextAreaElement | HTMLSele
 async function advance(ms = 300) {
   await act(async () => { await vi.advanceTimersByTimeAsync(ms) })
 }
+
+describe('reader position', () => {
+  beforeEach(() => {
+    const values = new Map<string, string>()
+    vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value) })
+  })
+
+  it('bookmarks the scrolled verse and restores it after the reader remounts', async () => {
+    const addBookmark = vi.fn().mockResolvedValue(undefined)
+    const rows = [1, 23, 24].map(verse => ({ verse, text: 'Verse ' + verse, tokens: [] }))
+    Object.assign(window.api, { getChapter: async (ref: VerseRef) => ({ ...ref, verses: rows }),
+      listHighlights: async () => [], listNotes: async () => [], listHistory: async () => [],
+      listBookmarks: async () => [], addBookmark })
+    const page = () => createElement('main', null, createElement(ReadingPanel), createElement(HistoryPanel))
+    await act(async () => root.render(page()))
+    const col = host.querySelector<HTMLElement>('[data-reader-scroll]')!
+    Object.defineProperty(col, 'clientHeight', { value: 400 })
+    col.getBoundingClientRect = () => new DOMRect(0, 10, 300, 400)
+    for (const row of col.querySelectorAll<HTMLElement>('[data-verse]')) {
+      const top = Number(row.dataset.verse) === 1 ? -180 : Number(row.dataset.verse) === 23 ? -25 : 150
+      row.getBoundingClientRect = () => new DOMRect(0, top, 300, 100)
+    }
+    col.scrollTop = 1200
+    await act(async () => col.dispatchEvent(new Event('scroll')))
+    expect(readPosition()).toMatchObject({ translation: 'KJV', book: 'John', chapter: 1, verse: 23, scroll: 1200 })
+    await act(async () => [...host.querySelectorAll('button')].find(button => button.title === 'History & bookmarks')!.click())
+    await act(async () => [...host.querySelectorAll('button')].find(b => b.textContent === 'Bookmark')!.click())
+    expect(addBookmark).toHaveBeenCalledWith(expect.objectContaining({ book: 'John', chapter: 1, verse: 23, name: 'John 1:23' }))
+    await act(async () => root.render(null))
+    await act(async () => root.render(page()))
+    expect(host.querySelector<HTMLElement>('[data-reader-scroll]')!.dataset.readerAnchor).toBe('23')
+  })
+
+  it('reopens mapped columns in the chapter reached by scrolling into a split passage', async () => {
+    useAppStore.setState({ primary: 'WEB', referenceEdition: 'WEB', book: 'Rom', chapter: 14, parallels: ['WEB', 'KJV'] })
+    savePosition({ book: 'Rom', chapter: 16, verse: 25, translation: 'KJV', interlinear: false,
+      scroll: null, viewKey: readerViewKey(useAppStore.getState()) })
+    Object.assign(window.api, { getChapter: async (ref: VerseRef) => ({ ...ref,
+      verses: [{ verse: ref.translation === 'KJV' ? 25 : 24, text: 'Verse', tokens: [] }] }),
+      listHighlights: async () => [], listNotes: async () => [] })
+    await act(async () => root.render(createElement(ReadingPanel)))
+    expect(host.querySelector<HTMLElement>('[data-reader-scroll="WEB"]')!.dataset.readerChapter).toBe('14')
+    const kjv = host.querySelector<HTMLElement>('[data-reader-scroll="KJV"]')!
+    expect(kjv.dataset.readerChapter).toBe('16')
+    expect(kjv.dataset.readerAnchor).toBe('25')
+  })
+
+  it('restores the original-language verse after the asynchronous interlinear is loaded', async () => {
+    useAppStore.setState({ book: 'Gen', chapter: 1, interlinear: true })
+    const viewKey = readerViewKey(useAppStore.getState())
+    savePosition({ translation: 'MT', book: 'Gen', chapter: 1, verse: 22, interlinear: true, scroll: 4520, viewKey })
+    const pending = deferred<any>()
+    Object.assign(window.api, { listEditions: async () => [{ id: 'MT', name: 'Masoretic', testament: 'OT' }],
+      getInterlinear: () => pending.promise })
+    await act(async () => root.render(createElement(ReadingPanel)))
+    const interlinear = host.querySelector<HTMLElement>('[data-interlinear-reader]')!
+    expect(interlinear.dataset.readerAnchor).toBeUndefined()
+    await act(async () => pending.resolve({ book: 'Gen', chapter: 1, edition: 'MT', direction: 'rtl',
+      verses: [{ verse: 22, tokens: [] }] }))
+    expect(interlinear.dataset.readerAnchor).toBe('22')
+  })
+
+  it.each(['KJV', 'NA', 'imp_sparse'])('scrolls through the recorded chapters in both directions in %s', async edition => {
+    const interlinear = edition === 'NA'
+    const parallels = edition === 'imp_sparse' ? ['KJV', edition] : ['KJV']
+    const refs = [{ book: 'John', chapter: 1 }, { book: 'John', chapter: 3 }, { book: 'Acts', chapter: 1 }]
+    const listReadingChapters = vi.fn(async () => [...refs].reverse())
+    Object.assign(window.api, { listReadingChapters, listHighlights: async () => [], listNotes: async () => [],
+      listEditions: async () => [{ id: 'NA', testament: 'NT', name: 'Critical text' }],
+      getChapter: async (ref: VerseRef) => ({ ...ref, verses: [{ verse: 1, text: 'Verse ' + ref.chapter, tokens: [] }] }),
+      getInterlinear: async (book: string, chapter: number) => ({ book, chapter, direction: 'ltr', verses: [{ verse: 1, tokens: [] }] }) })
+    useAppStore.setState({ book: 'John', chapter: 1, primary: 'KJV', parallels, interlinear })
+
+    // Each chapter occupies one viewport. Layout in jsdom has no native dimensions.
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function(this: HTMLElement) {
+      return this.hasAttribute('data-flow-chapter') ? 400 : 0
+    })
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function(this: HTMLElement) {
+      const pane = this.closest<HTMLElement>('[data-reader-scroll], [data-interlinear-reader]')
+      const block = this.closest('[data-flow-chapter]')
+      if (pane && block) {
+        const index = [...pane.querySelectorAll('[data-flow-chapter]')].indexOf(block)
+        return new DOMRect(0, index * 400 - pane.scrollTop, 300, 400)
+      }
+      return new DOMRect(0, 0, 300, 400)
+    })
+    await act(async () => root.render(createElement(ReadingPanel)))
+    expect(listReadingChapters).toHaveBeenCalledWith(edition, interlinear)
+    const el = host.querySelector<HTMLElement>(interlinear ? '[data-interlinear-reader]' : `[data-reader-scroll="${edition}"]`)!
+    Object.defineProperty(el, 'clientHeight', { value: 400 })
+    async function scroll(y: number) {
+      await act(async () => {
+        el.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: y - el.scrollTop }))
+        el.scrollTop = y
+        el.dispatchEvent(new Event('scroll'))
+      })
+    }
+    await scroll(10)
+    expect([...el.querySelectorAll('[data-flow-chapter]')].map(p => p.getAttribute('data-flow-chapter'))).toEqual(['John/1', 'John/3'])
+    await scroll(425)
+    expect(useAppStore.getState()).toMatchObject({ book: 'John', chapter: 3, referenceEdition: edition })
+    expect(readPosition()).toMatchObject({ book: 'John', chapter: 3, verse: 1, scroll: 25, translation: edition })
+    expect(el.querySelector('[data-flow-active]')?.getAttribute('data-flow-chapter')).toBe('John/3')
+    await scroll(825)
+    expect(useAppStore.getState()).toMatchObject({ book: 'Acts', chapter: 1 })
+    expect(el.scrollTop).toBe(425)
+    if (edition === 'imp_sparse') expect(host.querySelector<HTMLElement>('[data-reader-scroll="KJV"]')?.dataset.readerBook).toBe('John')
+    await scroll(380)
+    expect(useAppStore.getState()).toMatchObject({ book: 'John', chapter: 3 })
+    expect(readPosition()).toMatchObject({ book: 'John', chapter: 3, scroll: 380 })
+  })
+
+  it('keeps a verse-zero anchor in older saved positions', () => {
+    expect(parsePosition({ book: 'Ps', chapter: 3, verse: 0, translation: 'BSB' })).toMatchObject({ verse: 0, scroll: null, interlinear: false })
+  })
+})
 
 describe('search request lifecycle', () => {
   it('ignores older results, including a request completed after the input is cleared', async () => {
@@ -132,7 +260,7 @@ describe('passage navigation', () => {
     function Reader({ chapter }: { chapter: number }) {
       const { data, loading } = useChapter('KJV', 'John', chapter)
       const container = useRef<HTMLDivElement>(null)
-      useVerseNavigation(container, `John:${chapter}`, !loading && !!data)
+      useVerseNavigation(container, { translation: 'KJV', book: 'John', chapter }, !loading && !!data)
       return createElement('div', { ref: container }, data?.verses.map((v) => createElement('div', { key: v.verse, 'data-verse': v.verse }, `${chapter}:${v.verse}`)))
     }
     await act(async () => root.render(createElement(Reader, { chapter: 1 })))
@@ -169,20 +297,20 @@ describe('passage navigation', () => {
     expect(value.notes).toEqual([])
   })
 
-  it('renders inferred translation alignments and honors verse jumps in interlinear mode', async () => {
+  it('renders a publisher-linked translation span and honors verse jumps in interlinear mode', async () => {
     const scroll = vi.fn()
     HTMLElement.prototype.scrollIntoView = scroll
     useAppStore.setState({
-      interlinearStack: ['ASV'],
-      translations: [{ id: 'ASV', abbrev: 'ASV', name: 'American Standard Version', language: 'eng', hasStrongs: false } as any]
+      interlinearStack: ['BSB'],
+      translations: [{ id: 'BSB', abbrev: 'BSB', name: 'Berean Standard Bible', language: 'eng', hasStrongs: true } as any]
     })
     useAppStore.getState().goToVerse('John', 3, 16)
     Object.assign(window.api, {
       listEditions: async () => [{ id: 'NA', name: 'Critical', testament: 'NT' }],
-      getInterlinear: async () => ({ direction: 'ltr', verses: [{ verse: 16, tokens: [{ position: 1, surface: 'gloss', lemma: 'λόγος', strongs: 'G3056', aligned: { ASV: 'Aligned ASV text' } }] }] })
+      getInterlinear: async () => ({ direction: 'ltr', verses: [{ verse: 16, tokens: [{ position: 1, surface: 'gloss', lemma: 'λόγος', strongs: 'G3056', aligned: { BSB: 'Aligned BSB text' } }] }] })
     })
     await act(async () => root.render(createElement(InterlinearReader, { book: 'John', chapter: 3 })))
-    expect(host.textContent).toContain('Aligned ASV text')
+    expect(host.textContent).toContain('Aligned BSB text')
     expect(scroll).toHaveBeenCalledOnce()
     expect(useAppStore.getState().scrollToVerse).toBeNull()
   })
@@ -413,6 +541,74 @@ describe('study navigation across pages and editions', () => {
     expect(getChapter).not.toHaveBeenCalledWith({ translation: 'BSB', book: 'Ps', chapter: 151 })
     expect(host.textContent).toContain('No verified equivalent')
   })
+
+  it.each([
+    ['WEB', 'Rom', 14, 24, 16, 25], ['GNV', 'Dan', 3, 31, 4, 1]
+  ] as const)('creates, reopens and edits one shared note from %s %s %i:%i', async (edition, book, chapter, verse, canonicalChapter, canonicalVerse) => {
+    let stored: { id: number; book: string; chapter: number; verse: number; body: string } | undefined
+    const saveNote = vi.fn(async (input) => { stored = { ...input, id: 5 }; return stored })
+    Object.assign(window.api, { saveNote, getChapter: async () => ({ verses: [{ verse, text: 'Native verse' }] }),
+      listHighlights: async () => [], listNotes: async (ref: { chapter: number }) => stored?.chapter === ref.chapter ? [stored] : [] })
+    useAppStore.setState({ primary: edition, parallels: [edition], referenceEdition: edition, book, chapter })
+    await act(async () => root.render(createElement(ReadingPanel)))
+    const open = () => act(async () => host.querySelector<HTMLButtonElement>('[data-verse-action]')!.click())
+    await open()
+    await clickButton('Add a note')
+    await change(host.querySelector('textarea')!, 'First')
+    await clickButton('Save note')
+    expect(stored).toEqual({ id: 5, book, chapter: canonicalChapter, verse: canonicalVerse, body: 'First' })
+    await act(async () => root.render(null))
+    await act(async () => root.render(createElement(ReadingPanel)))
+    await open()
+    expect(host.querySelector('textarea')?.value).toBe('First')
+    await change(host.querySelector('textarea')!, 'Revised')
+    await clickButton('Save note')
+    expect(saveNote).toHaveBeenLastCalledWith({ id: 5, book, chapter: canonicalChapter, verse: canonicalVerse, body: 'Revised' })
+  })
+
+  it('reads, copies, highlights and scrolls an independent import without offering shared notes, bookmarks or references', async () => {
+    const imported = 'imp_test'
+    const printed = 'I am the Α and the Ω.'
+    const saveHighlight = vi.fn()
+    const getCrossReferences = vi.fn(async () => [])
+    Object.assign(window.api, { getChapter: async () => ({ verses: [{ verse: 16, text: printed }, { verse: 17, text: 'Second verse' }] }),
+      listHighlights: async () => [], listNotes: async () => [], saveHighlight, getCrossReferences,
+      listBookmarks: async () => [], listHistory: async () => [] })
+    HTMLElement.prototype.scrollIntoView = vi.fn()
+    useAppStore.setState({ primary: 'BSB', parallels: ['BSB', 'KJV', imported], referenceEdition: 'BSB', book: 'Phil', chapter: 1 })
+    await act(async () => root.render(createElement('div', {}, createElement(ReadingPanel), createElement(CrossRefsPanel), createElement(HistoryPanel))))
+    const col = (id: string) => host.querySelector<HTMLElement>(`[data-reader-scroll="${id}"]`)!
+    expect(col(imported).parentElement?.textContent).toContain('Independent scroll')
+    const passage = col(imported).querySelector<HTMLElement>('[data-scripture-passage]')!
+    const range = document.createRange()
+    range.selectNodeContents(passage.querySelector('[data-scripture-part]')!)
+    expect(publishedSelection(passage, range)?.text).toBe(printed)
+    const rect = (y: number) => ({ top: y, bottom: y + 50 } as DOMRect)
+    for (const id of ['BSB', 'KJV', imported]) {
+      for (const row of col(id).querySelectorAll<HTMLElement>('[data-verse]')) {
+        row.getBoundingClientRect = () => rect(row.dataset.verse === '16' ? 0 : 100)
+      }
+    }
+    await act(async () => {
+      col('BSB').dispatchEvent(new WheelEvent('wheel', { bubbles: true }))
+      col('BSB').dispatchEvent(new Event('scroll'))
+    })
+    expect(col('KJV').scrollTop).toBe(100)
+    expect(col(imported).scrollTop).toBe(0)
+    await act(async () => {
+      col(imported).dispatchEvent(new WheelEvent('wheel', { bubbles: true }))
+      col(imported).dispatchEvent(new Event('scroll'))
+    })
+    expect(col('KJV').scrollTop).toBe(100)
+    await act(async () => col(imported).querySelector<HTMLButtonElement>('[data-verse-action]')!.click())
+    expect(host.textContent).toContain('No verified reference for shared verse notes')
+    expect(host.textContent).toContain('No verified cross-reference')
+    expect(getCrossReferences).not.toHaveBeenCalled()
+    await act(async () => host.querySelector<HTMLButtonElement>('[title="yellow"]')!.click())
+    expect(saveHighlight).toHaveBeenCalledWith(expect.objectContaining({ translation: imported, book: 'Phil', chapter: 1, verse: 16 }))
+    await act(async () => [...host.querySelectorAll('button')].find(button => button.title === 'History & bookmarks')!.click())
+    expect(host.querySelector<HTMLButtonElement>('[title="No verified equivalent for this bookmark"]')?.disabled).toBe(true)
+  })
 })
 
 describe('learning sessions and verse note drafts', () => {
@@ -511,6 +707,10 @@ describe('source-word reading and quotations', () => {
       ]
     })
     const dialog = () => document.querySelector<HTMLElement>('[role="dialog"][aria-label="Translation comparison"]')
+    const compareTranslations = async () => {
+      const compare = [...dialog()!.querySelectorAll('button')].find(button => button.textContent === 'Compare translations')!
+      await act(async () => compare.click())
+    }
     const reading = (id: string) => [...dialog()!.querySelectorAll('dt')]
       .find(label => label.textContent === id)?.nextElementSibling
     const mouse = (type: 'mouseover' | 'mouseout', target: Element, relatedTarget: Element | null = null) =>
@@ -559,6 +759,8 @@ describe('source-word reading and quotations', () => {
       await key(words[1], 'ArrowDown')
       expect(dialog()?.querySelector('h2')?.textContent).toBe(second.text)
       expect(reading('BSB')?.querySelector('p')?.textContent).toBe(second.english)
+      expect(compare).not.toHaveBeenCalled()
+      await compareTranslations()
       expect(reading('KJV')?.textContent).toContain('Verse context')
       await act(async () => useAppStore.getState().setSourceForm('G264', false))
       expect(dialog()).toBeNull()
@@ -584,6 +786,8 @@ describe('source-word reading and quotations', () => {
       await mouse('mouseover', word)
       await advance(500)
       expect(reading('KJV')?.querySelector('p')?.textContent).toBe('The LORD')
+      expect(fetch).not.toHaveBeenCalled()
+      await compareTranslations()
       expect(reading('BSB')?.textContent).toContain('Verified wording')
       expect(reading('BSB')?.querySelector('p')?.textContent).toBe('The LORD')
       expect(reading('ASV')?.querySelector('p')?.textContent).toBe(asv.text)
@@ -612,11 +816,13 @@ describe('source-word reading and quotations', () => {
       const word = await renderComparison(fetch)
       await mouse('mouseover', word)
       await advance(500)
+      await compareTranslations()
       expect(reading('BSB')?.textContent).toContain('Loading')
       await key(word, 'Escape')
       expect(dialog()).toBeNull()
       await key(word, 'ArrowDown')
       expect(document.activeElement).toBe(dialog())
+      await compareTranslations()
       expect(reading('BSB')?.querySelector('p')?.textContent).toBe(berean().text)
       expect(reading('BSB')?.textContent).toContain('Verse context')
       expect(reading('ASV')?.textContent).toContain('Verse unavailable')
@@ -727,5 +933,64 @@ describe('source-word reading and quotations', () => {
       book: 'Ps', chapter: 23, verse: 1, endVerse: 2, translation: 'KJV',
       text: 'The LORD is my shepherd; He make'
     })
+  })
+})
+
+describe('protecting personal study edits', () => {
+  it('keeps an unsaved verse draft through a delayed highlight, dismissal, and reopen', async () => {
+    const highlight = deferred<void>()
+    const props = { x: 0, y: 0, translation: 'KJV', book: 'John', chapter: 1, verse: 2, verseText: '', onClose: vi.fn() }
+    Object.assign(window.api, { saveHighlight: () => highlight.promise, saveNote: vi.fn().mockResolvedValue({}) })
+    await act(async () => root.render(createElement(VersePopover, props)))
+    await clickButton('Add a note')
+    await change(host.querySelector('textarea')!, 'A personal observation')
+    await act(async () => host.querySelector<HTMLButtonElement>('[title="yellow"]')!.click())
+    await act(async () => highlight.resolve())
+    expect(props.onClose).not.toHaveBeenCalled()
+    expect(host.querySelector('textarea')!.value).toBe('A personal observation')
+    await act(async () => root.render(null))
+    await act(async () => root.render(createElement(VersePopover, props)))
+    expect(host.querySelector('textarea')!.value).toBe('A personal observation')
+    await clickButton('Save note')
+    expect(window.api.saveNote).toHaveBeenCalledWith(expect.objectContaining({ body: 'A personal observation', verse: 2 }))
+    await act(async () => root.render(null))
+    await act(async () => root.render(createElement(VersePopover, props)))
+    expect(host.querySelector('textarea')).toBeNull()
+  })
+
+  it('requires an explicit comparison before replacing edits made during an assistant request', async () => {
+    const answer = deferred<{ text: string }>()
+    Object.assign(window, { ai: { complete: () => answer.promise } })
+    Object.assign(window.notebook, { read: async () => 'Original words', write: vi.fn(),
+      list: async () => [{ name: 'first.md' }], getFolder: async () => '/notes' })
+    useAppStore.setState({ activeNotebookFile: 'first.md' })
+    await act(async () => root.render(createElement(NotebookPanel)))
+    await change(host.querySelector('input')!, 'Revise')
+    await clickButton('Ask')
+    await change(host.querySelector('textarea')!, 'Original plus new words')
+    await act(async () => answer.resolve({ text: 'Proposed text' }))
+    expect([...host.querySelectorAll('button')].find(b => b.textContent?.trim() === 'Apply')!.disabled).toBe(true)
+    expect(host.querySelector('details pre')?.textContent).toBe('Original plus new words')
+    await clickButton('Insert')
+    expect(host.querySelector('textarea')!.value).toBe('Original plus new words\n\nProposed text')
+  })
+
+  it('distinguishes a folder failure from an empty notebook and restores a deleted file', async () => {
+    let restored = false
+    Object.assign(window.notebook, {
+      getFolder: async () => '/notes', list: vi.fn().mockRejectedValueOnce(new Error('Access lost')).mockImplementation(async () => restored ? [{ name: 'A.md' }] : []),
+      listDeleted: async () => restored ? [] : [{ id: 'archive-id', name: 'A.md', modified: 1 }],
+      restoreDeleted: async (id: string) => { expect(id).toBe('archive-id'); restored = true; return { name: 'A.md' } },
+      read: async () => 'Restored words'
+    })
+    await act(async () => root.render(createElement(NotebookPanel)))
+    expect(host.textContent).toContain('Access lost')
+    expect(host.textContent).not.toContain('No notes yet')
+    await clickButton('Retry folder')
+    expect(host.textContent).toContain('No notes yet')
+    await clickButton('Recently deleted (1)')
+    await clickButton('Restore')
+    expect(host.querySelector('textarea')!.value).toBe('Restored words')
+    expect(host.textContent).toContain('Recently deleted (0)')
   })
 })

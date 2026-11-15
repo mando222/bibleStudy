@@ -6,6 +6,7 @@ import type {
   WordFrequencyPassageQuery, WordFrequencyQuery, WordFrequencyVerse
 } from '../../shared/wordFrequency'
 import { bibleDb } from './bible'
+import { greekOrderStatusSql } from './greekOrder'
 
 const supported = new Set<WordFrequencyEdition>(['MT', 'NA', 'TR', 'BYZ'])
 const indexReady = new WeakMap<DatabaseSync, boolean>()
@@ -184,12 +185,14 @@ export function getWordFrequencyPassages(query: WordFrequencyPassageQuery, db = 
   // Read all tokens of the matching native verses, including words without lexical tags.
   // Filtering on the native reference also handles a verse split across two reader verses.
   const numbers = [...passages.keys()]
-  const words = db.prepare(`SELECT native_verse,chapter,verse,position,original FROM original_tokens
+  const orderStatus = query.edition === 'MT' ? 'NULL' : greekOrderStatusSql(db, 'original_tokens')
+  const words = db.prepare(`SELECT native_verse,chapter,verse,position,original,${orderStatus} AS orderStatus FROM original_tokens
     WHERE edition=? AND book_id=? AND native_chapter=? AND native_verse IN (${numbers.map(() => '?').join(',')})
       AND (source_type IS NULL OR source_type NOT IN ('X','R'))
     ORDER BY native_verse,chapter,verse,position`).all(query.edition, query.book, query.chapter, ...numbers)
   for (const row of words) {
     const passage = passages.get(Number(row.native_verse))!
+    if (row.orderStatus === 'unverified' || row.orderStatus === 'unknown') passage.orderStatus = row.orderStatus
     const original = String(row.original)
     const parts = spans.get(`${row.chapter}/${row.verse}/${row.position}`) ?? []
     let next = 0

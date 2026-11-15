@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import { greekOrderNote } from '@shared/apparatus'
 import type { StrongsEntry } from '@shared/types'
 import { useStrongs } from '@/hooks/useStrongs'
 import ResultPages from './ResultPages'
@@ -15,12 +16,26 @@ import Snippet from './Snippet'
 import WordFrequency, { useFrequencySettings } from './WordFrequency'
 import OriginalVerseComparison from './OriginalVerseComparison'
 
-export default function LexiconCard({ id, inWords = false }: { id: string | null; inWords?: boolean }): JSX.Element {
-  const { entry, loading, error, retry } = useStrongs(id)
-  const occurrence = useAppStore(s => s.selectedStrongs === id ? s.selectedOccurrence : null)
+interface CardProps {
+  id: string | null
+  inWords?: boolean
+  savedOccurrence?: SelectedOccurrence | null
+}
+
+export default function LexiconCard({ id, inWords, savedOccurrence, chooseWord }: CardProps & { chooseWord?: (id: string) => void }): JSX.Element {
   const [section, setSection] = useState('Definition')
   const frequencySettings = useFrequencySettings()
+  return <div data-lexicon-card="" className="text-ink">
+    <EntryDetails id={id} inWords={inWords} savedOccurrence={savedOccurrence} section={section} setSection={setSection} />
+    {id && inWords && section === 'Word frequency' && <WordFrequency id={id} settings={frequencySettings} chooseWord={chooseWord} />}
+  </div>
+}
 
+function EntryDetails({ id, inWords, savedOccurrence, section, setSection }: CardProps & {
+  section: string; setSection: (section: string) => void
+}): JSX.Element {
+  const { entry, loading, error, retry } = useStrongs(id)
+  const occurrence = useAppStore(s => savedOccurrence !== undefined ? savedOccurrence : s.selectedStrongs === id ? s.selectedOccurrence : null)
   if (!id) {
     return (
       <div className="mt-10 flex flex-col items-center text-center text-muted">
@@ -55,7 +70,7 @@ export default function LexiconCard({ id, inWords = false }: { id: string | null
   const isHeb = entry.language === 'hebrew'
 
   return (
-    <div className="text-ink">
+    <>
       <div className="flex items-center justify-between">
         <span className="px-2 py-0.5 rounded-md bg-accent-soft text-accent text-xs font-semibold tabular-nums">
           {entry.id}
@@ -69,7 +84,7 @@ export default function LexiconCard({ id, inWords = false }: { id: string | null
       {!inWords && <OriginalFormControl id={entry.id} />}
       <div className="mt-3 text-[11px] uppercase tracking-wider text-faint">Dictionary headword</div>
       <div
-        dir={isHeb ? 'rtl' : 'ltr'}
+        data-lexicon-headword="" dir={isHeb ? 'rtl' : 'ltr'}
         className={`mt-1 text-4xl leading-tight text-ink ${isHeb ? 'font-hebrew' : 'font-greek'}`}
       >
         {entry.lemma}
@@ -93,8 +108,7 @@ export default function LexiconCard({ id, inWords = false }: { id: string | null
       {(!inWords || section === 'Concordance') && (
         <Concordance id={entry.id} occurrences={entry.occurrences} translation={occurrence?.translation} />
       )}
-      {inWords && section === 'Word frequency' && <WordFrequency id={entry.id} settings={frequencySettings} />}
-    </div>
+    </>
   )
 }
 
@@ -282,9 +296,10 @@ function Concordance({ id, occurrences, translation }: { id: string; occurrences
                   <span className="text-xs font-semibold text-accent whitespace-nowrap">
                     {h.bookName} {h.chapter}:{h.verse}
                   </span>{' '}
-                  <span className="text-sm text-ink leading-snug">
+                  <span data-study-scripture="" dir="auto" className="text-sm text-ink leading-snug">
                     <Snippet text={h.snippet} />
                   </span>
+                  {h.orderStatus && <span className="block text-xs text-muted">{greekOrderNote[h.orderStatus]}</span>}
                 </button>
               </li>
             ))}

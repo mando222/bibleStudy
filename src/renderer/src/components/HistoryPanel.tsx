@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Bookmark, HistoryEntry } from '@shared/types'
-import { useAppStore } from '@/store/useAppStore'
+import type { Bookmark, HistoryEntry, VerseRef } from '@shared/types'
+import { readingEdition, useAppStore } from '@/store/useAppStore'
 import { mapChapter, mapPassage } from '@shared/passageMapping'
+import { readPosition, readerViewKey } from '@/lib/readingPosition'
 import { BOOK_BY_ID } from '@shared/books'
 import { ClockIcon, BookmarkIcon } from './icons'
 
@@ -11,8 +12,10 @@ export default function HistoryPanel(): JSX.Element {
   const chapter = useAppStore((s) => s.chapter)
   const activeVerse = useAppStore((s) => s.activeVerse)
   const edition = useAppStore((s) => s.referenceEdition || s.primary)
-  const canonical = activeVerse == null ? mapChapter({ book, chapter }, edition, 'KJV')
-    : mapPassage({ book, chapter, verse: activeVerse }, edition, 'KJV')
+  const [spot, setSpot] = useState<VerseRef | null>(null)
+  const canonical = spot ? mapPassage(spot, spot.translation, 'KJV')
+    : activeVerse == null ? mapChapter({ book, chapter }, edition, 'KJV')
+      : mapPassage({ book, chapter, verse: activeVerse }, edition, 'KJV')
   const goToVerse = useAppStore((s) => s.goToVerse)
   const [open, setOpen] = useState(false)
   const [history, setHistory] = useState<HistoryEntry[]>([])
@@ -21,6 +24,8 @@ export default function HistoryPanel(): JSX.Element {
   const ref = useRef<HTMLDivElement | null>(null)
 
   const bookName = (id: string): string => BOOK_BY_ID[id]?.name ?? id
+  const titleFor = (b: string, c: number, v: number | null, id: string) =>
+    `${bookName(b)} ${c}${v != null ? ':' + v : ''}${id === 'LXX' ? ' (LXX)' : ''}`
 
   const refresh = (): void => {
     window.api.listHistory(30).then(setHistory).catch(() => setHistory([]))
@@ -30,7 +35,17 @@ export default function HistoryPanel(): JSX.Element {
   useEffect(() => {
     if (open) {
       refresh()
-      setName(`${bookName(book)} ${chapter}${activeVerse != null ? ':' + activeVerse : ''}${edition === 'LXX' ? ' (LXX)' : ''}`)
+      const state = useAppStore.getState()
+      const saved = readPosition()
+      const column = saved && [...document.querySelectorAll<HTMLElement>('[data-reader-scroll], [data-interlinear-reader]')]
+        .find(el => (el.dataset.readerScroll || el.dataset.readerEdition) === saved.translation &&
+          el.dataset.readerBook === saved.book && Number(el.dataset.readerChapter) === saved.chapter)
+      const current = saved && (!saved.viewKey || saved.viewKey === readerViewKey(state)) && column && Boolean(saved.interlinear) === state.interlinear && (
+        state.interlinear ? saved.translation === readingEdition(state) : state.parallels.includes(saved.translation)
+      ) ? saved : null
+      setSpot(current)
+      const ref = current ?? { book, chapter, verse: activeVerse, translation: edition }
+      setName(titleFor(ref.book, ref.chapter, ref.verse, ref.translation))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -47,7 +62,7 @@ export default function HistoryPanel(): JSX.Element {
 
   const addBookmark = async (): Promise<void> => {
     if (!canonical) return
-    const nm = name.trim() || `${bookName(book)} ${chapter}${activeVerse != null ? ':' + activeVerse : ''}${edition === 'LXX' ? ' (LXX)' : ''}`
+    const nm = name.trim() || titleFor(spot?.book ?? book, spot?.chapter ?? chapter, spot?.verse ?? activeVerse, spot?.translation ?? edition)
     await window.api.addBookmark({ name: nm, ...canonical, verse: 'verse' in canonical ? Number(canonical.verse) : 1 })
     refresh()
   }
@@ -87,6 +102,7 @@ export default function HistoryPanel(): JSX.Element {
               Bookmark
             </button>
           </div>
+          {!canonical && <p className="text-xs text-muted px-1 mb-2">A shared bookmark needs a verified passage reference in this edition.</p>}
 
           {bookmarks.length > 0 && (
             <>

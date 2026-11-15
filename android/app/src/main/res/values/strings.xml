@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Open Bible Study</string>
+    <string name="share">Share</string>
+    <item type="id" name="copy_published" />
+    <item type="id" name="share_published" />
+</resources>

@@ -9,7 +9,7 @@ import { countSourceSpans } from '../src/main/db/sourceWordCoverage'
 
 type Language = SourceWord['language']
 type StoredToken = { position: number; surface: string; trailer: string; strongs: string | null; lemma: string | null; translit: string | null; morph: string | null }
-type SourceRow = { keys: string[]; english: string; printed: string; language: Language; id: string; strongs: string; text: string; translit: string; morph: string; eligible: boolean }
+type SourceRow = { keys: string[]; english: string; printed: string; language: Language; id: string; strongs: string; text: string; readings: string; translit: string; morph: string; eligible: boolean }
 type WitnessToken = { original: string; strongs: string | null; morph: string | null; source_type: string | null }
 type Ref = { book: string; chapter: number; verse: number }
 
@@ -78,6 +78,7 @@ export function buildSourceWordSpans(db: DatabaseSync, path: string): void {
     WHERE translation_id=? AND book_id=? AND chapter=? AND verse=? ORDER BY position`)
   const insert = db.prepare(`INSERT INTO source_word_spans VALUES(?,?,?,?,?,?,?,?,?)`)
   const singleton = db.prepare('INSERT INTO source_word_singletons VALUES(?,?,?,?,?,?)')
+  const uniqueForm = db.prepare('INSERT INTO interlinear_source_rows VALUES(?,?,?,?)')
   const witnessVerse = db.prepare(`SELECT original, strongs, morph, source_type FROM original_tokens
     WHERE edition=? AND book_id=? AND chapter=? AND verse=?`)
 
@@ -86,6 +87,13 @@ export function buildSourceWordSpans(db: DatabaseSync, path: string): void {
     const bsb = tokens.all('BSB', ...loc) as StoredToken[]
     if (!bsb.length) return
     const complete = completeAlignment(rows, bsb)
+    const formCounts = new Map<string, number>()
+    for (const row of rows) {
+      // Include every printed alternative and every source row, even ones omitted in English.
+      const forms = new Set((row.text + ' ' + row.readings).normalize('NFC').match(
+        /[\p{Script=Greek}א-ת][\p{Script=Greek}א-ת\p{M}]*[᾽’']?/gu) ?? [])
+      for (const form of forms) formCounts.set(form, (formCounts.get(form) ?? 0) + 1)
+    }
     const sourceKeys = rows.flatMap(row => row.keys)
     const printedKeys = bsb.flatMap(t => englishWords(t.surface))
     const sameOrder = sourceKeys.length === printedKeys.length && sourceKeys.every((w, i) => w === printedKeys[i])
@@ -135,6 +143,7 @@ export function buildSourceWordSpans(db: DatabaseSync, path: string): void {
           englishSpan(token.surface) !== row.english ||
           targetKeys.length !== row.keys.length || !targetKeys.every((w, i) => w === row.keys[i])) continue
       insert.run('BSB', ...loc, token.position, token.position, token.position, row.id, row.language)
+      if (formCounts.get(witnessForm(row.text, row.language)) === 1) uniqueForm.run(...loc, row.id)
       const canStandAlone = complete && row.keys.length === 1 && !row.morph.includes('|') &&
         !/^['’]/u.test(token.trailer)
       if (canStandAlone) singleton.run('BSB', ...loc, token.position, row.id)
@@ -200,7 +209,7 @@ export function buildSourceWordSpans(db: DatabaseSync, path: string): void {
       const keys = englishWords(english)
       // A word omitted in English is still relevant to the repeated-lemma check.
       if (!text && !english && !c[6].trim()) continue
-      rows.push({ keys, english: englishSpan(english), printed: english, language, id,
+      rows.push({ keys, english: englishSpan(english), printed: english, readings: c[6].trim(), language, id,
         strongs: (greek ? 'G' : 'H') + num, text, translit, morph: c[9].trim(),
         eligible: ['Hebrew', 'Aramaic', 'Greek'].includes(language) && /^[1-9]\d*(?:\.\d+)?$/.test(id) &&
           /^\d+$/.test(num) && !!translit && text === c[6].trim() &&

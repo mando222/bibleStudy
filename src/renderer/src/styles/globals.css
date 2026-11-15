@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* A short next chapter must still be able to reach the top and bring its successor into view. */
+[data-flow-chapter]:last-child:not([data-flow-active]) {
+  min-height: 100%;
+}
+
 :root {
   /* Warm "paper" light theme — space-separated RGB for Tailwind alpha support */
   --bg: 250 248 244;

@@ -56,6 +56,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm ci --prefix mobile
       - run: npm run typecheck
       - run: npm test
 
@@ -96,6 +97,43 @@ jobs:
             Linux)   sudo apt-get update && sudo apt-get install -y xvfb
                      xvfb-run -a "dist/linux-unpacked/open-bible-study" --smoke-test --no-sandbox ;;
           esac
+      - name: Set up Java for Android
+        if: runner.os == 'Linux'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Build the Android app with the same offline library
+        if: runner.os == 'Linux'
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.1.0"
+          npm ci --prefix mobile
+          npm run sync --prefix mobile
+          ./android/gradlew -p android assembleRelease
+      - name: Sign and check the Android installer
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          export OBS_ANDROID_KEYSTORE="$RUNNER_TEMP/obs-signing.keystore"
+          trap 'rm -f "$OBS_ANDROID_KEYSTORE"' EXIT
+          if [[ -n "$ANDROID_KEYSTORE_BASE64" ]]; then
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$OBS_ANDROID_KEYSTORE"
+          elif [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            export ANDROID_STORE_PASSWORD="$(openssl rand -hex 24)"
+            export ANDROID_KEY_PASSWORD="$ANDROID_STORE_PASSWORD"
+            keytool -genkeypair -keystore "$OBS_ANDROID_KEYSTORE" -storepass:env ANDROID_STORE_PASSWORD \
+              -keypass:env ANDROID_KEY_PASSWORD -alias ci -keyalg RSA -keysize 3072 -validity 7 -dname 'CN=CI test only'
+          else
+            echo "::error::Configure the Android signing secrets documented in docs/RELEASING.md."
+            exit 1
+          fi
+          bash build/android-release.sh
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
@@ -105,6 +143,7 @@ jobs:
             dist/*.exe
             dist/*.AppImage
             dist/*.deb
+            dist/android-release/*.apk
           if-no-files-found: warn
 
   # Publish the Release only after every platform built + passed its smoke test.
@@ -136,13 +175,15 @@ jobs:
           | macOS (Apple Silicon) | `*-mac-arm64.dmg` |
           | Windows | `*-setup.exe` |
           | Linux | `*.AppImage` or `*.deb` |
+          | Android 7 or later | `Open-Bible-Study-Android-<version>.apk` |
 
-          First launch shows a one-time "unidentified developer" prompt (the app isn't code-signed) — see the [install guide](https://github.com/mando222/bibleStudy/blob/main/docs/INSTALL.md) for the one-click fix per OS. Your notes and settings carry over across updates.
+          See the [install guide](https://github.com/mando222/bibleStudy/blob/main/docs/INSTALL.md) for first launch and Android installation. Your notes and settings carry over across updates.
           EOF
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.check.outputs.version }}
+          target_commitish: ${{ github.sha }}
           name: v${{ needs.check.outputs.version }}
           generate_release_notes: true # GitHub's auto "What's Changed" is appended below the changelog
           append_body: true
@@ -152,3 +193,5 @@ jobs:
             installers/**/*.exe
             installers/**/*.AppImage
             installers/**/*.deb
+            installers/**/*.apk
+          fail_on_unmatched_files: true

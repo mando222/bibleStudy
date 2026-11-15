@@ -1,9 +1,15 @@
 import { bibleDb } from './bible'
+import { motherRefs } from '../../shared/familyEvidence'
+import { atlasIdentity, personAliasIds } from './personMapNames'
+import type { MapName } from './personMapNames'
 import { mappedPlaceIds } from './passageStudy'
 import type {
   PersonListItem,
+  PeoplePage,
   PersonDetail,
   PersonRef,
+  FamilyChild,
+  FamilySibling,
   PlaceItem,
   EventItem
 } from '../../shared/types'
@@ -19,24 +25,28 @@ function db(): NonNullable<ReturnType<typeof bibleDb>> {
 
 /** People for the Genealogies list, optionally filtered by a name query. */
 export function getPeople(query = '', limit = 400): PersonListItem[] {
+  return getPeoplePage(query, limit, 0).people
+}
+
+export function getPeoplePage(query: string, limit: number, offset: number): PeoplePage {
   const d = db()
-  const q = query.trim()
-  const where = q ? 'WHERE name LIKE ?' : ''
-  const params: (string | number)[] = q ? [`%${q}%`] : []
-  const rows = d
-    .prepare(
-      `SELECT id, name, gender, birth_year, death_year, verse_count
-       FROM people ${where} ORDER BY verse_count DESC, name LIMIT ?`
-    )
-    .all(...params, Math.min(limit, 800)) as Record<string, unknown>[]
-  return rows.map((r) => ({
-    id: r.id as number,
-    name: r.name as string,
-    gender: (r.gender as string) ?? null,
-    birthYear: (r.birth_year as number) ?? null,
-    deathYear: (r.death_year as number) ?? null,
-    verseCount: r.verse_count as number
-  }))
+  const key = query.trim()
+  const where = key ? 'WHERE instr(lower(p.name), lower(?)) > 0 OR p.id IN (SELECT value FROM json_each(?))' : ''
+  const args = key ? [key, JSON.stringify(personAliasIds(key))] : []
+  const { total } = d.prepare(`SELECT count(*) AS total FROM people p ${where}`).get(...args) as { total: number }
+  const rows = d.prepare(`WITH namesakes AS (SELECT name FROM people GROUP BY name HAVING count(*) > 1)
+    SELECT p.id, p.name, p.gender, p.birth_year AS birthYear, p.death_year AS deathYear,
+      p.verse_count AS verseCount, json_extract(p.verses, '$[0]') AS firstRef, parent.name AS parentName,
+      namesakes.name IS NOT NULL AS hasNamesake
+    FROM people p LEFT JOIN people parent ON parent.id = COALESCE(p.father_id, p.mother_id)
+    LEFT JOIN namesakes ON namesakes.name = p.name ${where}
+    ORDER BY p.verse_count DESC, p.name, p.id LIMIT ? OFFSET ?`)
+    .all(...args, Math.min(800, Math.max(1, Math.trunc(limit))), Math.max(0, Math.trunc(offset))) as unknown as
+      (MapName & PersonListItem & { firstRef: string | null })[]
+  return { total, people: rows.map(row => ({
+    ...atlasIdentity(row), gender: row.gender, birthYear: row.birthYear, deathYear: row.deathYear,
+    verseCount: row.verseCount, firstRef: row.firstRef
+  })) }
 }
 
 /** One person: relationships (clickable) + every verse that references them. */
@@ -51,12 +61,33 @@ export function getPerson(id: number): PersonDetail | null {
     const r = d.prepare('SELECT id, name FROM people WHERE id = ?').get(pid as number)
     return (r as unknown as PersonRef) ?? null
   }
-  const children = d
-    .prepare(
-      `SELECT pl.id, pl.name FROM person_links l JOIN people pl ON pl.id = l.related_id
-       WHERE l.person_id = ? AND l.kind = 'child' ORDER BY pl.name`
-    )
-    .all(id) as unknown as PersonRef[]
+  const childRows = d.prepare(`SELECT c.id, c.name, f.id AS fatherId, f.name AS fatherName,
+      m.id AS motherId, m.name AS motherName FROM people c
+    LEFT JOIN people f ON f.id=c.father_id LEFT JOIN people m ON m.id=c.mother_id
+    WHERE c.father_id=? OR c.mother_id=? OR c.id IN
+      (SELECT related_id FROM person_links WHERE person_id=? AND kind='child')
+    ORDER BY c.name, c.id`).all(id, id, id) as unknown as
+      (PersonRef & { fatherId: number | null; fatherName: string; motherId: number | null; motherName: string })[]
+  const children: FamilyChild[] = childRows.map(c => ({
+    id: c.id, name: c.name,
+    father: c.fatherId == null ? null : { id: c.fatherId, name: c.fatherName },
+    mother: c.motherId == null ? null : { id: c.motherId, name: c.motherName },
+    motherRefs: motherRefs(c.motherId, c.id)
+  }))
+  // An explicit sibling link can exist without a named parent. A half-sibling
+  // label requires a shared parent AND two different identified other parents.
+  const siblings = d.prepare(`SELECT s.id, s.name, CASE
+      WHEN s.father_id=p.father_id AND s.mother_id=p.mother_id THEN 'both'
+      WHEN s.father_id=p.father_id AND s.mother_id<>p.mother_id THEN 'halfFather'
+      WHEN s.mother_id=p.mother_id AND s.father_id<>p.father_id THEN 'halfMother'
+      WHEN s.father_id=p.father_id THEN 'father'
+      WHEN s.mother_id=p.mother_id THEN 'mother'
+      ELSE 'recorded' END AS relation
+    FROM people p JOIN people s ON s.id<>p.id AND
+      (s.father_id=p.father_id OR s.mother_id=p.mother_id OR s.id IN
+        (SELECT CASE WHEN person_id=? THEN related_id ELSE person_id END FROM person_links
+         WHERE kind='sibling' AND (person_id=? OR related_id=?)))
+    WHERE p.id=? ORDER BY s.name, s.id`).all(id, id, id, id) as unknown as FamilySibling[]
   const spouses = d
     .prepare(
       `SELECT DISTINCT pl.id, pl.name FROM person_links l
@@ -77,25 +108,22 @@ export function getPerson(id: number): PersonDetail | null {
     mother: refOf(p.mother_id),
     spouses,
     children,
+    siblings,
     verses: JSON.parse((p.verses as string) || '[]') as string[]
   }
 }
 
 /** The paternal lineage trace: the chain of fathers from the root ancestor down to this person. */
 export function getAncestry(id: number): PersonRef[] {
-  const d = db()
-  const stmt = d.prepare('SELECT id, name, father_id FROM people WHERE id = ?')
-  const chain: PersonRef[] = []
-  const seen = new Set<number>()
-  let cur: number | null = id
-  while (cur != null && !seen.has(cur) && chain.length < 80) {
-    seen.add(cur)
-    const p = stmt.get(cur) as { id: number; name: string; father_id: number | null } | undefined
-    if (!p) break
-    chain.push({ id: p.id, name: p.name })
-    cur = p.father_id ?? null
-  }
-  return chain.reverse() // earliest ancestor first
+  // Include the reader's selection, with the oldest known ancestor first. The comma-delimited
+  // ID path stops cycles without confusing a short ID with a substring of another.
+  return db().prepare(`WITH RECURSIVE ancestry(id, name, father_id, depth, path) AS (
+    SELECT id, name, father_id, 1, printf(',%d,', id) FROM people WHERE id=?
+    UNION ALL
+    SELECT p.id, p.name, p.father_id, a.depth + 1, a.path || p.id || ','
+      FROM ancestry a JOIN people p ON p.id=a.father_id
+      WHERE a.depth < 80 AND instr(a.path, printf(',%d,', p.id))=0
+    ) SELECT id, name FROM ancestry ORDER BY depth DESC`).all(id) as unknown as PersonRef[]
 }
 
 /** The full atlas directory includes unlocated places and their references. */
@@ -136,19 +164,24 @@ export function getEvents(): EventItem[] {
   const rows = d
     .prepare('SELECT * FROM events ORDER BY sort_key, start_year')
     .all() as Record<string, unknown>[]
-  const nameOf = d.prepare('SELECT id, name FROM people WHERE id = ?')
-  const placeOf = d.prepare('SELECT id, name FROM places WHERE id = ?')
-  const refs = (json: unknown, stmt: typeof nameOf): PersonRef[] =>
-    (JSON.parse((json as string) || '[]') as number[])
-      .map((pid) => stmt.get(pid) as unknown as PersonRef | undefined)
-      .filter((x): x is PersonRef => !!x)
+  // A single catalog query per entity kind keeps the 450-event timeline responsive over
+  // a database bridge. The publisher's participant and place arrays retain their order.
+  const catalog = (table: 'people' | 'places', column: 'participants' | 'place_ids') => {
+    const entries = d.prepare(`SELECT id, name FROM ${table} WHERE id IN (
+      SELECT j.value FROM events e, json_each(e.${column}) j)`).all() as unknown as PersonRef[]
+    return new Map(entries.map(item => [item.id, item]))
+  }
+  const people = catalog('people', 'participants')
+  const places = catalog('places', 'place_ids')
+  const refs = (json: unknown, names: Map<number, PersonRef>): PersonRef[] =>
+    (JSON.parse(String(json || '[]')) as number[]).flatMap(id => names.get(id) ?? [])
   return rows.map((r) => ({
     id: r.id as number,
     title: r.title as string,
     startYear: (r.start_year as number) ?? null,
     endYear: (r.end_year as number) ?? null,
-    participants: refs(r.participants, nameOf),
-    places: refs(r.place_ids, placeOf),
+    participants: refs(r.participants, people),
+    places: refs(r.place_ids, places),
     verses: JSON.parse((r.verses as string) || '[]') as string[]
   }))
 }

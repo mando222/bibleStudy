@@ -1,16 +1,20 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { useAppStore } from '@/store/useAppStore'
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { readingEdition, useAppStore } from '@/store/useAppStore'
 import { mapChapterStart, mapPassage } from '@shared/passageMapping'
 import { BOOK_BY_ID } from '@shared/books'
+import { chapterKey, useChapterStream } from '@/hooks/useChapterStream'
 import { useChapter } from '@/hooks/useChapter'
 import { useVerseNavigation } from '@/hooks/useVerseNavigation'
 import { useHighlights, useNotes } from '@/hooks/useUserData'
+import { activeChapter, readerViewKey, readPosition, recordPosition, restorePosition, type ReadingPosition } from '@/lib/readingPosition'
 import { publishedCopy, publishedSelection } from '@/lib/scriptureSelection'
 import VerseView from './VerseView'
+import { ReaderActions } from './ReaderActions'
 import { WordComparisonProvider } from './RestoredWordComparison'
 import VersePopover from './VersePopover'
 import InterlinearReader from './InterlinearReader'
 import { BookIcon, SparkleIcon } from './icons'
+import PassageKeyboard from './PassageKeyboard'
 import { ReadingTools, StructuredPassages } from './ReadingTools'
 import { chooseColumn, editionDisplay } from '@shared/readingDisplay'
 
@@ -27,6 +31,7 @@ export default function ReadingPanel(): JSX.Element {
   const location = JSON.stringify([book, chapter, referenceEdition, activeVerse, parallels])
   const refs = useRef<(HTMLDivElement | null)[]>([])
   const reader = useRef<HTMLDivElement>(null)
+  const touch = useContext(ReaderActions)
   useEffect(() => {
     function copyPublished(event: ClipboardEvent): void {
       const selection = window.getSelection()
@@ -40,17 +45,49 @@ export default function ReadingPanel(): JSX.Element {
     document.addEventListener('copy', copyPublished)
     return () => document.removeEventListener('copy', copyPublished)
   }, [])
+  const visit = useAppStore(s => s.readerVisit)
+  const viewKey = readerViewKey(useAppStore.getState())
+  const [startup] = useState<{ viewKey: string; saved: ReadingPosition | null }>(() => {
+    const saved = readPosition()
+    // Legacy phone positions lack a view key; restoration still checks their native chapter.
+    const state = useAppStore.getState()
+    const target = readingEdition(state)
+    const anchor = state.activeVerse == null || !target ? null
+      : mapPassage({ book: state.book, chapter: state.chapter, verse: state.activeVerse }, state.referenceEdition || state.primary, target)
+    const fallback = anchor && { ...anchor, translation: target, interlinear: state.interlinear, scroll: null }
+    return { viewKey, saved: saved && (!saved.viewKey || saved.viewKey === viewKey) ? saved : fallback }
+  })
+  const initial = !visit && startup.viewKey === viewKey ? startup.saved : null
+  const consumeInitial = () => { startup.saved = null }
   const driver = useRef<number | null>(null)
-  useEffect(() => { driver.current = null }, [location])
-  const [anchor, setAnchor] = useState<{ key: string; edition: string; book: string; chapter: number; verse: number } | null>(null)
+  useEffect(() => { driver.current = null }, [visit, parallels])
+  const [anchor, setAnchor] = useState<{ key: string; edition: string; book: string; chapter: number; verse: number } | null>(() =>
+    initial?.viewKey && !initial.interlinear && parallels.includes(initial.translation)
+      ? { key: location, book: initial.book, chapter: initial.chapter, verse: initial.verse, edition: initial.translation } : null)
+  const [independent, setIndependent] = useState<{ key: string; columns: Record<string, { book: string; chapter: number }> } | null>(null)
   const current = anchor?.key === location ? anchor : null
   const source = current ?? { book, chapter, verse: activeVerse, edition: referenceEdition }
-  const columns = parallels.map((edition) => source.verse == null
+  const mapped = parallels.map((edition) => source.verse == null
     ? mapChapterStart(source, source.edition, edition)
     : mapPassage({ ...source, verse: source.verse }, source.edition, edition))
+  // An imported module can open alongside a chapter by its printed address. It scrolls independently.
+  const held = independent?.key === JSON.stringify([book, chapter, referenceEdition, parallels, visit]) ? independent.columns : {}
+  const columns = mapped.map((native, i) => native ?? (source.edition.startsWith('imp_') || parallels[i].startsWith('imp_')
+    ? { ...(held[parallels[i]] ?? { book, chapter }), verse: null } : null))
+  function keepIndependentColumns(index: number, page: { book: string; chapter: number }) {
+    const edition = parallels[index]
+    const keep: Record<string, { book: string; chapter: number }> = {}
+    parallels.forEach((id, i) => {
+      const col = columns[i]
+      if (i !== index && col && (edition.startsWith('imp_') || id.startsWith('imp_')))
+        keep[id] = { book: col.book, chapter: col.chapter }
+    })
+    if (Object.keys(keep).length)
+      setIndependent({ key: JSON.stringify([page.book, page.chapter, edition, parallels, visit]), columns: keep })
+  }
   // Open tools in the edition the reader selected, or in the lead visible column for a navigator jump.
   const scopeEdition = parallels.includes(source.edition) ? source.edition : parallels[0]
-  const scope = parallels.includes(source.edition) ? source : columns[0]
+  const scope = parallels.includes(source.edition) ? source : mapped[0]
 
   // Align on the visible verse. Equal pixel offsets can be chapters apart in differently wrapped text.
   const onScroll = (idx: number): void => {
@@ -58,19 +95,20 @@ export default function ReadingPanel(): JSX.Element {
     const native = columns[idx]
     if (driver.current !== idx || !source || !native || parallels.length < 2) return
     const top = source.getBoundingClientRect().top
-    const first = [...source.querySelectorAll<HTMLElement>('[data-verse]')].find((el) => el.getBoundingClientRect().bottom > top)
+    const first = [...activeChapter(source).querySelectorAll<HTMLElement>('[data-verse]')].find((el) => el.getBoundingClientRect().bottom > top)
     if (!first) return
     const verse = Number(first.dataset.verse)
     const passage = { book: native.book, chapter: native.chapter, verse }
     const offset = Math.min(0, first.getBoundingClientRect().top - top)
     const peers = parallels.map((id) => mapPassage(passage, parallels[idx], id))
-    if (peers.some((peer, i) => peer?.chapter !== columns[i]?.chapter || peer?.book !== columns[i]?.book)) {
+    if (peers.some((peer, i) => i !== idx && !parallels[idx].startsWith('imp_') && !parallels[i].startsWith('imp_') &&
+      (peer?.chapter !== mapped[i]?.chapter || peer?.book !== mapped[i]?.book))) {
       setAnchor({ key: location, edition: parallels[idx], ...passage })
     }
     peers.forEach((peer, i) => {
       const el = refs.current[i]
       if (i === idx || !el || !peer || columns[i]?.chapter !== peer.chapter || columns[i]?.book !== peer.book) return
-      const row = el.querySelector<HTMLElement>(`[data-verse="${peer.verse}"]`)
+      const row = activeChapter(el).querySelector<HTMLElement>(`[data-verse="${peer.verse}"]`)
       if (row) el.scrollTop += row.getBoundingClientRect().top - el.getBoundingClientRect().top - offset
     })
   }
@@ -84,14 +122,14 @@ export default function ReadingPanel(): JSX.Element {
   return (
     <div ref={reader} className="h-full flex flex-col bg-bg">
       <WordComparisonProvider location={JSON.stringify([location, interlinear])}>
-      {!interlinear && scope && <ReadingTools range={{ edition: scopeEdition, book: scope.book, chapter: scope.chapter,
+      {!touch && !interlinear && scope && <ReadingTools range={{ edition: scopeEdition, book: scope.book, chapter: scope.chapter,
         ...(source.verse != null && scope.verse != null ? { firstVerse: scope.verse } : {}) }}/>}
       {interlinear ? (
         <div className="flex-1 min-h-0">
-          <InterlinearReader book={book} chapter={chapter} />
+          <InterlinearReader book={book} chapter={chapter} initial={initial?.interlinear ? initial : null} consumeInitial={consumeInitial} />
         </div>
       ) : (
-        <div className="flex-1 min-h-0 flex divide-x divide-line">
+        <div data-reader-columns={parallels.length} className="flex-1 min-h-0 flex divide-x divide-line">
           {parallels.map((t, i) => {
             const native = columns[i]
             const header = { translation: t, index: i, canRemove: parallels.length > 1 }
@@ -102,11 +140,14 @@ export default function ReadingPanel(): JSX.Element {
               </div>
             )
             return <Column key={t + i} {...header} book={native.book} chapter={native.chapter}
-              alignTo={source.edition !== t && driver.current !== i ? native.verse : null}
+              independent={!mapped[i]} onEnter={page => keepIndependentColumns(i, page)}
+              initial={initial && !initial.interlinear && initial.translation === t ? initial : null}
+              consumeInitial={consumeInitial} trackScroll={() => driver.current === i || (i === 0 && driver.current == null)}
+              alignTo={source.edition !== t && driver.current !== i ? mapped[i]?.verse ?? null : null}
               takeScrollControl={() => { driver.current = i }}
               registerRef={(el) => (refs.current[i] = el)} onScroll={() => onScroll(i)} />
           })}
-          {canAdd && (
+          {!touch && canAdd && (
             <button
               onClick={addColumn}
               title="Add a parallel translation"
@@ -197,10 +238,11 @@ function ColumnHeader({
     setParallels(chooseColumn(parallels, index, id))
   }
   return (
-    <div className="h-9 shrink-0 border-b border-line bg-panel px-2 flex items-center gap-1">
+    <div data-column-header="" className="h-9 shrink-0 border-b border-line bg-panel px-2 flex items-center gap-1">
       <select
         ref={selectRef}
         value={translation}
+        aria-label={`Translation in column ${index + 1}`}
         onChange={(e) => setColumn(e.target.value)}
         title={currentName}
         className="flex-1 min-w-0 bg-elevated border border-line rounded-md text-xs px-2 py-1 text-ink outline-none focus:border-accent"
@@ -230,13 +272,87 @@ interface ColumnProps {
   canRemove: boolean
   book: string
   chapter: number
+  independent: boolean
   alignTo: number | null
+  onEnter: (ref: { book: string; chapter: number }) => void
+  initial: ReadingPosition | null
+  consumeInitial: () => void
+  trackScroll: () => boolean
   takeScrollControl: () => void
   registerRef: (el: HTMLDivElement | null) => void
   onScroll: () => void
 }
 
-function Column({ translation, index, canRemove, book, chapter, alignTo, takeScrollControl, registerRef, onScroll }: ColumnProps): JSX.Element {
+function Column({ translation, index, canRemove, book, chapter, independent, alignTo, onEnter, initial, consumeInitial, trackScroll, takeScrollControl, registerRef, onScroll }: ColumnProps): JSX.Element {
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const ref = { book, chapter, translation }
+  const stream = useChapterStream(containerRef, ref, false, onEnter)
+  const key = translation + '/' + chapterKey(ref)
+  const [loaded, setLoaded] = useState<{ key: string; first?: number } | null>(null)
+  const ready = loaded?.key === key
+  const meta = useAppStore(s => s.translations.find(t => t.id === translation))
+  const chapterNumbers = useAppStore(s => editionDisplay(s.displayDefaults, s.displayOverrides, translation).chapterNumbers)
+  const bookName = BOOK_BY_ID[book]?.name ?? book
+  useVerseNavigation(containerRef, ref, ready, index === 0, true)
+
+  useEffect(() => {
+    if (!ready || !initial || !containerRef.current || initial.book !== book || initial.chapter !== chapter) return
+    takeScrollControl()
+    restorePosition(containerRef.current, initial)
+    consumeInitial()
+  }, [book, chapter, ready, initial])
+
+  const requested = useAppStore(s => s.scrollToVerse)
+  const lastAlign = useRef('')
+  useEffect(() => {
+    if (!ready || alignTo == null) { lastAlign.current = ''; return }
+    const target = key + ':' + alignTo
+    if (lastAlign.current === target) return
+    lastAlign.current = target
+    if (requested != null || alignTo === loaded?.first) return
+    const el = containerRef.current
+    const row = el && activeChapter(el).querySelector<HTMLElement>(`[data-verse="${alignTo}"]`)
+    if (el && row) el.scrollTop += row.getBoundingClientRect().top - el.getBoundingClientRect().top
+  }, [ready, alignTo, requested, key, loaded])
+
+  function handleScrollInput() {
+    takeScrollControl()
+    stream.input()
+    if (containerRef.current) delete containerRef.current.dataset.readerAnchor
+  }
+
+  return (
+    <div className="flex-1 min-w-0 flex flex-col min-h-0">
+      <ColumnHeader translation={translation} index={index} canRemove={canRemove} />
+      <div className="shrink-0 px-2 text-xs text-muted" aria-label="Native passage">{bookName}{chapterNumbers && ` ${chapter}`} · {meta?.abbrev ?? translation}
+        {independent && ' · Independent scroll (verse numbering unverified)'}
+      </div>
+      <div ref={el => {
+        containerRef.current = el
+        registerRef(el)
+      }} onWheelCapture={handleScrollInput} onPointerDownCapture={handleScrollInput} onKeyDownCapture={handleScrollInput}
+        onScroll={e => {
+          if (!trackScroll() || stream.crossBoundary()) return
+          onScroll()
+          if (ready) recordPosition(e.currentTarget, book, chapter, translation, false, readerViewKey(useAppStore.getState()))
+        }}
+        style={{ overflowAnchor: 'none' }} data-reader-book={book} data-reader-chapter={chapter} data-reader-scroll={translation}
+        className="flex-1 overflow-y-auto relative">
+        {stream.pages.map((page, i) => {
+          const active = chapterKey(page) === chapterKey(ref)
+          return <ColumnPage key={chapterKey(page)} {...page} translation={translation} active={active}
+            before={!active && i === 0}
+            containerRef={containerRef} enter={stream.enter} onReady={first => setLoaded({ key, first })} />
+        })}
+      </div>
+    </div>
+  )
+}
+
+function ColumnPage({ translation, book, chapter, active, before, containerRef, enter, onReady }: {
+  translation: string; book: string; chapter: number; active: boolean; before: boolean
+  containerRef: React.RefObject<HTMLDivElement>; enter: ReturnType<typeof useChapterStream>['enter']; onReady: (first?: number) => void
+}) {
   const { data, loading, error } = useChapter(translation, book, chapter)
   const meta = useAppStore((s) => s.translations.find((x) => x.id === translation))
   const strongsVisible = useAppStore((s) => s.strongsVisible)
@@ -247,13 +363,13 @@ function Column({ translation, index, canRemove, book, chapter, alignTo, takeScr
   const inspect = useAppStore(s => s.inspectStudy)
   const hasParallel = useAppStore(s => s.parallels.length >= 2)
   const highlights = useHighlights(translation, book, chapter)
-  const { byVerse, loading: notesLoading, error: notesError, retry: retryNotes } = useNotes(book, chapter, translation, data?.verses)
-  const containerRef = useRef<HTMLDivElement | null>(null)
+  const { byVerse, loading: notesLoading, error: notesError, retry: retryNotes } = useNotes(book, chapter, translation)
+  const section = useRef<HTMLElement>(null)
+  const touch = useContext(ReaderActions)
   const [menu, setMenu] = useState<{ verse: number; x: number; y: number } | null>(null)
   // Floating "Ask the assistant" button shown when the reader selects text.
   const [sel, setSel] = useState<{ x: number; y: number; text: string; v1: number; v2: number } | null>(null)
   const askAssistantAbout = useAppStore((s) => s.askAssistantAbout)
-  const focusVerse = useAppStore((s) => s.focusVerse)
   const rtl = data?.direction === 'rtl'
   const bookName = BOOK_BY_ID[book]?.name ?? book
 
@@ -263,7 +379,7 @@ function Column({ translation, index, canRemove, book, chapter, alignTo, takeScr
     const selection = window.getSelection()
     if (!el || !selection || selection.isCollapsed) return setSel(null)
     const range = selection.rangeCount ? selection.getRangeAt(0) : null
-    const passage = el.querySelector<HTMLElement>('[data-scripture-passage]')
+    const passage = section.current?.querySelector<HTMLElement>('[data-scripture-passage]')
     if (!range || !passage?.contains(range.commonAncestorContainer)) return setSel(null)
     const selected = publishedSelection(passage, range)
     if (!selected?.text.trim()) return setSel(null)
@@ -293,20 +409,17 @@ function Column({ translation, index, canRemove, book, chapter, alignTo, takeScr
     window.getSelection()?.removeAllRanges()
   }
 
-  useVerseNavigation(containerRef, `${translation}:${book}:${chapter}`, !loading && !!data, index === 0, translation)
+  useLayoutEffect(() => {
+    if (active && data && !loading) onReady(data.verses[0]?.verse)
+  }, [data, loading, active])
 
-  const requested = useAppStore((s) => s.scrollToVerse)
-  const lastAlign = useRef('')
   useEffect(() => {
-    if (!data || alignTo == null) { lastAlign.current = ''; return }
-    const key = `${translation}:${book}:${chapter}:${alignTo}`
-    if (lastAlign.current === key) return
-    lastAlign.current = key
-    if (requested != null || alignTo === data.verses[0]?.verse) return
     const el = containerRef.current
-    const row = el?.querySelector<HTMLElement>(`[data-verse="${alignTo}"]`)
-    if (el && row) el.scrollTop += row.getBoundingClientRect().top - el.getBoundingClientRect().top
-  }, [data, alignTo, requested, translation, book, chapter])
+    if (!sel || !el) return
+    const close = () => setSel(null)
+    el.addEventListener('scroll', close, { once: true })
+    return () => el.removeEventListener('scroll', close)
+  }, [sel, containerRef])
 
   // A menu or text selection belongs to the passage where it was opened.
   useEffect(() => {
@@ -317,34 +430,26 @@ function Column({ translation, index, canRemove, book, chapter, alignTo, takeScr
   const openMenu = (verse: number, e: React.MouseEvent): void => {
     const el = containerRef.current
     if (!el) return
-    const r = el.getBoundingClientRect()
-    focusVerse(book, chapter, verse, translation)
-    const trigger = e.currentTarget.getBoundingClientRect()
+    enter({ book, chapter }, verse, true)
+    if (touch) {
+      const row = data?.verses.find(item => item.verse === verse)
+      if (row) touch.verse({ translation, book, chapter, verse, text: row.text, highlight: highlights.get(verse), notes: byVerse.get(verse) ?? [] })
+      return
+    }
+    const marker = e.currentTarget as HTMLElement
+    const trigger = marker.getBoundingClientRect()
     const x = e.detail === 0 ? trigger.left : e.clientX
     const y = e.detail === 0 ? trigger.bottom : e.clientY
-    setMenu({ verse, x: Math.max(0, Math.min(x - r.left, el.clientWidth - 256)) + el.scrollLeft, y: y - r.top + el.scrollTop })
+    marker.focus({ preventScroll: true })
+    setMenu({ verse, x, y })
   }
 
   return (
-    <div className="flex-1 min-w-0 flex flex-col min-h-0">
-      <ColumnHeader translation={translation} index={index} canRemove={canRemove} />
-      <div className="shrink-0 px-2 text-xs text-muted" aria-label="Native passage">{bookName}{display.chapterNumbers && ` ${chapter}`} · {translation}</div>
-      <div
-        ref={(el) => {
-          containerRef.current = el
-          registerRef(el)
-        }}
-        onWheelCapture={takeScrollControl}
-        onPointerDownCapture={takeScrollControl}
-        onKeyDownCapture={takeScrollControl}
-        onScroll={() => {
-          onScroll()
-          if (sel) setSel(null)
-        }}
-        onMouseUp={onMouseUp}
-        className="flex-1 overflow-y-auto relative"
-      >
-        <div className="max-w-prose mx-auto px-8 py-8">
+        <section ref={section} data-flow-chapter={chapterKey({ book, chapter })} data-flow-active={active || undefined}
+        data-flow-before={before || undefined} className="max-w-prose mx-auto px-8 py-8" onMouseUp={touch ? undefined : onMouseUp}>
+        <div aria-hidden="true" className="mb-4 border-t border-line pt-3 text-sm text-muted">
+          {bookName}{display.chapterNumbers && ` ${chapter}`}
+        </div>
           {error ? (
           <StateBlock title="Library not built">
             {/not found/i.test(error) ? (
@@ -369,7 +474,8 @@ function Column({ translation, index, canRemove, book, chapter, alignTo, takeScr
         ) : (
           <>
           {display.structured && <StructuredPassages edition={translation} book={book} chapter={chapter} verses={data.verses.map(v => v.verse)} />}
-          <div
+          <PassageKeyboard
+            aria-label={bookName + ' ' + chapter + ' · ' + translation}
             data-scripture-passage=""
             dir={rtl ? 'rtl' : 'ltr'}
             className={`text-scripture text-ink hyphens-auto ${
@@ -389,25 +495,24 @@ function Column({ translation, index, canRemove, book, chapter, alignTo, takeScr
                 onOpenMenu={openMenu}
               />
             ))}
-          </div>
+          </PassageKeyboard>
           </>
         )}
-      </div>
 
-      {sel && (
+      {!touch && sel && (
         <div
           style={{ top: Math.max(sel.y - 34, 0), left: sel.x }}
           onMouseDown={(e) => e.preventDefault()} // keep the text selection intact
           className="absolute z-30 flex items-center gap-2 rounded-md bg-panel border border-line text-accent text-xs font-medium px-2 py-1 shadow-lg"
         >
-          <button onClick={askAboutSelection} className="flex items-center gap-1"><SparkleIcon className="w-3.5 h-3.5" /> Ask</button>
+          {import.meta.env.VITE_STUDY_MOBILE !== 'true' && <button onClick={askAboutSelection} className="flex items-center gap-1"><SparkleIcon className="w-3.5 h-3.5" /> Ask</button>}
           {(['context', ...(hasParallel ? ['compare' as const] : [])] as const).map(mode =>
             <button key={mode} onClick={() => { inspect({ mode, range: { edition: translation, book, chapter, firstVerse: Math.min(sel.v1, sel.v2), lastVerse: Math.max(sel.v1, sel.v2) } }); setSel(null) }}>{mode === 'context' ? 'Context' : 'Compare layout'}</button>)}
         </div>
       )}
 
-      {menu && (
-        <VersePopover
+      {import.meta.env.VITE_STUDY_MOBILE !== 'true' && menu && (
+        <VersePopover key={JSON.stringify([translation, book, chapter, menu.verse])}
           x={menu.x}
           y={menu.y}
           translation={translation}
@@ -418,14 +523,10 @@ function Column({ translation, index, canRemove, book, chapter, alignTo, takeScr
           highlight={highlights.get(menu.verse)}
           note={byVerse.get(menu.verse)?.[0]}
           notesLoading={notesLoading} notesError={notesError} retryNotes={retryNotes}
-          onClose={() => {
-            setMenu(null)
-            containerRef.current?.querySelector<HTMLElement>(`[data-verse="${menu.verse}"] [data-verse-action]`)?.focus({ preventScroll: true })
-          }}
+          onClose={() => setMenu(null)}
         />
       )}
-      </div>
-    </div>
+      </section>
   )
 }
 

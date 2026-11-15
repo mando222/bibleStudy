@@ -4,17 +4,21 @@ import ResultPages from './ResultPages'
 import { originalTextEdition, useAppStore } from '@/store/useAppStore'
 import { SearchIcon } from './icons'
 import Snippet from './Snippet'
+import { greekOrderNote } from '@shared/apparatus'
 
 type Scope = 'all' | 'OT' | 'NT'
 
 export default function SearchPanel(): JSX.Element {
-  const primary = useAppStore((s) => s.primary)
+  const readerTranslation = useAppStore((s) => s.primary)
   const openSearchHit = useAppStore((s) => s.openSearchHit)
 
   const [q, setQ] = useState('')
+  const [opened, setOpened] = useState('')
   const [scope, setScope] = useState<Scope>('all')
-  const greekEdition = useAppStore(s => originalTextEdition(s, 'NT', s.interlinear ? s.interlinearEdition : '') || undefined)
+  const readerGreek = useAppStore(s => originalTextEdition(s, 'NT', s.interlinear ? s.interlinearEdition : '') || undefined)
+  const [linkedEditions, setLinkedEditions] = useState<{ primary: string; greekEdition: typeof readerGreek } | null>(null)
   const text = q.trim()
+  const { primary, greekEdition } = linkedEditions ?? { primary: readerTranslation, greekEdition: readerGreek }
   const fetchPage = useCallback((offset: number) =>
     window.api.search({ text, translation: primary, testament: scope, greekEdition, limit: 150, offset }),
     [text, primary, scope, greekEdition])
@@ -30,8 +34,8 @@ export default function SearchPanel(): JSX.Element {
             autoFocus
             aria-label={`Search ${primary}`}
             value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder={`Search ${primary}…`}
+            onChange={e => { setLinkedEditions(null); setQ(e.target.value) }}
+            placeholder={'Word, "exact phrase", or Strong’s number…'}
             className="w-full bg-elevated border border-line rounded-md pl-8 pr-2 py-1.5 text-sm text-ink outline-none focus:border-accent placeholder:text-faint"
           />
         </div>
@@ -54,6 +58,8 @@ export default function SearchPanel(): JSX.Element {
             </span>
           )}
         </div>
+        {text && (primary !== readerTranslation || greekEdition !== readerGreek) && <button className="text-xs text-accent"
+          onClick={() => setLinkedEditions(null)}>Search in current reader editions · {readerTranslation}{readerGreek && ' / ' + readerGreek}</button>}
         {res && <ResultPages offset={offset} size={150} count={res.hits.length} total={res.total} onPage={setOffset} />}
       </div>
 
@@ -70,15 +76,17 @@ export default function SearchPanel(): JSX.Element {
             {res.hits.map((h) => (
               <li key={`${h.edition ?? h.translation ?? primary}-${h.book}-${h.chapter}-${h.verse}`}>
                 <button
-                  onClick={() => openSearchHit(h)}
-                  className="w-full text-left rounded-md px-2 py-1.5 hover:bg-elevated"
+                  aria-current={opened === [h.edition ?? h.translation ?? primary, h.book, h.chapter, h.verse].join(':') ? 'location' : undefined}
+                  onClick={() => { setLinkedEditions({ primary, greekEdition }); setOpened([h.edition ?? h.translation ?? primary, h.book, h.chapter, h.verse].join(':')); openSearchHit(h) }}
+                  className="w-full text-left rounded-md px-2 py-1.5 hover:bg-elevated aria-[current=location]:bg-accent-soft"
                 >
                   <div className="text-xs font-semibold text-accent">
                     {h.bookName} {h.chapter}:{h.verse} {h.edition ?? (h.translation !== primary ? h.translation : '')}
                   </div>
-                  <div className="text-sm text-ink leading-snug">
-                    <Snippet text={h.snippet} />
+                  <div data-study-scripture="" dir="auto" className="text-sm text-ink leading-snug">
+                    <Snippet text={h.snippet} markedGreekKey={h.markedGreekKey} />
                   </div>
+                  {h.orderStatus && <div className="text-xs text-muted">{greekOrderNote[h.orderStatus]}</div>}
                 </button>
               </li>
             ))}

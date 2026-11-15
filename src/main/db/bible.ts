@@ -1,14 +1,14 @@
+import type { ReadingChapter } from '../../shared/types'
 import { readChapterApparatus, readOriginalVerse } from './apparatus'
-import { DatabaseSync } from 'node:sqlite'
+import { greekOrderStatusSql } from './greekOrder'
+import type { DatabaseSync } from 'node:sqlite'
+import { openCorpus } from './openCorpus'
 import type { VerseLayout } from '../../shared/literaryLayout'
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
-import { app } from 'electron'
 import { greekNtEditions, greekScript, hebrewScript, scopedBooks, searchText } from './search'
 import { mapPassage } from '../../shared/passageMapping'
 import { foldLatinHomoglyphs } from '../../shared/originalText'
 import { sweteReadingIssue } from '../../shared/lxxIntegrity'
-import { lexiconId } from '../../shared/lexiconId'
+import { lexiconId, lexiconLanguage } from '../../shared/lexiconId'
 import { splitVerseUnits, unpackTags } from '../../shared/verseUnits'
 import { SOURCE_WORD_ALIGNMENT_VERSION } from '../../shared/sourceWords'
 import { countSourceSpans, publisherForm } from './sourceWordCoverage'
@@ -42,6 +42,7 @@ import type {
 let db: DatabaseSync | null = null
 let hasVerifiedSourceWords = false
 let hasSourceSingletons = false
+let hasInterlinearRows = false
 let hasSourceCoverage = false
 const legacyCoverage = new Map<string, SourceWordCoverage[]>()
 let hasLiteraryLayout = false
@@ -49,28 +50,11 @@ let hasMasoreticSourceTypes = false
 let hasKetivPairs = false
 let hasGreekOrderReview = false
 
-function resolveDbPath(): string | null {
-  // app.getAppPath() is the app root when launched as `electron .`, but the SCRIPT'S directory when
-  // launched as `electron out/main/index.js` — which is how the smoke test used to miss the DB and
-  // report 16 phantom failures. Walking up from __dirname (out/main → repo root) and the cwd covers
-  // both, on top of the packaged extraResources location.
-  const candidates = [
-    join(process.resourcesPath ?? '', 'bible.sqlite'),
-    join(app.getAppPath(), 'resources', 'bible.sqlite'),
-    join(app.getAppPath(), '..', 'resources', 'bible.sqlite'),
-    join(__dirname, '..', '..', 'resources', 'bible.sqlite'),
-    join(process.cwd(), 'resources', 'bible.sqlite')
-  ]
-  return candidates.find((p) => p && existsSync(p)) ?? null
-}
-
 /** Open the bundled DB read-only. Returns false if it hasn't been built yet. */
 export function openBibleDb(): boolean {
   if (db) return true
-  const path = resolveDbPath()
-  if (!path) return false
-  db = new DatabaseSync(path, { readOnly: true })
-  db.exec('PRAGMA foreign_keys = OFF;')
+  db = openCorpus()
+  if (!db) return false
   hasLiteraryLayout = hasTable('verse_layout')
   hasMasoreticSourceTypes = db.prepare("SELECT 1 FROM pragma_table_info('original_tokens') WHERE name='source_type'").get() !== undefined
   hasKetivPairs = hasTable('ketiv_qere')
@@ -78,6 +62,7 @@ export function openBibleDb(): boolean {
   hasVerifiedSourceWords = hasTable('source_word_spans') && hasTable('meta') &&
     db.prepare("SELECT value FROM meta WHERE key = 'source_word_alignment_version'").get()?.value === SOURCE_WORD_ALIGNMENT_VERSION
   hasSourceSingletons = hasVerifiedSourceWords && hasTable('source_word_singletons')
+  hasInterlinearRows = hasVerifiedSourceWords && hasTable('interlinear_source_rows')
   hasSourceCoverage = hasVerifiedSourceWords && hasTable('source_word_coverage')
   return true
 }
@@ -134,6 +119,13 @@ export function listTranslations(): Translation[] {
     license: r.license as string,
     attribution: r.attribution as string
   }))
+}
+
+/** Enumerate recorded chapters, including partial editions and edition-specific numbering. */
+export function listReadingChapters(edition: string, interlinear: boolean): ReadingChapter[] {
+  const source = interlinear || ['NA', 'TR', 'BYZ'].includes(edition)
+    ? 'original_tokens WHERE edition = ?' : 'verses WHERE translation_id = ?'
+  return required().prepare(`SELECT book_id AS book, chapter, MIN(verse) AS firstVerse FROM ${source} GROUP BY book_id, chapter`).all(edition) as ReadingChapter[]
 }
 
 export function getChapter(ref: ChapterRef): ChapterContent {
@@ -459,11 +451,13 @@ export function browseLexicon(opts: LexBrowseOptions): LexBrowseResult {
   const d = required()
   const filters: string[] = []
   const params: (string | number)[] = []
-  if (opts.language === 'greek' || opts.language === 'hebrew') {
-    filters.push('language = ?')
-    params.push(opts.language)
-  }
   const query = (opts.query ?? '').trim()
+  const idLanguage = lexiconLanguage(query)
+  const language = idLanguage ?? opts.language
+  if (language === 'greek' || language === 'hebrew') {
+    filters.push('language = ?')
+    params.push(language)
+  }
   if (query) {
     const script = hebrewScript.test(query) ? normHebrewWord(query) : greekScript.test(query) ? normGreekWord(query) : ''
     filters.push('(id LIKE ? OR translit LIKE ? OR lemma LIKE ? OR gloss LIKE ? OR definition LIKE ?' +
@@ -478,10 +472,12 @@ export function browseLexicon(opts: LexBrowseOptions): LexBrowseResult {
   }).n
   const limit = Math.min(opts.limit ?? 120, 400)
   const offset = opts.offset ?? 0
+  const exactFirst = idLanguage ? '(id = ?) DESC,' : ''
+  if (idLanguage) params.push(lexiconId(query))
   const rows = d
     .prepare(
       `SELECT id, language, lemma, translit, gloss, definition FROM lexicon_headwords ${where}
-       ORDER BY language, CAST(substr(id, 2) AS INTEGER) LIMIT ? OFFSET ?`
+       ORDER BY ${exactFirst} language, CAST(substr(id, 2) AS INTEGER) LIMIT ? OFFSET ?`
     )
     .all(...params, limit, offset) as Record<string, unknown>[]
   const entries = rows.map((r) => {
@@ -585,7 +581,9 @@ export function getConcordance(strongs: string, opts: ConcordanceOptions = {}): 
   const d = required()
   const sid = lexiconId(strongs)
   const requested = opts.translation ?? 'KJV'
-  const original = ['MT', 'LXX', 'NA', 'TR', 'BYZ'].includes(requested)
+  // Swete supplies the Greek text, but the tags in its original_tokens rows are inferred
+  // from other editions. They cannot identify occurrences in Swete's own concordance.
+  const original = requested === 'MT' || greekNtEditions.has(requested)
   const tagged = !original && hasRealTagging(requested)
   const inferred = !original && !tagged && hasTable('derived_tags') &&
     !!d.prepare('SELECT 1 FROM derived_tags WHERE translation_id = ? LIMIT 1').get(requested)
@@ -600,34 +598,48 @@ export function getConcordance(strongs: string, opts: ConcordanceOptions = {}): 
   const match = inferred ? "' ' || t.strongs || ' ' LIKE ?" : 't.strongs = ?'
   const params = [translation, inferred ? `% ${sid} %` : sid, ...(books ?? [])]
   const scope = books ? ` AND t.book_id IN (${books.map(() => '?').join(',')})` : ''
-  const refs = `SELECT DISTINCT t.book_id, t.chapter, t.verse FROM ${source} t
+  const refs = `SELECT DISTINCT t.${editionColumn} AS edition, t.book_id, t.chapter, t.verse FROM ${source} t
     WHERE t.${editionColumn} = ? AND ${match}${scope}`
   result.total = Number(d.prepare(`SELECT COUNT(*) AS n FROM (${refs})`).get(...params)?.n)
-  const page = d.prepare(`SELECT r.*, b.name FROM (${refs}) r JOIN books b ON b.id=r.book_id
+  const orderStatus = greekNtEditions.has(translation) ? greekOrderStatusSql(d, 'r') : 'NULL'
+  const page = d.prepare(`SELECT r.*, b.name, ${orderStatus} AS orderStatus FROM (${refs}) r JOIN books b ON b.id=r.book_id
     ORDER BY b.sort_order, r.chapter, r.verse LIMIT ? OFFSET ?`)
     .all(...params, Math.max(0, Math.min(opts.limit ?? 300, 1000)), Math.max(0, opts.offset ?? 0))
-  const verseWords = original ? 'original AS surface, strongs' : 'surface, trailer, strongs'
-  const read = inferred
-    ? d.prepare(`SELECT v.text, t.strongs FROM derived_tags t JOIN verses v
-          USING (translation_id,book_id,chapter,verse)
-          WHERE t.translation_id=? AND t.book_id=? AND t.chapter=? AND t.verse=?`)
-    : d.prepare(`SELECT ${verseWords} FROM ${source} WHERE ${editionColumn}=? AND book_id=?
-          AND chapter=? AND verse=? ORDER BY position`)
-  for (const ref of page) {
-    const key = [translation, ref.book_id, ref.chapter, ref.verse]
-    let tokens: { surface: string; trailer?: string; strongs: string | null }[]
-    if (inferred) {
-      const row = read.get(...key)
-      if (!row) continue
-      tokens = decodeDerivedTokens(String(row.text), String(row.strongs))
-    } else {
-      tokens = read.all(...key) as typeof tokens
+  if (!page.length) return result
+  // Rehydrate only the requested page, in one round trip. The ordinal keeps repeated IDs in
+  // different verses apart without relying on a translation's own verse numbering or text.
+  const pageJson = JSON.stringify(page.map(ref => [ref.book_id, ref.chapter, ref.verse]))
+  const selected = `FROM json_each(?) selection CROSS JOIN ${source} t ON t.${editionColumn}=?
+    AND t.book_id=json_extract(selection.value,'$[0]') AND t.chapter=json_extract(selection.value,'$[1]')
+    AND t.verse=json_extract(selection.value,'$[2]')`
+  type Token = { surface: string; trailer?: string; strongs: string | null }
+  const grouped = new Map<number, Token[]>()
+  if (inferred) {
+    const rows = d.prepare(`SELECT selection.key ord, v.text, t.strongs ${selected}
+      JOIN verses v USING(translation_id,book_id,chapter,verse) ORDER BY selection.key`).all(pageJson, translation)
+    for (const row of rows) grouped.set(Number(row.ord), decodeDerivedTokens(String(row.text), String(row.strongs)))
+  } else {
+    const fields = original ? 't.original AS surface, t.strongs' : 't.surface, t.trailer, t.strongs'
+    const rows = d.prepare(`SELECT selection.key ord, ${fields} ${selected}
+      ORDER BY selection.key, t.position`).all(pageJson, translation) as (Token & { ord: number })[]
+    for (const token of rows) {
+      // TAHOT uses a backslash to introduce punctuation. Preserve the punctuation in the snippet.
+      if (translation === 'MT') token.surface = token.surface.replace(/\\/g, '')
+      const tokens = grouped.get(token.ord)
+      if (tokens) tokens.push(token)
+      else grouped.set(token.ord, [token])
     }
+  }
+  for (let i = 0; i < page.length; i++) {
+    const ref = page[i]
+    const tokens = grouped.get(i)
+    if (!tokens) continue
     const snippet = tokens.map((t, i) =>
       (t.strongs === sid ? `{{${t.surface}}}` : t.surface) + (t.trailer ?? (i + 1 < tokens.length ? ' ' : ''))
     ).join('')
     result.hits.push({ book: String(ref.book_id), bookName: String(ref.name),
       chapter: Number(ref.chapter), verse: Number(ref.verse), snippet,
+      ...(ref.orderStatus === 'unverified' || ref.orderStatus === 'unknown' ? { orderStatus: ref.orderStatus } : {}),
       surface: tokens.find(t => t.strongs === sid)?.surface ?? '' })
   }
   return result
@@ -644,6 +656,13 @@ export function listEditions(): Edition[] {
     language: r.language as string,
     testament: r.testament as 'OT' | 'NT'
   }))
+}
+
+/** Retain inflection, accents, vowel points and lexical identity. NFC equates Greek oxia/tonos. */
+function interlinearForm(form: string | null, hebrew: boolean): string | null {
+  if (!form) return null
+  const word = form.normalize('NFC').replace(/[.,;:!?··;]+$/u, '')
+  return publisherForm(word, hebrew ? 'Hebrew' : 'Greek')
 }
 
 /** The interlinear backbone for a chapter in a chosen original-language edition. */
@@ -709,6 +728,24 @@ export function getInterlinear(
     }
   }
 
+  // A form repeated in the original cannot be disambiguated by its English order.
+  const uniqueWords = new Map<number, Map<string, VerseToken | null>>()
+  const rowQuery = hasInterlinearRows && translations.length
+    ? d.prepare('SELECT verse, source_row FROM interlinear_source_rows WHERE book_id=? AND chapter=?') : null
+  const chapterRows = new Map<string, Set<string>>()
+  if (rowQuery) for (const [verse, tokens] of byVerse) {
+    const forms = new Map<string, VerseToken | null>()
+    for (const t of tokens) {
+      const form = interlinearForm(t.lemma, masoretic)
+      if (form) forms.set(form, forms.has(form) ? null : t)
+      else for (const part of t.lemma?.split(/\s+/u) ?? []) {
+        const component = interlinearForm(part, masoretic)
+        if (component) forms.set(component, null)
+      }
+    }
+    uniqueWords.set(verse, forms)
+  }
+
   // Compare the corresponding native verses. A single LXX chapter can span two English chapters.
   const linesByVerse = new Map<number, NonNullable<InterlinearContent['verses'][number]['lines']>>()
   for (const tid of translations) {
@@ -728,22 +765,27 @@ export function getInterlinear(
       const text = verses.get(target.verse)
       if (!text) continue
       if (tid === 'LXX' && sweteReadingIssue(target, text.text)) continue
-      const words = new Map<string, string[]>()
-      for (const t of text.tokens ?? []) {
-        if (!t.strongs) continue
-        const queue = words.get(t.strongs)
-        if (queue) queue.push(t.surface)
-        else words.set(t.strongs, [t.surface])
-      }
-      let aligned = false
-      for (const tok of tokens) {
-        const word = tok.strongs ? words.get(tok.strongs)?.shift() : undefined
-        if (word) {
-          tok.aligned = { ...tok.aligned, [tid]: word }
-          aligned = true
+      let aligned = 0
+      let covered = 0
+      const originals = uniqueWords.get(verse)
+      if (rowQuery && originals && (tid === 'BSB' || tid === 'KJV')) {
+        let reviewed = chapterRows.get(key)
+        if (!reviewed) {
+          reviewed = new Set(rowQuery.all(target.book, target.chapter).map(r => r.verse + '/' + r.source_row))
+          chapterRows.set(key, reviewed)
+        }
+        for (const t of text.tokens ?? []) {
+          const span = t.sourceWord
+          if (!span || !reviewed.has(target.verse + '/' + span.rowId)) continue
+          const form = interlinearForm(span.text, masoretic)
+          const tok = form && originals.get(form)
+          if (!tok || tok.strongs !== span.strongs) continue
+          tok.aligned = { ...tok.aligned, [tid]: span.english }
+          aligned++
+          covered += span.endPosition - span.startPosition + 1
         }
       }
-      if (!aligned) {
+      if (!aligned || aligned < tokens.length || covered < (text.tokens?.length ?? 0)) {
         const lines = linesByVerse.get(verse) ?? []
         const ref = target.chapter !== chapter || target.verse !== verse ? `${target.chapter}:${target.verse}` : undefined
         lines.push({ id: tid, text: text.text, ref })
@@ -755,26 +797,21 @@ export function getInterlinear(
   // "All parses": attach every Scripture-attested analysis of each word's form (scholar-tagged).
   if (includeParses && !swete) {
     const norm = lang === 'hebrew' ? normHebrewWord : normGreekWord
-    const stmt = d.prepare(
-      'SELECT strongs, morph, gloss, count FROM form_parses WHERE form = ? AND lang = ? ORDER BY count DESC'
-    )
-    const cache = new Map<string, { strongs: string | null; morph: string | null; gloss: string | null; count: number }[]>()
-    for (const [, tokens] of byVerse) {
-      for (const tok of tokens) {
-        const form = norm(tok.lemma ?? '')
-        if (!form) continue
-        let parses = cache.get(form)
-        if (!parses) {
-          parses = stmt.all(form, lang) as {
-            strongs: string | null
-            morph: string | null
-            gloss: string | null
-            count: number
-          }[]
-          cache.set(form, parses)
-        }
-        if (parses.length) tok.parses = parses
-      }
+    type Parse = NonNullable<VerseToken['parses']>[number]
+    const tokens = Array.from(byVerse.values()).flat()
+    const forms = [...new Set(tokens.map(t => norm(t.lemma ?? '')).filter(Boolean))]
+    const parsed = d.prepare(`SELECT form, strongs, morph, gloss, count FROM form_parses
+      WHERE lang=? AND form IN (SELECT value FROM json_each(?)) ORDER BY form, count DESC`)
+      .all(lang, JSON.stringify(forms)) as unknown as (Parse & { form: string })[]
+    const byForm = new Map<string, Parse[]>()
+    for (const { form, ...parse } of parsed) {
+      const list = byForm.get(form)
+      if (list) list.push(parse)
+      else byForm.set(form, [parse])
+    }
+    for (const token of tokens) {
+      const parses = byForm.get(norm(token.lemma ?? ''))
+      if (parses) token.parses = parses
     }
   }
 

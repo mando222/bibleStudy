@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { bibleDb } from '../src/main/db/bible'
 import { readPassageContext, getPersonMap } from '../src/main/db/passageStudy'
+import { getEvents, getPerson } from '../src/main/db/graph'
 import { getReviewedSpeakers, getStudyStructures } from '../src/shared/passageStudy'
 import { buildStudyIndex } from '../data-pipeline/studyIndex'
 import { reviewedAssociations } from '../src/shared/reviewedPlaces'
@@ -11,6 +12,17 @@ vi.mock('node:sqlite', () => createRequire(import.meta.url)('node:sqlite'))
 vi.mock('electron', () => ({ app: { getAppPath: () => process.cwd() } }))
 
 describe.skipIf(!existsSync('resources/bible.sqlite'))('cited study data', () => {
+  it('distinguishes Moab the ancestor from the territory and people who share his name', () => {
+    const db = bibleDb()!
+    const ruth = readPassageContext(db, { edition: 'BSB', book: 'Ruth', chapter: 1, firstVerse: 22 })
+    expect(ruth.people.map(p => p.name)).toEqual(['Naomi', 'Ruth'])
+    expect(ruth.places.some(p => p.name === 'Moab')).toBe(true)
+    expect(readPassageContext(db, { edition: 'KJV', book: 'Gen', chapter: 19, firstVerse: 37 })
+      .people.map(p => p.id)).toContain(2103)
+    expect(getPerson(2103)).toMatchObject({ name: 'Moab', verses: ['Gen.19.37'], verseCount: 1 })
+    expect(getEvents().find(e => e.id === 137)?.participants.map(p => p.name)).toContain('Ehud')
+    expect(getEvents().find(e => e.id === 137)?.participants.map(p => p.id)).not.toContain(2103)
+  })
   it('resolves exact locations and verse-specific roles, including unlocated places', () => {
     const db = bibleDb()!
     const acts = readPassageContext(db, { edition: 'BSB', book: 'Acts', chapter: 13, firstVerse: 13, lastVerse: 14 })

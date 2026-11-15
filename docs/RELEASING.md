@@ -62,9 +62,10 @@ That's it. GitHub Actions then, only if `v0.1.3` doesn't already exist and the c
 present:
 
 - runs typecheck + unit tests,
-- builds installers for **macOS (Apple Silicon), Windows, and Linux** on native runners,
+- builds installers for **macOS (Apple Silicon), Windows, Linux, and Android**,
 - rebuilds the Bible database (pipeline assertions gate the data) and runs the DB-integrity test,
-- **smoke-tests the packaged app** on each OS (it boots, opens the DB, loads native deps),
+- **smoke-tests each packaged desktop app** (it boots, opens the DB, loads native deps),
+- verifies the Android release signature, package identity, version, release mode, and bundled offline database against the desktop build,
 - and publishes a **GitHub Release** named `v0.1.3`, tagged `v0.1.3`, with your changelog section as
   the notes (plus a download table and GitHub's auto "What's Changed"), and all installers attached.
 
@@ -86,10 +87,24 @@ Watch it under the repo's **Actions** tab (~15 minutes). When green, the Release
 
 ## Notes
 
+### Android signing
+
+Configure GitHub Actions repository secrets before the first release that includes Android. Use a keystore containing the single signing key for `org.openbiblestudy.android`. Keep a private backup. To support in-place updates for existing phone installations, use the key that signed those APKs.
+
+| Secret | Value |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | The base64-encoded keystore file |
+| `ANDROID_STORE_PASSWORD` | The keystore password |
+| `ANDROID_KEY_PASSWORD` | The private key password, if different from the store password |
+
+The Linux runner builds a non-debuggable APK from the same checkout and database as the desktop release. It publishes `Open-Bible-Study-Android-<version>.apk` under the shared version tag. A manual test run can use a temporary signing key when release credentials are absent. That test artifact is suitable for a fresh test installation.
+
+### Release behavior
+
 - **One version = one release.** Editing `package.json` for something other than the version (a new
   dependency, say) does not re-release — CI sees the tag already exists and skips.
 - **Test builds without releasing:** Actions tab → *Build installers* → **Run workflow**
-  (`workflow_dispatch`). This builds all three platforms (downloadable from the run's *Artifacts*)
+  (`workflow_dispatch`). This builds all four platforms (downloadable from the run's *Artifacts*)
   but does **not** publish a Release, and does not require the changelog entry.
 - **The version is the app/installer version** shown in the About screen.
 - **Cost:** private-repo macOS minutes bill at 10×, so keep it to a release or two a month. (Making

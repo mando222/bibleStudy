@@ -1,3 +1,5 @@
+import { useContext } from 'react'
+import { ReaderActions } from './ReaderActions'
 import type { Verse } from '@shared/types'
 import { masoreticSourceNote } from '@shared/originalText'
 import { useAppStore } from '@/store/useAppStore'
@@ -28,30 +30,32 @@ export default function InterlinearVerse({
   sourceIssue?: string
 }): JSX.Element {
   const selectStrongs = useAppStore((s) => s.selectStrongs)
+  const touch = useContext(ReaderActions)
+  const openEntry = (id: string) => { selectStrongs(id); touch?.openLexicon() }
   const selected = useAppStore((s) => s.selectedStrongs)
 
   // Open the lexicon for a word: by its Strong's number, or — for untagged words — by matching
   // its form against lexicon lemmas/headwords (same card, keyed by the word instead of a number).
   const openWord = (tok: { strongs: string | null; lemma: string | null; surface: string }): void => {
     if (tok.strongs) {
-      selectStrongs(tok.strongs)
+      openEntry(tok.strongs)
       return
     }
     const w = (tok.lemma || tok.surface || '').trim()
-    if (w) window.api.getLexiconByWord(w).then((id) => id && selectStrongs(id))
+    if (w) window.api.getLexiconByWord(w).then((id) => id && openEntry(id))
   }
 
   return (
     <div className="mb-4 group/verse" data-verse={v.verse} tabIndex={-1}>
       <div dir={rtl ? 'rtl' : 'ltr'} className="relative flex flex-wrap gap-x-2.5 gap-y-3 items-start">
-        <button type="button" onClick={onSelectVerse} aria-label={`Select verse ${v.verse}`} title="Select verse"
+        <button type="button" data-passage-action="" data-verse-action="" tabIndex={-1} onClick={onSelectVerse} aria-label={`Select verse ${v.verse}`} title="Select verse"
           className={`reader-marker text-xs font-sans font-semibold text-accent/70 tabular-nums ${verseNumbers ? 'pt-1.5' : 'absolute top-1 -start-5 rounded px-1 opacity-0 group-hover/verse:opacity-100 focus-visible:opacity-100'}`}
           data-label={verseNumbers ? v.verse : '⋯'} />
         {sourceIssue && <p className="flex-1 text-xs text-muted py-1">{sourceIssue}</p>}
         {!sourceIssue && (v.tokens ?? []).map((tok) => {
         if (swete) return (
           <span key={tok.position} className="flex flex-col items-center px-1.5 py-1">
-            <span lang="grc" className="font-greek text-xl leading-tight">{tok.lemma}</span>
+            <span lang="grc" data-interlinear-form="" className="font-greek text-xl leading-tight">{tok.lemma}</span>
             {tok.translit && <span className="text-xs italic text-muted mt-0.5">{tok.translit}</span>}
           </span>
         )
@@ -61,6 +65,7 @@ export default function InterlinearVerse({
         return (
           <button
             key={tok.position}
+            data-passage-action="" tabIndex={-1}
             onClick={() => openWord(tok)}
             title={tok.strongs ? undefined : 'Look up this word in the lexicon'}
             className={`flex flex-col items-center text-center rounded-md px-1.5 py-1 min-w-[2.5rem] hover:bg-elevated cursor-pointer ${
@@ -69,7 +74,7 @@ export default function InterlinearVerse({
           >
             {tok.lemma && (
               <span
-                dir={isHeb ? 'rtl' : 'ltr'}
+                data-interlinear-form="" dir={isHeb ? 'rtl' : 'ltr'}
                 className={`text-xl leading-tight text-ink ${isHeb ? 'font-hebrew' : 'font-greek'}`}
               >
                 {tok.lemma}
@@ -77,12 +82,12 @@ export default function InterlinearVerse({
             )}
             {sourceNote && <span title={sourceNote.description} className="text-[10px] text-muted">{sourceNote.label}</span>}
             {tok.ketiv && <span className="text-xs text-muted" title="TAHOT gives the written consonants with vowel points supplied by Tyndale scholars.">
-              Ketiv · written form <bdi dir="rtl" className="font-hebrew">{tok.ketiv}</bdi>
+              Ketiv · written form <bdi data-interlinear-form="" dir="rtl" className="font-hebrew">{tok.ketiv}</bdi>
             </span>}
             {tok.translit && <span className="text-xs italic text-muted mt-0.5">{tok.translit}</span>}
-            <span className="text-xs text-ink mt-0.5">{tok.surface}</span>
+            <span data-interlinear-gloss="" className="text-xs text-ink mt-0.5">{tok.surface}</span>
             {stack.map((tid) => (
-              <span key={tid} className="text-xs text-ink/80 mt-0.5">
+              <span key={tid} data-interlinear-rendering="" className="text-xs text-ink/80 mt-0.5">
                 <span className="text-[9px] uppercase text-faint mr-1">{labels[tid] ?? tid}</span>
                 {tok.aligned?.[tid] ?? '·'}
               </span>
@@ -94,10 +99,15 @@ export default function InterlinearVerse({
                   return (
                     <span
                       key={i}
-                      role="button"
+                      role="button" data-passage-action="" tabIndex={-1}
+                      onKeyDown={e => {
+                        if (p.strongs && (e.key === 'Enter' || e.key === ' ')) {
+                          e.preventDefault(); e.stopPropagation(); openEntry(p.strongs)
+                        }
+                      }}
                       onClick={(e) => {
                         e.stopPropagation()
-                        if (p.strongs) selectStrongs(p.strongs)
+                        if (p.strongs) openEntry(p.strongs)
                       }}
                       title={`${p.gloss ?? ''} · attested ${p.count}×`}
                       className={`text-[9px] leading-tight cursor-pointer ${
@@ -133,7 +143,7 @@ export default function InterlinearVerse({
               <span className="text-[10px] uppercase text-faint mr-2 tabular-nums">
                 {labels[ln.id] ?? ln.id} {ln.ref}
               </span>
-              {ln.text}
+              <bdi dir="auto" data-study-scripture="">{ln.text}</bdi>
             </div>
           ))}
         </div>

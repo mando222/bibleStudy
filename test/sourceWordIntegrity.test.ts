@@ -26,6 +26,8 @@ interface PublisherRow {
   translit: string
   morph: string
   english: string
+  /** Opening punctuation the publisher keeps in its own column; the Bible prints it on the word. */
+  prefix: string
   wordOffset: number
 }
 
@@ -68,13 +70,19 @@ async function readPublisher(): Promise<Map<string, PublishedVerse>> {
       const key = c[4] + ':' + c[greek ? 1 : 0].trim()
       if (current.rows.has(key)) throw new Error('Duplicate publisher occurrence ' + key)
       current.rows.set(key, {
-        strongs, english, form: c[5].trim(), alternate: c[6].trim(), translit: c[7].trim(),
-        morph: c[9].trim(), wordOffset: current.words.length
+        strongs, english, prefix: openingPunctuation(c[17]), form: c[5].trim(), alternate: c[6].trim(),
+        translit: c[7].trim(), morph: c[9].trim(), wordOffset: current.words.length
       })
     }
     current.words.push(...englishWords(english))
   }
   return verses
+}
+
+/** That column also carries the publisher's verse-number markup, which the Bible never prints. */
+function openingPunctuation(cell: string): string {
+  const text = cell.trim()
+  return /^[“‘("'\[]+$/u.test(text) ? text : ''
 }
 
 function occurrences(words: string[], needle: string[]): number {
@@ -112,8 +120,11 @@ function auditExactForms(ref: ChapterRef, verse: Verse, published: PublishedVers
         throw new Error('Source row aligned to different wording: ' + source.rowId + ' ' + ref.book + ' ' + ref.chapter + ':' + verse.verse)
       }
     }
+    // Published words the publisher bundled around a name stay printed; only the name changes.
+    const kept = (span.before ?? '').length
+    const restored = span.display.slice(kept, span.display.length - (span.after ?? '').length)
     if (span.annotation ? span.display !== span.original || span.annotation !== source.text :
-        span.display !== source.text && !(span.display === 'YHWH' && /^H306[89]$/.test(source.strongs))) {
+        restored !== source.text && !(restored === 'YHWH' && /^H306[89]$/.test(source.strongs))) {
       throw new Error('Incorrect source form displayed at ' + source.rowId)
     }
     counts.set(source.strongs, (counts.get(source.strongs) ?? 0) + 1)
@@ -126,8 +137,10 @@ function verifyPublisherRow(
 ): void {
   const row = published.rows.get(source.language + ':' + source.rowId)
   // Some Berean glosses include a parenthesis which the Bible prints in the trailer.
-  const printed = span.original.replace(/^The /, 'the ')
-  const gloss = row?.english.replace(/^The /, 'the ')
+  // The Bible prints the publisher's opening punctuation on the word itself (“O Lord).
+  const wording = (text: string): string => text.replace(/^(“*)The /, '$1the ')
+  const printed = wording(span.original)
+  const gloss = row && wording(row.prefix + row.english)
   const sameEnglish = gloss === printed || (gloss === printed + ')' && span.token!.trailer.startsWith(')'))
   if (!row || row.strongs !== source.strongs || row.form !== row.alternate || !sameEnglish ||
       row.translit !== source.translit || !row.morph || row.morph.includes('|') || row.morph !== source.morph) {
@@ -194,15 +207,25 @@ function verifyVerse(
     if (seenRows.has(key)) throw new Error('Repeated source row in ' + detail)
     seenRows.add(key)
     if (published) verifyPublisherRow(source, span, verse, offset, ref.translation, published, detail)
+    // The publisher can bundle sentence words into one aligned span ("of the LORD"). Only the
+    // name itself may be restored; every other published word must survive exactly as printed.
+    const keptBefore = span.before ?? ''
+    const keptAfter = span.after ?? ''
+    const replaced = span.original.slice(keptBefore.length, span.original.length - keptAfter.length)
+    if (!span.original.startsWith(keptBefore) || !span.original.endsWith(keptAfter) || !replaced ||
+        keptBefore.length + keptAfter.length >= span.original.length) {
+      throw new Error('Published wording lost around the restored word in ' + detail)
+    }
+    const restored = span.display.slice(keptBefore.length, span.display.length - keptAfter.length)
     if (id === 'H3068' || id === 'H3069') {
       coverage.yhwh++
-      if (span.display !== 'YHWH' || source.language !== 'Hebrew' ||
+      if (restored !== 'YHWH' || source.language !== 'Hebrew' ||
           source.text.normalize('NFD').replace(/\p{M}/gu, '') !== 'יהוה') {
         throw new Error('Incorrect divine name in ' + detail)
       }
     } else {
       coverage.other++
-      if (span.display !== source.translit.normalize('NFC').replace(/·/g, '')) {
+      if (restored !== source.translit.normalize('NFC').replace(/·/g, '')) {
         throw new Error('Incorrect transliteration in ' + detail)
       }
     }
@@ -237,8 +260,8 @@ describe.skipIf(!existsSync('resources/bible.sqlite'))('source word restoration 
       (hasPublisher ? ' against the publisher’s raw bilingual rows' : ' (publisher table unavailable)'), async () => {
     const publisher = hasPublisher ? await readPublisher() : undefined
     const restoredIds = new Set<string>()
-    expect(new Set(identifiers).size).toBe(45)
-    for (const [translation, size, yhwh, other] of [['BSB', 31086, 2941, 3432], ['KJV', 31102, 1916, 1]] as const) {
+    expect(new Set(identifiers).size).toBe(52)
+    for (const [translation, size, yhwh, other] of [['BSB', 31086, 5678, 4357], ['KJV', 31102, 1916, 1]] as const) {
       let count = 0
       const coverage: Coverage = { ids: restoredIds, yhwh: 0, other: 0 }
       const exactCounts = new Map<string, number>()
@@ -260,9 +283,10 @@ describe.skipIf(!existsSync('resources/bible.sqlite'))('source word restoration 
       const storedCounts = bibleDb()!.prepare('SELECT strongs, occurrences FROM source_word_coverage WHERE translation_id=?').all(translation)
       expect(exactCounts).toEqual(new Map(storedCounts.map(row => [row.strongs, row.occurrences])))
     }
-    // These two Hebrew IDs have English rows for ordinary adversaries and scoundrels.
-    // Neither yields a standalone attested name with the current publisher data.
-    const withoutPublishedName = new Set(['H1100', 'H7854'])
+    // H1100 is only ever rendered as an ordinary scoundrel or worthless man, never as Belial.
+    // (H7854 does surface as a name once, at 1 Chronicles 21:1, the sole Hebrew occurrence
+    // without the article that makes it "the accuser".)
+    const withoutPublishedName = new Set(['H1100'])
     expect([...restoredIds].sort()).toEqual(identifiers.filter(id => !withoutPublishedName.has(id)).sort())
   }, 180000)
 
@@ -275,7 +299,16 @@ describe.skipIf(!existsSync('resources/bible.sqlite'))('source word restoration 
     ['Matt', 1, 23, 'G1694', '616', 'Immanuel', 'Emmanouēl'],
     ['Matt', 25, 1, 'G3566', '23700', 'bridegroom', 'nymphiou'],
     ['Matt', 12, 24, 'G954', '10143', 'Beelzebul', 'Beelzeboul'],
-    ['Jas', 4, 4, 'G5373', '193817', 'friendship', 'philia']
+    ['Jas', 4, 4, 'G5373', '193817', 'friendship', 'philia'],
+    ['1Cor', 7, 3, 'G1135', '145912', 'wife', 'gynaiki'],
+    ['1Cor', 7, 3, 'G1135', '145922', 'wife', 'gynē'],
+    ['1Cor', 7, 3, 'G435', '145914', 'husband', 'anēr'],
+    ['1Cor', 7, 3, 'G435', '145924', 'husband', 'andri'],
+    ['Ruth', 1, 3, 'H376', '172502', 'husband', '’îš'],
+    ['Exod', 21, 22, 'H1167', '50025', 'husband', 'ba‘al'],
+    ['1Chr', 2, 29, 'H802', '257651', 'wife', '’êšeṯ'],
+    ['Isa', 62, 5, 'H1166', '435369', 'marries', 'yiḇ‘al'],
+    ['1Tim', 4, 3, 'G1060', '178672', 'marriage', 'gamein']
   ] as const)('restores the published occurrence in %s %i:%i with only %s enabled',
     (book, chapter, number, id, rowId, english, translit) => {
       const ref = { translation: 'BSB', book, chapter }

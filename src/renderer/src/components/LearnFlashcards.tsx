@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { VocabItem, SrsStats } from '@shared/types'
-import type { LearnLanguage } from '@/store/useAppStore'
+import { useAppStore, type LearnLanguage } from '@/store/useAppStore'
+import { useStudyQuery } from '@/hooks/useStudyQuery'
+import { frequencyEditionNames } from '@shared/wordFrequency'
 
 // How many never-seen words to introduce in one sitting, after all due reviews.
 const NEW_PER_SESSION = 40
@@ -132,9 +134,7 @@ export default function LearnFlashcards({ language }: { language: LearnLanguage 
           <div className="mt-5">
             {card.translit && <div className="text-sm text-muted">{card.translit}</div>}
             <div className="text-xl text-accent mt-1">{card.gloss ?? '—'}</div>
-            <div className="text-[11px] text-faint mt-2">
-              {card.strongs} · occurs {card.frequency}×
-            </div>
+            <CardFrequency id={card.strongs} />
           </div>
         ) : (
           <button
@@ -162,4 +162,21 @@ export default function LearnFlashcards({ language }: { language: LearnLanguage 
       )}
     </div>
   )
+}
+
+function CardFrequency({ id }: { id: string }) {
+  const preferred = useAppStore(s => s.preferredTextOrder.nt)
+  const available = useAppStore(s => s.originalEditions)
+  const choice = useAppStore(s => s.frequencyGreekEdition)
+  const greek = available ? preferred.filter(ed => available.some(row => row.id === ed)) : preferred
+  const edition = id.startsWith('H') ? 'MT' : choice && greek.includes(choice) ? choice : greek[0]
+  const frequency = useStudyQuery(useCallback(() => window.api.getWordFrequency({ id, edition }), [id, edition]), !!edition)
+  const data = frequency.data
+  return <div className="text-xs text-muted mt-2" role="status">
+    {id} · {edition && frequencyEditionNames[edition]}
+    <div>{frequency.loading ? 'Counting occurrences…' : !data || data.coverage === 'unavailable' ? 'Frequency unavailable' :
+      `${data.occurrences.toLocaleString()} recorded occurrence${data.occurrences === 1 ? '' : 's'} in ${data.verses.toLocaleString()} verse${data.verses === 1 ? '' : 's'} (all forms)`}</div>
+    {data?.coverage === 'partial' && <span>Partial coverage. </span>}{data?.notice}
+    {frequency.error && <button className="text-accent underline" onClick={frequency.retry}>Retry count</button>}
+  </div>
 }

@@ -1,0 +1,8 @@
+{
+  "appId": "org.openbiblestudy.android",
+  "appName": "Open Bible Study",
+  "webDir": "dist",
+  "android": {
+    "path": "../android"
+  }
+}

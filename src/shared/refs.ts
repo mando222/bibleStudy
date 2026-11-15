@@ -125,7 +125,19 @@ const PASSAGE_RE = new RegExp(
   `\\b(${bookNames.join('|')})\\.?\\s*(\\d{1,3})(?::(\\d{1,3}))?(?:\\s*[-–—]\\s*(\\d{1,3})(?::(\\d{1,3}))?)?(?![\\d:])`, 'gi'
 )
 
-export function namedPassages(text: string): ScripturePassage[] {
+const LOCATION_RE = new RegExp('^' + PASSAGE_RE.source + '$', 'i')
+
+export function typedPassage(input: string, edition: string | ((book: string) => string)): (ScripturePassage & { edition: string }) | undefined {
+  const text = input.trim()
+  const match = LOCATION_RE.exec(text)
+  // The navigator opens a single location. Ranges in prose remain handled by namedPassages.
+  if (!match || match[4]) return undefined
+  const source = typeof edition === 'string' ? edition : edition(NAME_INDEX[norm(match[1])])
+  const ref = namedPassages(text, source)[0]
+  return ref && { ...ref, edition: source }
+}
+
+export function namedPassages(text: string, edition = 'KJV'): ScripturePassage[] {
   const passages: ScripturePassage[] = []
   for (const [, name, ch, v, end, endV] of text.matchAll(PASSAGE_RE)) {
     const book = NAME_INDEX[norm(name)]
@@ -134,7 +146,8 @@ export function namedPassages(text: string): ScripturePassage[] {
     const firstVerse = singleChapterVerse ? Number(ch) : v ? Number(v) : undefined
     const lastChapter = endV || (end && firstVerse == null) ? Number(end) : chapter
     const lastVerse = endV ? Number(endV) : firstVerse != null && end ? Number(end) : firstVerse
-    if (chapter > 0 && lastChapter >= chapter && lastChapter <= BOOK_BY_ID[book].chapters &&
+    const chapters = edition === 'LXX' && book === 'Ps' ? 151 : BOOK_BY_ID[book].chapters
+    if (chapter > 0 && lastChapter >= chapter && lastChapter <= chapters &&
         (!firstVerse || lastChapter > chapter || (lastVerse ?? firstVerse) >= firstVerse)) {
       passages.push({ book, chapter, firstVerse, lastChapter, lastVerse })
     }

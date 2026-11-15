@@ -13,7 +13,7 @@ import {
   SparkleIcon,
   NotebookIcon,
   SettingsIcon,
-  PenIcon
+  ChevronRight
 } from './icons'
 
 export default function TopBar(): JSX.Element {
@@ -82,9 +82,8 @@ export default function TopBar(): JSX.Element {
           className={`flex items-center gap-1.5 px-2.5 py-1 text-sm rounded-l-md ${
             restoring ? '' : 'hover:bg-elevated'
           }`}
-          title="Show verified source words in the reading text"
+          title={restoring ? 'Show the published translation wording' : 'Show the verified original forms chosen in word settings'}
         >
-          <span className="text-[13px] leading-none">⇄</span>
           Restore words
         </button>
         <button
@@ -92,9 +91,9 @@ export default function TopBar(): JSX.Element {
           className={`px-1.5 flex items-center border-l rounded-r-md ${
             restoring ? 'border-accent/40 hover:bg-accent/10' : 'border-line hover:bg-elevated'
           }`}
-          title="Choose words to restore"
+          aria-label="Choose words to restore" aria-haspopup="dialog" title="Choose words to restore"
         >
-          <PenIcon className="w-3.5 h-3.5" />
+          <ChevronRight className="w-3.5 h-3.5 rotate-90" />
         </button>
       </div>
 

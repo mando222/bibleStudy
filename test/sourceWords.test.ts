@@ -36,6 +36,34 @@ describe('verified word restoration', () => {
     expect(display(v, {}, kjv)).toBe('YHWH')
     expect(display(verse([word(0, 'For', ' '), word(1, 'LORD', '.', 'H3068', src)]), {}, kjv)).toBe('For LORD.')
   })
+  it('restores only the name when the publisher bundles sentence words into one aligned span', () => {
+    // The publisher aligns "of the LORD" to a single Hebrew word; the "of" is owed to the
+    // construct form of the word before it, so it is printed, not swallowed by the name.
+    const span = (english: string, trailer = ' ') =>
+      verse([word(0, english, trailer, 'H3068', { ...source, english }), word(1, 'came', '.')])
+    expect(display(span('of the LORD'))).toBe('of YHWH came.')
+    expect(display(span('but by the LORD'))).toBe('but by YHWH came.')
+    expect(display(span('\u201cThe LORD'))).toBe('\u201cYHWH came.')
+    expect(display(span('O LORD'))).toBe('O YHWH came.')
+    // English may inflect a name it has already spelled.
+    expect(display(span('the LORD\u2019s'))).toBe('YHWH\u2019s came.')
+    const parts = restoredVerseSegments(span('of the LORD'), ref, true)
+    expect(parts[0]).toMatchObject({ original: 'of the LORD', display: 'of YHWH', before: 'of ', after: '' })
+    expect(parts.map(p => p.original).join('')).toBe(span('of the LORD').text)
+
+    // A word printed AFTER the name belongs to the publisher's rendering of that same word;
+    // cutting the name out of it would strand the rest, so the span stays exactly as printed.
+    for (const english of ['The LORD Himself', 'The LORD, however', 'the LORD your God']) {
+      expect(display(span(english))).toBe(english + ' came.')
+    }
+    // A common noun gets no such licence: "loving devotion" is all of ḥeseḏ.
+    const hesed: SourceWord = { ...source, strongs: 'H2617', text: 'חֶסֶד', translit: 'ḥe·seḏ',
+      morph: 'Noun - masculine singular', english: 'loving devotion' }
+    const devotion = verse([word(0, 'loving devotion', '.', 'H2617', hesed)])
+    expect(display(devotion, { H2617: true })).toBe('loving devotion.')
+    expect(display(verse([word(0, 'loving', '.', 'H2617', { ...hesed, english: 'loving' })]), { H2617: true }))
+      .toBe('ḥeseḏ.')
+  })
   it('uses the transliteration for the actual inflected word when its term is enabled', () => {
     const greek: SourceWord = { ...source, text: 'ἠγάπησεν', translit: 'ēgapēsen', language: 'Greek', english: 'loved', strongs: 'G25' }
     const v = verse([word(0, 'loved', ',', 'G25', greek)])
@@ -66,6 +94,16 @@ describe('verified word restoration', () => {
     expect(display(inferred)).toBe(inferred.text)
     const unverified = verse([word(0, 'God', '.', 'H430')])
     expect(display(unverified, { H430: true })).toBe(unverified.text)
+  })
+  it('limits spouse and marriage presets to their published wording', () => {
+    for (const [id, english] of [['G1135', 'woman'], ['G435', 'man'], ['H1167', 'owner'], ['H376', 'man'],
+      ['H802', 'woman'], ['H1166', 'rules'], ['G1060', 'should marry'], ['G1135', 'your wife']]) {
+      const greek = id.startsWith('G')
+      const src: SourceWord = { ...source, strongs: id, english, language: greek ? 'Greek' : 'Hebrew',
+        text: greek ? 'γυνή' : 'אִישׁ', translit: 'example' }
+      const v = verse([word(0, english, '.', id, src)])
+      expect(display(v, { [id]: true })).toBe(v.text)
+    }
   })
   it('uses printed text if a tagger changes words or punctuation', () => {
     const bad = { ...verse([word(0, 'The LORD', '', 'H3068', source)]), text: 'The LORD!' }

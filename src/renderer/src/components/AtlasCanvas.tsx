@@ -26,6 +26,7 @@ export default function AtlasCanvas({ places, focus, overview, selected, onSelec
   const svg = useRef<SVGSVGElement>(null)
   const [frame, setFrame] = useState<Frame>({ width: 800, height: 600 })
   const frameRef = useRef(frame)
+  const [focusedPin, setFocusedPin] = useState<number | null>(null)
   const [camera, setCamera] = useState<Camera>(homeCamera)
   const drag = useRef<{ x: number; y: number; camera: Camera; moved: boolean } | null>(null)
   const bounds = cameraBounds(camera, frame)
@@ -78,6 +79,8 @@ export default function AtlasCanvas({ places, focus, overview, selected, onSelec
     return intersects(bounds, { ...pt, width: 0, height: 0 })
   })
 
+  const tabPin = shown.find(p => p.id === focusedPin)?.id ?? shown.find(p => p.id === selected?.id)?.id ?? shown[0]?.id
+
   return <div className="relative flex-1 min-h-32 overflow-hidden bg-sky-100 dark:bg-slate-800">
     <svg ref={svg} viewBox={[bounds.x, bounds.y, bounds.width, bounds.height].join(' ')}
       aria-label="Atlas map" className="block w-full h-full cursor-grab active:cursor-grabbing select-none touch-none"
@@ -95,7 +98,22 @@ export default function AtlasCanvas({ places, focus, overview, selected, onSelec
         setCamera(boundedCamera({ ...d.camera, x: d.camera.x - dx * pixel, y: d.camera.y - dy * pixel }))
       }}
       onPointerUp={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId) }}
-      onPointerCancel={() => { drag.current = null }}>
+      onPointerCancel={() => { drag.current = null }}
+      onClick={e => {
+        if (drag.current?.moved || (e.target as Element).closest('[data-place-pin]')) return
+        const box = e.currentTarget.getBoundingClientRect()
+        if (!box.width || !box.height) return
+        const x = bounds.x + (e.clientX - box.left) * bounds.width / box.width
+        const y = bounds.y + (e.clientY - box.top) * bounds.height / box.height
+        let nearest: PlaceItem | null = null
+        let distance = 15 * pixel
+        for (const place of shown) {
+          const pt = project(place.lon, place.lat)
+          const gap = Math.hypot(pt.x - x, pt.y - y)
+          if (gap < distance) { nearest = place; distance = gap }
+        }
+        if (nearest) onSelect(nearest)
+      }}>
       {land.data?.map((shape, i) => intersects(bounds, shape.bounds) &&
         <path key={i} d={shape.d} fillRule="evenodd" className="fill-stone-200 dark:fill-stone-700 stroke-stone-400/60" strokeWidth={0.7 * pixel} />)}
       {regions.map((r, i) => <g key={i} className="pointer-events-none">
@@ -108,13 +126,23 @@ export default function AtlasCanvas({ places, focus, overview, selected, onSelec
         return <line key={key} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="stroke-accent pointer-events-none"
           strokeDasharray={3 * pixel + ' ' + 4 * pixel} strokeWidth={1.7 * pixel} />
       })}
-      {shown.map(p => {
+      {shown.map((p, index) => {
         const { x, y } = project(p.lon, p.lat)
         const order = numbered.get(p.id)?.join('/')
         const active = p.id === selected?.id
         const radius = (order ? 9 : active ? 5 : 3) * pixel
         const kind = locationKind(p)
-        return <g key={p.id} transform={'translate(' + x + ' ' + y + ')'} className="cursor-pointer"
+        return <g key={p.id} transform={'translate(' + x + ' ' + y + ')'} className="cursor-pointer focus-visible:outline-accent"
+          data-place-pin={p.id} role="button" aria-label={p.name + ' · ' + locationLabel(p)} tabIndex={tabPin === p.id ? 0 : -1}
+          onFocus={() => setFocusedPin(p.id)}
+          onKeyDown={event => {
+            if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(p); return }
+            const delta = ['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : ['ArrowLeft', 'ArrowUp'].includes(event.key) ? -1 : 0
+            if (!delta) return
+            event.preventDefault()
+            const next = shown[(index + delta + shown.length) % shown.length]
+            svg.current?.querySelector<SVGGElement>('[data-place-pin="' + next.id + '"]')?.focus()
+          }}
           onClick={() => { if (!drag.current?.moved) onSelect(p) }}>
           <title>{p.name} · {locationLabel(p)}</title>
           {kind === 'proposed'

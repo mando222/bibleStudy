@@ -1,0 +1,83 @@
+import groovy.json.JsonSlurper
+import java.security.DigestOutputStream
+import java.security.MessageDigest
+import java.util.zip.GZIPOutputStream
+
+apply plugin: 'com.android.application'
+
+def packageJson = rootProject.layout.projectDirectory.file('../package.json')
+def releaseVersion = new JsonSlurper().parseText(providers.fileContents(packageJson).asText.get()).version
+// Reserve three digits each for minor and patch so Android orders upgrades like desktop.
+if (!(releaseVersion ==~ /\d+\.\d{1,3}\.\d{1,3}/)) {
+    throw new GradleException("Cannot encode desktop version ${releaseVersion} as an Android version code.")
+}
+def (major, minor, patch) = releaseVersion.tokenize('.')*.toBigInteger()
+def androidVersionCode = major * 1_000_000 + minor * 1_000 + patch
+if (androidVersionCode < 1 || androidVersionCode > 2_100_000_000) {
+    throw new GradleException("Desktop version ${releaseVersion} exceeds the Android version code range.")
+}
+
+android {
+    namespace 'org.openbiblestudy.android'
+    compileSdk rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId 'org.openbiblestudy.android'
+        minSdk rootProject.ext.minSdkVersion
+        targetSdk rootProject.ext.targetSdkVersion
+        versionCode androidVersionCode.intValue()
+        versionName releaseVersion
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+    androidResources {
+        noCompress += 'pack'
+    }
+}
+
+dependencies {
+    implementation project(':capacitor-android')
+    implementation "androidx.appcompat:appcompat:${rootProject.ext.androidxAppCompatVersion}"
+    implementation 'androidx.sqlite:sqlite-bundled:2.7.1'
+    androidTestImplementation "androidx.test.ext:junit:${rootProject.ext.androidxJunitVersion}"
+    androidTestImplementation 'androidx.test:runner:1.7.0'
+}
+
+apply from: 'capacitor.build.gradle'
+
+// Compress from the same database as the desktop build. Generate assets under build/ so
+// rebuilding or syncing the web frontend cannot replace or delete the scripture database.
+def bibleFile = rootProject.file('../resources/bible.sqlite')
+def assetDirectory = layout.buildDirectory.dir('generated/scripture-assets')
+def prepareLibrary = tasks.register('prepareOfflineLibrary') {
+    inputs.file(bibleFile)
+    outputs.files(assetDirectory.map { it.file('library/bible.pack') },
+        assetDirectory.map { it.file('library/manifest') })
+    doLast {
+        File directory = new File(assetDirectory.get().asFile, 'library')
+        directory.mkdirs()
+        def digest = MessageDigest.getInstance('SHA-256')
+        new File(directory, 'bible.pack').withOutputStream { output ->
+            new GZIPOutputStream(output, 128 * 1024).withCloseable { compressed ->
+                bibleFile.withInputStream { input ->
+                    new DigestOutputStream(compressed, digest) << input
+                }
+            }
+        }
+        new File(directory, 'manifest').setText(digest.digest().encodeHex().toString() + '\n' +
+            bibleFile.length() + '\n', 'UTF-8')
+    }
+}
+android.sourceSets.main.assets.srcDir(assetDirectory)
+android.sourceSets.main.assets.srcDir(rootProject.file('../src/shared/moduleText'))
+android.sourceSets.androidTest.assets.srcDir(rootProject.file('../test/fixtures/imports'))
+tasks.named('preBuild') { dependsOn(prepareLibrary) }
+
+tasks.register('stageTestApk', Copy) {
+    dependsOn 'assembleDebug'
+    from(layout.buildDirectory.file('outputs/apk/debug/app-debug.apk'))
+    into(rootProject.file('../dist/android'))
+    rename { 'Open-Bible-Study-Android-test.apk' }
+}

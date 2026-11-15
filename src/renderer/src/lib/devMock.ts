@@ -57,6 +57,10 @@ export async function installDevMock(): Promise<void> {
   const mock: BibleApi = {
     version: async () => '0.0.0-dev',
     listTranslations: async () => data.translations as never,
+    listReadingChapters: async edition => Object.keys(data.chapters).filter(k => k.startsWith(edition + '/')).map(k => {
+      const [, book, chapter] = k.split('/')
+      return { book, chapter: Number(chapter), firstVerse: data.chapters[k].verses[0]?.verse ?? 1 }
+    }),
     getChapter: async (ref) =>
       data.chapters[`${ref.translation}/${ref.book}/${ref.chapter}`] ??
       ({
@@ -86,6 +90,7 @@ export async function installDevMock(): Promise<void> {
       occurrences: 0, alternateOccurrences: 0, verses: 0, tagged: 0, forms: [], books: []
     }),
     getWordFrequencyPassages: async () => [],
+    getPeoplePage: async () => ({ people: [], total: 0 }),
     getPeople: async () => [],
     getPerson: async () => null,
     getAncestry: async () => [],
@@ -172,10 +177,10 @@ export async function installDevMock(): Promise<void> {
         verses: []
       }
       if (!translations.length && !includeParses) return base
-      // Deep-clone; align tagged translations by Strong's, stack untagged ones as verse lines.
+      // The browser preview has no corpus occurrence index. Show the complete native verse.
       const out = {
         ...base,
-        verses: base.verses.map((v) => ({ ...v, tokens: v.tokens.map((t) => ({ ...t })), lines: [] as { id: string; text: string }[] }))
+        verses: base.verses.map((v) => ({ ...v, tokens: v.tokens.map((t) => ({ ...t, aligned: undefined })), lines: [] as { id: string; text: string; ref?: string }[] }))
       }
       if (includeParses)
         for (const v of out.verses)
@@ -187,23 +192,13 @@ export async function installDevMock(): Promise<void> {
               : [self]
           }
       for (const tid of translations) {
-        const ch = data.chapters[`${tid}/${book}/${chapter}`]
-        if (!ch) continue
-        const tagged = ch.verses.some((v) => (v.tokens ?? []).some((t) => t.strongs))
         for (const v of out.verses) {
-          const src = ch.verses.find((x) => x.verse === v.verse)
-          if (tagged) {
-            const q = new Map<string, string[]>()
-            for (const tok of src?.tokens ?? [])
-              if (tok.strongs) (q.get(tok.strongs) ?? q.set(tok.strongs, []).get(tok.strongs)!).push(tok.surface)
-            for (const t of v.tokens) {
-              if (!t.strongs) continue
-              const w = q.get(t.strongs)?.shift()
-              if (w) t.aligned = { ...(t.aligned ?? {}), [tid]: w }
-            }
-          } else if (src) {
-            v.lines.push({ id: tid, text: src.text })
-          }
+          const ref = mapPassage({ book, chapter, verse: v.verse }, edition, tid)
+          if (!ref) continue
+          const ch = data.chapters[`${tid}/${ref.book}/${ref.chapter}`]
+          const src = ch?.verses.find(x => x.verse === ref.verse)
+          if (src) v.lines.push({ id: tid, text: src.text,
+            ref: ref.chapter !== chapter || ref.verse !== v.verse ? `${ref.chapter}:${ref.verse}` : undefined })
         }
       }
       return out
@@ -239,6 +234,7 @@ export async function installDevMock(): Promise<void> {
       const i = highlights.findIndex((h) => h.id === id)
       if (i >= 0) highlights.splice(i, 1)
     },
+    listAnnotations: async () => ({ notes, highlights }),
     listNotes: async (ref) => notes.filter((n) => n.book === ref.book && n.chapter === ref.chapter),
     saveNote: async (input) => {
       if (input.id) {
@@ -352,7 +348,9 @@ export async function installDevMock(): Promise<void> {
   }
   const installed = new Set<'fast' | 'balanced' | 'quality'>()
   // Preview starts un-set-up so the seamless "Set up the assistant" flow is visible.
+  let setupCancelled = false
   let setupDone = false
+  const stoppedChats = new Set<string>()
   const setupListeners = new Set<(p: AiSetupProgress) => void>()
   const mockCites = (): ChatCitation[] =>
     (data.search?.hits ?? []).slice(0, 4).map((h) => ({
@@ -379,11 +377,16 @@ export async function installDevMock(): Promise<void> {
         models: [] as string[],
         config: cfg,
         chatModelLabel: setupDone ? label[tier] : '',
+        setupModelLabel: label[tier],
+        setupRequired: !installed.has(tier),
+        setupDownloadBytes: (installed.has(tier) ? 0 : { fast: 807694464, balanced: 2019377696, quality: 4683074240 }[tier]) + (setupDone ? 0 : 84106624),
         installedTiers: [...installed]
       }
     },
     setConfig: async (patch) => Object.assign(cfg, patch),
+    cancelSetup: async () => { setupCancelled = true },
     setupBundled: async () => {
+      setupCancelled = false
       const tier = cfg.chatTier === 'auto' ? 'quality' : cfg.chatTier
       const chat = { fast: ['Llama 3.2 1B Instruct', 807_694_016], balanced: ['Llama 3.2 3B Instruct', 2_019_377_696], quality: ['Qwen2.5 7B Instruct', 4_683_074_240] }[tier] as [string, number]
       // Simulate the one-time model download with progress, then flip to ready.
@@ -394,6 +397,7 @@ export async function installDevMock(): Promise<void> {
       for (const s of steps) {
         for (let got = 0; got < s.total; got += Math.ceil(s.total / 20)) {
           await new Promise((r) => setTimeout(r, 60))
+          if (setupCancelled) throw new Error('Download cancelled. You can resume setup later.')
           setupListeners.forEach((cb) =>
             cb({ role: s.role, label: s.label, received: Math.min(got, s.total), total: s.total, done: false })
           )
@@ -409,7 +413,8 @@ export async function installDevMock(): Promise<void> {
       setupListeners.add(cb)
       return () => setupListeners.delete(cb)
     },
-    chat: async (_conversationId, _messages, grounding, extraContext) => {
+    chat: async (conversationId, _messages, grounding, extraContext) => {
+      stoppedChats.delete(conversationId)
       const cites = [...(extraContext ?? []), ...(grounding ? mockCites() : [])]
       emit({ citations: cites })
       const refs = cites
@@ -419,12 +424,13 @@ export async function installDevMock(): Promise<void> {
       const text = `This is a preview reply — in the desktop app the assistant runs privately on your computer. Grounding in the cited passages${refs ? ` (${refs})` : ''}, it would answer your question here, streaming word by word and citing the verses it used.`
       for (const w of text.split(/(\s+)/)) {
         await new Promise((r) => setTimeout(r, 18))
+        if (stoppedChats.has(conversationId)) break
         emit({ token: w })
       }
       emit({ done: true })
       return { text, citations: cites }
     },
-    stop: async () => undefined,
+    stop: async id => { stoppedChats.add(id) },
     complete: async (_messages, _grounding, activeContext) => ({
       text: `(Preview) The desktop assistant would revise your note here${
         activeContext ? `, aware you're reading ${activeContext}` : ''

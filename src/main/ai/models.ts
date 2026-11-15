@@ -10,6 +10,8 @@ import {
   rmSync
 } from 'node:fs'
 import { createHash } from 'node:crypto'
+import { pipeline } from 'node:stream/promises'
+import { setTimeout as delay } from 'node:timers/promises'
 
 export interface ModelDef {
   id: string
@@ -91,89 +93,82 @@ export function modelPath(def: ModelDef): string {
 }
 export function modelPresent(def: ModelDef): boolean {
   const p = modelPath(def)
-  return existsSync(p) && statSync(p).size > def.sizeBytes * 0.5
+  return existsSync(p) && statSync(p).size === def.sizeBytes
 }
 
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
-
-/** Stream-hash a file so a completed download can be verified against its known sha256. */
-function sha256File(path: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const hash = createHash('sha256')
-    createReadStream(path)
-      .on('data', (d) => hash.update(d))
-      .on('end', () => resolve(hash.digest('hex')))
-      .on('error', reject)
-  })
+export function remainingModelBytes(def: ModelDef): number {
+  if (modelPresent(def)) return 0
+  const partial = modelPath(def) + '.part'
+  const size = existsSync(partial) ? statSync(partial).size : 0
+  return size > def.sizeBytes ? def.sizeBytes : def.sizeBytes - size
 }
 
-/** Download one transfer attempt into `tmp`, resuming from `startAt` bytes when the server allows it. */
+async function sha256File(path: string, signal: AbortSignal): Promise<string> {
+  const hash = createHash('sha256')
+  for await (const chunk of createReadStream(path, { signal })) hash.update(chunk)
+  return hash.digest('hex')
+}
+
 async function downloadOnce(
-  def: ModelDef,
-  tmp: string,
-  startAt: number,
-  onProgress: (received: number, total: number) => void
+  def: ModelDef, tmp: string, startAt: number,
+  onProgress: (received: number, total: number) => void, signal: AbortSignal
 ): Promise<void> {
   const headers: Record<string, string> = {}
   if (startAt > 0) headers.Range = `bytes=${startAt}-`
-  const res = await fetch(def.url, { headers })
+  const res = await fetch(def.url, { headers, signal })
   if (!res.ok || !res.body) throw new Error(`Download failed (${res.status}) for ${def.label}`)
-  // If we asked to resume but the server ignored the Range (200, not 206), start the file over.
   const resuming = startAt > 0 && res.status === 206
-  const ws = createWriteStream(tmp, { flags: resuming ? 'a' : 'w' })
-  let got = resuming ? startAt : 0
-  const reader = res.body.getReader()
-  try {
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      if (!ws.write(Buffer.from(value))) await new Promise<void>((r) => ws.once('drain', () => r()))
-      got += value.length
-      onProgress(got, def.sizeBytes)
-    }
-  } finally {
-    ws.end()
+  if (resuming && !res.headers.get('content-range')?.startsWith(`bytes ${startAt}-`)) {
+    await res.body.cancel()
+    throw new Error('The model server returned an unexpected range.')
   }
-  await new Promise<void>((resolve, reject) => {
-    ws.on('close', () => resolve())
-    ws.on('error', reject)
-  })
+  let got = resuming ? startAt : 0
+  async function* chunks(stream: ReadableStream<Uint8Array>) {
+    const reader = stream.getReader()
+    try {
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        got += value.length
+        if (got > def.sizeBytes) throw new Error(`Unexpected size for ${def.label}.`)
+        yield value
+        onProgress(got, def.sizeBytes)
+      }
+    } finally {
+      await reader.cancel().catch(() => {})
+      reader.releaseLock()
+    }
+  }
+  await pipeline(chunks(res.body), createWriteStream(tmp, { flags: resuming ? 'a' : 'w' }), { signal })
+  if (got !== def.sizeBytes) throw new Error(`Incomplete download for ${def.label}.`)
 }
 
 export async function downloadModel(
-  def: ModelDef,
-  onProgress: (received: number, total: number) => void
+  def: ModelDef, onProgress: (received: number, total: number) => void,
+  signal: AbortSignal = new AbortController().signal
 ): Promise<void> {
+  signal.throwIfAborted()
   if (modelPresent(def)) {
     onProgress(def.sizeBytes, def.sizeBytes)
     return
   }
   const dest = modelPath(def)
-  const tmp = `${dest}.part`
-
-  // Retry transient network failures, resuming from whatever was already written.
-  const MAX_ATTEMPTS = 4
-  let lastErr: unknown
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+  const tmp = dest + '.part'
+  for (let attempt = 0; ; attempt++) {
     try {
-      const startAt = existsSync(tmp) ? statSync(tmp).size : 0
-      await downloadOnce(def, tmp, startAt, onProgress)
-      lastErr = null
+      const size = existsSync(tmp) ? statSync(tmp).size : 0
+      if (size !== def.sizeBytes) await downloadOnce(def, tmp, size < def.sizeBytes ? size : 0, onProgress, signal)
       break
-    } catch (e) {
-      lastErr = e
-      if (attempt < MAX_ATTEMPTS - 1) await sleep(1000 * 2 ** attempt) // 1s, 2s, 4s
+    } catch (error) {
+      signal.throwIfAborted()
+      if (attempt >= 3) throw error
+      await delay(1000 * 2 ** attempt, undefined, { signal })
     }
   }
-  if (lastErr) throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
-
-  // Verify integrity before promoting the .part to the real file.
-  if (def.sha256) {
-    const got = await sha256File(tmp)
-    if (got !== def.sha256) {
-      rmSync(tmp, { force: true })
-      throw new Error(`Downloaded ${def.label} failed its checksum — please try again.`)
-    }
+  if (def.sha256 && await sha256File(tmp, signal) !== def.sha256) {
+    rmSync(tmp, { force: true })
+    throw new Error(`Downloaded ${def.label} failed its checksum. Please try again.`)
   }
+  signal.throwIfAborted()
   renameSync(tmp, dest)
 }

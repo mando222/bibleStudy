@@ -1,11 +1,12 @@
-import { Fragment, useMemo, type ReactNode } from 'react'
+import { Fragment, useContext, useMemo, type ReactNode } from 'react'
 import type { ChapterRef, Highlight, Verse, VerseToken } from '@shared/types'
-import { restoredVerseSegments, type VerseSegment } from '@shared/sourceWords'
+import { publishedWording, restoredVerseSegments, type VerseSegment } from '@shared/sourceWords'
 import { useAppStore } from '@/store/useAppStore'
 import { highlightVar } from '@/lib/highlights'
 import { getReviewedSpeakers } from '@shared/passageStudy'
 import { literaryGroups } from '@shared/literaryLayout'
 import LiteraryVerse from './LiteraryVerse'
+import { ReaderActions } from './ReaderActions'
 import { useWordComparison } from './RestoredWordComparison'
 
 interface Props extends ChapterRef {
@@ -27,12 +28,13 @@ export default function VerseView({ v, translation, book, chapter, literary = fa
   const terms = useAppStore(s => s.sourceWordTerms)
   const sourceFormIds = useAppStore(s => s.sourceFormIds)
   const comparison = useWordComparison()
+  const touch = useContext(ReaderActions)
   const parts = useMemo(() => restoredVerseSegments(v, { translation, book, chapter }, enabled, terms, sourceFormIds),
     [v, translation, book, chapter, enabled, terms, sourceFormIds])
   const inspect = (token: VerseToken): void => {
     if (!token.strongs || window.getSelection()?.isCollapsed === false) return
     selectStrongs(token.strongs, {
-      translation, book, chapter, verse: v.verse, surface: token.sourceWord?.english ?? token.surface,
+      translation, book, chapter, verse: v.verse, position: token.sourceWord?.startPosition ?? token.position, surface: token.sourceWord?.english ?? token.surface,
       derived: !!token.derived, sourceWord: token.sourceWord
     })
   }
@@ -50,7 +52,7 @@ export default function VerseView({ v, translation, book, chapter, literary = fa
     [speakers, translation, book, chapter, v.verse])
   const verseControls = <>
     <sup className={`select-none align-super text-[0.62em] font-sans font-semibold text-accent/70 ${verseNumbers ? 'mr-0.5' : 'relative inline-block w-0'}`}>
-      <button type="button" data-verse-action="" onClick={e => onOpenMenu(v.verse, e)}
+      <button type="button" data-verse-action="" data-passage-action="" tabIndex={-1} onClick={e => onOpenMenu(v.verse, e)}
         aria-label={`Verse ${v.verse}, highlight or add a note`} title="Highlight or add a note"
         data-label={verseNumbers ? v.verse : '⋯'}
         className={`reader-marker hover:text-accent ${verseNumbers ? '' : 'absolute z-10 bottom-0 start-0 rounded bg-panel px-1 leading-tight opacity-0 group-hover/verse:opacity-100 focus-visible:opacity-100'}`} />
@@ -60,35 +62,48 @@ export default function VerseView({ v, translation, book, chapter, literary = fa
   </>
   const renderParts = (pieces: VerseSegment[]) => (
     <span style={bg}>
-      {pieces.map(({ original, display, annotation, token }, index) => {
+      {pieces.map((part, index) => {
+        const { original, display, before = '', after = '', annotation, token } = part
         const linked = token?.strongs ? token : undefined
         const changed = original !== display || annotation !== undefined
         const source = changed ? linked?.sourceWord : undefined
-        const native = source && (annotation || display === source.text) ? (
+        // The restored term, without the published words the publisher bundled around it.
+        const term = display.slice(before.length, display.length - after.length)
+        const native = source && (annotation || term === source.text) ? (
           <bdi dir={source.language === 'Greek' ? 'ltr' : 'rtl'}
             lang={source.language === 'Greek' ? 'grc' : source.language === 'Hebrew' ? 'he' : 'arc'}
             className={source.language === 'Greek' ? 'font-greek' : 'font-hebrew'}>{source.text}</bdi>
         ) : null
+        const word = source ? { source, translation, display: annotation ?? term,
+          published: publishedWording(part), alongside: !!annotation } : undefined
         const preview = (anchor: HTMLElement, mode: 'hover' | 'focus' | 'explore') => {
-          if (source) comparison?.show({ anchor, source, translation, display: annotation ?? display, alongside: !!annotation }, mode)
+          if (word && !touch) comparison?.show({ anchor, ...word }, mode)
         }
         const renderWord = (text: ReactNode, comparisonLink: boolean, wholePart: boolean) => (
-          <span data-scripture-part={wholePart ? '' : undefined} data-published={wholePart && changed ? original : undefined}
+          <span data-scripture-part={wholePart ? '' : undefined} data-published={wholePart && comparisonLink ? word?.published : undefined}
             data-aligned-english={annotation && !comparisonLink ? '' : undefined}
             title={token?.derived ? 'Inferred word mapping' : undefined}
             data-restored-word={comparisonLink ? '' : undefined}
             data-source-row={comparisonLink && source ? source.language + ':' + source.rowId : undefined}
             aria-haspopup={comparisonLink ? 'dialog' : undefined}
-            aria-description={comparisonLink ? 'Down Arrow explores translations. Enter opens the lexicon.' : undefined}
+            aria-description={comparisonLink && word ? `${translation} ${annotation ? 'aligned phrase' : 'wording'}: ${word.published}. ${touch ? 'Tap to compare translations.' : 'Down Arrow explores translations. Enter opens the lexicon.'}` : undefined}
             onMouseEnter={comparisonLink ? e => { if (!e.buttons) preview(e.currentTarget, 'hover') } : undefined}
             onMouseLeave={comparisonLink ? e => comparison?.leave(e.relatedTarget) : undefined}
             onPointerDown={comparisonLink ? () => comparison?.dismiss() : undefined}
             onFocus={comparisonLink ? e => { if (e.currentTarget.matches(':focus-visible')) preview(e.currentTarget, 'focus') } : undefined}
             onBlur={comparisonLink ? e => comparison?.leave(e.relatedTarget) : undefined}
-            role={linked ? 'button' : undefined} tabIndex={linked ? 0 : undefined}
-            onClick={linked ? () => inspect(linked) : undefined}
+            role={linked ? 'button' : undefined} data-passage-action={linked ? '' : undefined} tabIndex={linked ? -1 : undefined}
+            onClick={linked ? () => {
+              if (window.getSelection()?.isCollapsed === false) return
+              if (comparisonLink && word && touch) {
+                touch.compare(word)
+              } else inspect(linked)
+            } : undefined}
             onKeyDown={linked ? e => {
-              if (comparisonLink && e.key === 'ArrowDown') { e.preventDefault(); preview(e.currentTarget, 'explore') }
+              if (comparisonLink && touch && word && ['Enter', ' ', 'ArrowDown'].includes(e.key)) {
+                e.preventDefault()
+                touch.compare(word)
+              } else if (comparisonLink && e.key === 'ArrowDown') { e.preventDefault(); preview(e.currentTarget, 'explore') }
               else if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()
                 if (comparisonLink) comparison?.dismiss()
@@ -105,7 +120,11 @@ export default function VerseView({ v, translation, book, chapter, literary = fa
           <Fragment key={index}>
             {annotation ? <span data-scripture-part="" data-published={original} data-aligned-phrase={source?.english}>
               {renderWord(display, false, false)}<span className="text-[0.88em] text-accent"> [{renderWord(native, true, false)}]</span>
-            </span> : renderWord(native ?? display, !!source, true)}
+            </span> : word ? <>
+              {before && <span data-scripture-part="">{before}</span>}
+              {renderWord(native ?? term, true, true)}
+              {after && <span data-scripture-part="">{after}</span>}
+            </> : renderWord(display, false, true)}
             {strongsVisible && token?.strongs && (
               <sup onClick={() => inspect(token)} data-label={token.strongs.replace(/^[GH]/, '')}
                 aria-label={`Strong's ${token.strongs}`} title={`Strong's ${token.strongs}${token.derived ? ' (inferred)' : ''}`}

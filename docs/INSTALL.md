@@ -94,7 +94,13 @@ Two formats are provided:
 
 ---
 
-## The AI assistant (optional)
+## Android
+
+On a phone or tablet running Android 7 or later, open the project's [GitHub releases](https://github.com/mando222/bibleStudy/releases) and choose `Open-Bible-Study-Android-<version>.apk` under Assets on a release that includes Android. Tap the downloaded file, allow your browser or file manager to install apps if prompted, then choose **Install**. The first launch prepares the offline library.
+
+For later versions, open the app’s settings gear and choose **App updates → Check now**. When an update is available, tap **Download update**. If prompted, allow Open Bible Study to install apps from this source. Return to the app, tap **Install update**, and confirm in Android. Your notes and highlights carry over.
+
+## The desktop AI assistant (optional)
 
 The study features — reading, parallel translations, Strong's numbers,
 interlinear, lexicons, notes, search — all work immediately, offline, with no

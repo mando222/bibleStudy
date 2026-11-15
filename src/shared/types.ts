@@ -1,4 +1,4 @@
-import type { VerseVariant, OriginalVerseReadings } from './apparatus'
+import type { GreekOrderStatus, VerseVariant, OriginalVerseReadings } from './apparatus'
 // Shared domain + IPC contract types, used by main, preload, and renderer.
 import type { WordFrequency, WordFrequencyQuery, WordFrequencyPassageQuery, WordFrequencyVerse } from './wordFrequency'
 import type { StudyRange, PassageContext, PersonMap } from './passageStudy'
@@ -86,6 +86,12 @@ export interface ChapterRef {
   chapter: number
 }
 
+export type ReadingChapter = {
+  book: string
+  chapter: number
+  firstVerse: number
+}
+
 export interface VerseRef extends ChapterRef {
   verse: number
 }
@@ -144,6 +150,9 @@ export interface SearchHit {
   chapter: number
   verse: number
   snippet: string // FTS-highlighted excerpt
+  /** FTS match boundaries in the accent-folded Greek search key for the printed snippet. */
+  markedGreekKey?: string
+  orderStatus?: GreekOrderStatus
 }
 
 export interface SearchResponse {
@@ -160,6 +169,7 @@ export interface ConcordanceHit {
   verse: number
   surface: string // the English word(s) that carry this Strong's here
   snippet: string // full verse text with the matched word(s) marked {{…}}
+  orderStatus?: GreekOrderStatus
 }
 
 export interface ConcordanceResponse {
@@ -200,7 +210,7 @@ export interface InterlinearContent {
     verse: number
     tokens: VerseToken[]
     sourceIssue?: string // edition supplied a partial or unusable reading at this native address
-    lines?: { id: string; text: string; ref?: string }[] // untagged stacked translations, shown as a verse line
+    lines?: { id: string; text: string; ref?: string }[] // complete printed verse for partial or unavailable occurrence links
   }[]
 }
 
@@ -232,6 +242,9 @@ export interface AiStatus {
   models: string[]
   config: AiConfig
   chatModelLabel: string // active bundled model's display name (empty if none)
+  setupModelLabel: string
+  setupDownloadBytes: number
+  setupRequired: boolean
   installedTiers: ChatTier[] // which bundled chat tiers are downloaded
 }
 export interface AiSetupProgress {
@@ -309,6 +322,7 @@ export interface AiApi {
   buildBibleIndex(translation: string): Promise<void>
   onIndexProgress(cb: (s: AiIndexStatus) => void): () => void
 
+  cancelSetup(): Promise<void>
   setupBundled(): Promise<void>
   onSetupProgress(cb: (p: AiSetupProgress) => void): () => void
 }
@@ -377,13 +391,29 @@ export interface PersonListItem {
   deathYear: number | null
   verseCount: number
 }
+export interface PersonDirectoryEntry extends PersonListItem {
+  displayName: string
+  aliases: string[]
+  firstRef: string | null
+}
+export interface PeoplePage { people: PersonDirectoryEntry[]; total: number }
+export interface FamilyChild extends PersonRef {
+  father: PersonRef | null
+  mother: PersonRef | null
+  motherRefs: string[]
+}
+export type SiblingRelation = 'both' | 'halfFather' | 'halfMother' | 'father' | 'mother' | 'recorded'
+export interface FamilySibling extends PersonRef {
+  relation: SiblingRelation
+}
 export interface PersonDetail extends PersonListItem {
   mappedPlaceCount: number
   summary: string | null
   father: PersonRef | null
   mother: PersonRef | null
   spouses: PersonRef[]
-  children: PersonRef[]
+  children: FamilyChild[]
+  siblings: FamilySibling[]
   verses: string[] // "Book.ch.v"
 }
 export interface PlaceItem {
@@ -501,6 +531,8 @@ export interface NotebookFile {
 export interface NotebookApi {
   create(name: string): Promise<NotebookFile>
   list(): Promise<NotebookFile[]>
+  listDeleted?(): Promise<(NotebookFile & { id: string })[]>
+  restoreDeleted?(id: string): Promise<NotebookFile>
   read(name: string): Promise<string>
   write(name: string, content: string): Promise<NotebookFile>
   recover(name: string, content: string): Promise<NotebookFile>
@@ -551,6 +583,7 @@ export interface SrsStats {
 export interface BibleApi {
   version(): Promise<string>
   listTranslations(): Promise<Translation[]>
+  listReadingChapters(edition: string, interlinear: boolean): Promise<ReadingChapter[]>
   getChapter(ref: ChapterRef): Promise<ChapterContent>
   getComparisonVerse(ref: VerseRef): Promise<Verse | null>
   getStrongs(id: string): Promise<StrongsEntry | null>
@@ -558,6 +591,7 @@ export interface BibleApi {
   browseLexicon(opts: LexBrowseOptions): Promise<LexBrowseResult>
   getWordFrequency(query: WordFrequencyQuery): Promise<WordFrequency>
   getWordFrequencyPassages(query: WordFrequencyPassageQuery): Promise<WordFrequencyVerse[]>
+  getPeoplePage(query: string, limit: number, offset: number): Promise<PeoplePage>
   getPeople(query?: string, limit?: number): Promise<PersonListItem[]>
   getMappedPeople(): Promise<MappedPerson[]>
   getPerson(id: number): Promise<PersonDetail | null>
@@ -592,6 +626,7 @@ export interface BibleApi {
   saveHighlight(input: HighlightInput): Promise<Highlight>
   deleteHighlight(id: number): Promise<void>
 
+  listAnnotations(): Promise<{ notes: Note[]; highlights: Highlight[] }>
   listNotes(ref: { book: string; chapter: number }): Promise<Note[]>
   saveNote(input: NoteInput): Promise<Note>
   deleteNote(id: number): Promise<void>

@@ -1,0 +1,30 @@
+{
+  "name": "open-bible-study-android",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && vite build",
+    "sync": "npm run build && cap sync android",
+    "open": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.6.2",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.6.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^5.1.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.2",
+    "@types/node": "^22.10.1",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.6.2",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}

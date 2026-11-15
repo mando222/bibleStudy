@@ -1,0 +1,17 @@
+.gradle/
+.idea/
+build/
+local.properties
+*.iml
+*.apk
+*.aab
+*.jks
+*.keystore
+captures/
+.externalNativeBuild/
+.cxx/
+capacitor-cordova-android-plugins/
+capacitor.settings.gradle
+app/capacitor.build.gradle
+app/src/main/assets/
+app/src/main/res/xml/config.xml

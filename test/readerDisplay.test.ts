@@ -66,6 +66,30 @@ describe('reading display and atlas handoff', () => {
     await useAppStore.persist.rehydrate()
     expect(useAppStore.getState().displayDefaults).toEqual({ ...plainDisplay, literary: true, speakers: true, chapterNumbers: false, verseNumbers: false })
   })
+  it('retains the exact occurrence for back and forward between two forms of G264 in one verse', () => {
+    const s = useAppStore.getState()
+    const address = { translation: 'BSB', book: '1John', chapter: 2, verse: 1, derived: false }
+    const first = { ...address, surface: 'you will not sin', position: 7 }
+    const second = { ...address, surface: 'does sin', position: 15 }
+    s.selectStrongs('G264', first)
+    s.selectStrongs('G264', second)
+    s.selectStrongs('G264', { ...second })
+    s.selectStrongs('G5')
+    s.strongsNavBack()
+    expect(useAppStore.getState().selectedOccurrence).toEqual(second)
+    s.strongsNavBack()
+    expect(useAppStore.getState().selectedOccurrence).toEqual(first)
+    s.strongsNavForward()
+    expect(useAppStore.getState().selectedOccurrence).toEqual(second)
+  })
+  it('returns from a Timeline place to Timeline', () => {
+    const s = useAppStore.getState()
+    s.setActivity('timelines')
+    s.focusPlace(42)
+    expect(useAppStore.getState().atlasOrigin?.activity).toBe('timelines')
+    s.returnFromAtlas()
+    expect(useAppStore.getState().activity).toBe('timelines')
+  })
   it('returns to a selection made in the second translation even if a person map is opened along the way', () => {
     const s = useAppStore.getState(); s.setParallels(['KJV', 'BSB']); s.inspectStudy({ mode: 'context', range })
     s.openPassageMap(range); s.openPersonMap(2479); s.returnFromAtlas()

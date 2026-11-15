@@ -161,14 +161,16 @@ export async function runSmokeTest(): Promise<void> {
       }
     ],
     [
-      'Interlinear stacks an INFERRED translation word-for-word',
+      'Interlinear verifies two inflected forms in John 17:8 and displays the complete ASV verse',
       () => {
-        // Regression: derived_tags were read only by the reader, so a stacked ASV column fell back
-        // to a flat verse line even though its tags existed.
-        const il = getInterlinear('John', 1, 'NA', ['ASV'])
-        if (!il.verses.some((v) => v.tokens.some((t) => t.aligned?.ASV))) {
-          throw new Error('ASV did not align word-for-word')
-        }
+        const row = getInterlinear('John', 17, 'NA', ['BSB', 'ASV']).verses.find(v => v.verse === 8)
+        const words = row?.tokens.filter(t => t.strongs === 'G1325')
+        if (words?.length !== 2 || words[0].lemma?.normalize('NFC') !== 'ἔδωκάς' || words[0].aligned?.BSB !== 'You gave' ||
+            words[1].lemma?.normalize('NFC') !== 'δέδωκα' || words[1].aligned?.BSB !== 'I have given')
+          throw new Error('Missing occurrence-specific BSB links')
+        const printed = getChapter({ translation: 'ASV', book: 'John', chapter: 17 }).verses.find(v => v.verse === 8)
+        if (!printed || row?.tokens.some(t => t.aligned?.ASV) || row?.lines?.find(l => l.id === 'ASV')?.text !== printed.text)
+          throw new Error('Expected the published ASV verse')
       }
     ],
     [

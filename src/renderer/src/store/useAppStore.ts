@@ -54,6 +54,15 @@ export interface SelectedOccurrence {
   surface: string
   derived: boolean
   sourceWord?: SourceWord
+  position?: number
+}
+
+type WordVisit = { selectedStrongs: string; selectedOccurrence: SelectedOccurrence | null }
+
+function sameOccurrence(a: SelectedOccurrence | null, b: SelectedOccurrence | null): boolean {
+  return a === b || (!!a && !!b && a.translation === b.translation && a.book === b.book &&
+    a.chapter === b.chapter && a.verse === b.verse && a.position === b.position &&
+    a.surface === b.surface && a.derived === b.derived && a.sourceWord?.rowId === b.sourceWord?.rowId)
 }
 
 interface AppState {
@@ -76,6 +85,7 @@ interface AppState {
   activity: Activity
   setActivity: (a: Activity) => void
   // Cross-view focus: jump to a person in Genealogies / a place in Maps.
+  profileOrigin: Activity | null
   focusPersonId: number | null
   focusPerson: (id: number) => void
   focusPlaceId: number | null
@@ -161,8 +171,8 @@ interface AppState {
   toggleInterlinearParses: () => void
   selectedStrongs: string | null
   selectedOccurrence: SelectedOccurrence | null
-  strongsBack: string[] // study-pane history (browser-style back/forward through looked-up words)
-  strongsForward: string[]
+  strongsBack: WordVisit[] // study-pane history (browser-style back/forward through looked-up words)
+  strongsForward: WordVisit[]
   strongsNavBack: () => void
   strongsNavForward: () => void
   studyTab: StudyTab
@@ -184,6 +194,7 @@ interface AppState {
   chronological: boolean
   toggleChronological: () => void
   scrollToVerse: number | null
+  readerVisit: number
   goToVerse: (book: string, chapter: number, verse: number, sourceEdition?: string) => void
   focusVerse: (book: string, chapter: number, verse: number, sourceEdition: string) => void
   openSearchHit: (hit: SearchHit) => void
@@ -247,11 +258,12 @@ export const useAppStore = create<AppState>()(
       }),
       toggleTheme: () => set({ theme: get().theme === 'light' ? 'dark' : 'light' }),
       activity: 'bible',
-      setActivity: (activity) => set({ activity, atlasTarget: null, atlasOrigin: null, focusPlaceId: null }),
+      setActivity: (activity) => set({ activity, profileOrigin: null, atlasTarget: null, atlasOrigin: null, focusPlaceId: null }),
+      profileOrigin: null,
       focusPersonId: null,
-      focusPerson: (focusPersonId) => set({ focusPersonId, activity: 'genealogies' }),
+      focusPerson: (focusPersonId) => set(s => ({ focusPersonId, activity: 'genealogies', profileOrigin: s.activity === 'genealogies' ? s.profileOrigin : s.activity })),
       focusPlaceId: null,
-      focusPlace: (focusPlaceId) => set({ focusPlaceId, activity: 'maps', atlasTarget: null, atlasOrigin: null }),
+      focusPlace: (focusPlaceId) => set(s => ({ focusPlaceId, activity: 'maps', atlasTarget: null, atlasOrigin: s.activity === 'maps' ? s.atlasOrigin : { activity: s.activity } })),
       clearFocus: () => set({ focusPersonId: null, focusPlaceId: null }),
 
       translations: [],
@@ -334,25 +346,23 @@ export const useAppStore = create<AppState>()(
       strongsBack: [],
       strongsForward: [],
       strongsNavBack: () => {
-        const { strongsBack, strongsForward, selectedStrongs } = get()
+        const { strongsBack, strongsForward, selectedStrongs, selectedOccurrence } = get()
         if (!strongsBack.length) return
         set({
-          selectedOccurrence: null,
-          selectedStrongs: strongsBack[strongsBack.length - 1],
+          ...strongsBack[strongsBack.length - 1],
           studyTab: 'lexicon', studyInspector: null,
           strongsBack: strongsBack.slice(0, -1),
-          strongsForward: selectedStrongs ? [...strongsForward, selectedStrongs] : strongsForward
+          strongsForward: selectedStrongs ? [...strongsForward.slice(-99), { selectedStrongs, selectedOccurrence }] : strongsForward
         })
       },
       strongsNavForward: () => {
-        const { strongsBack, strongsForward, selectedStrongs } = get()
+        const { strongsBack, strongsForward, selectedStrongs, selectedOccurrence } = get()
         if (!strongsForward.length) return
         set({
-          selectedOccurrence: null,
-          selectedStrongs: strongsForward[strongsForward.length - 1],
+          ...strongsForward[strongsForward.length - 1],
           studyTab: 'lexicon', studyInspector: null,
           strongsForward: strongsForward.slice(0, -1),
-          strongsBack: selectedStrongs ? [...strongsBack, selectedStrongs] : strongsBack
+          strongsBack: selectedStrongs ? [...strongsBack.slice(-99), { selectedStrongs, selectedOccurrence }] : strongsBack
         })
       },
       studyTab: 'lexicon',
@@ -389,14 +399,14 @@ export const useAppStore = create<AppState>()(
       chronological: false,
       toggleChronological: () => set({ chronological: !get().chronological }),
       scrollToVerse: null,
+      readerVisit: 0,
       goToVerse: (book, chapter, verse, sourceEdition = 'KJV') => {
         const s = get()
         const edition = readingEdition(s, book)
-        const unverifiedImport = edition !== sourceEdition && (edition.startsWith('imp_') || sourceEdition.startsWith('imp_'))
-        const available = !unverifiedImport && mapPassage({ book, chapter, verse }, sourceEdition, edition)
+        const available = mapPassage({ book, chapter, verse }, sourceEdition, edition)
         const showSource = !available && s.translations.some((t) => t.id === sourceEdition)
         set({
-          book, chapter, referenceEdition: sourceEdition, activeVerse: verse, scrollToVerse: verse, activity: 'bible', studyInspector: null,
+          readerVisit: s.readerVisit + 1, book, chapter, referenceEdition: sourceEdition, activeVerse: verse, scrollToVerse: verse, activity: 'bible', studyInspector: null,
           ...(showSource ? { primary: sourceEdition, parallels: chooseColumn(s.parallels, 0, sourceEdition), interlinear: false } : {})
         })
       },
@@ -411,7 +421,7 @@ export const useAppStore = create<AppState>()(
           ? { interlinear: true, interlinearEdition: edition }
           : { interlinear: false, primary: translation, parallels: [translation, ...s.parallels.slice(1).filter((id) => id !== translation)] }
         set({
-          ...reader, book: hit.book, chapter: hit.chapter, referenceEdition: edition ?? translation,
+          readerVisit: s.readerVisit + 1, ...reader, book: hit.book, chapter: hit.chapter, referenceEdition: edition ?? translation,
           activeVerse: hit.verse, scrollToVerse: hit.verse, activity: 'bible', studyInspector: null
         })
       },
@@ -424,20 +434,27 @@ export const useAppStore = create<AppState>()(
       setParallels: (items) => {
         const ids = [...new Set(items)]
         if (!ids.length) return
-        const inspector = get().studyInspector
-        set({ parallels: ids, primary: ids[0], referenceEdition: get().referenceEdition || get().primary,
+        const s = get()
+        const inspector = s.studyInspector
+        const reference = s.referenceEdition || s.primary
+        const independent = ids[0] !== reference && (
+          ((ids[0] !== s.primary || !ids.includes(reference)) && ids[0].startsWith('imp_')) ||
+          (!ids.includes(reference) && reference.startsWith('imp_'))
+        )
+        set({ parallels: ids, primary: ids[0], referenceEdition: independent ? ids[0] : reference,
+          ...(independent ? { activeVerse: null, scrollToVerse: null } : {}),
           ...(inspector && (!ids.includes(inspector.range.edition) || (inspector.mode === 'compare' && ids.length < 2)) ? { studyInspector: null } : {}) })
       },
       selectStrongs: (id, occurrence) => {
         id = id && lexiconId(id)
-        const cur = get().selectedStrongs
-        if (id && id !== cur) {
+        const { selectedStrongs: cur, selectedOccurrence } = get()
+        if (id && (id !== cur || !sameOccurrence(occurrence ?? null, selectedOccurrence))) {
           // Navigating to a new entry: remember where we were, clear the forward stack.
           set({
             selectedStrongs: id,
             selectedOccurrence: occurrence ?? null,
             studyTab: 'lexicon', studyInspector: null,
-            strongsBack: cur ? [...get().strongsBack, cur] : get().strongsBack,
+            strongsBack: cur ? [...get().strongsBack.slice(-99), { selectedStrongs: cur, selectedOccurrence }] : get().strongsBack,
             strongsForward: []
           })
         } else if (!id) {
@@ -496,6 +513,7 @@ export const useAppStore = create<AppState>()(
         parallels: s.parallels,
         book: s.book,
         chapter: s.chapter,
+        activeVerse: s.activeVerse,
         strongsVisible: s.strongsVisible,
         interlinear: s.interlinear,
         interlinearEdition: s.interlinearEdition,
@@ -505,7 +523,7 @@ export const useAppStore = create<AppState>()(
         restoreSourceWords: s.restoreSourceWords,
         sourceWordTerms: s.sourceWordTerms,
         sourceFormIds: s.sourceFormIds,
-        chatMessages: s.chatMessages,
+        ...(import.meta.env.VITE_STUDY_MOBILE === 'true' ? {} : { chatMessages: s.chatMessages }),
         mapYear: s.mapYear,
         mapShowRegions: s.mapShowRegions,
         activeNotebookFile: s.activeNotebookFile,

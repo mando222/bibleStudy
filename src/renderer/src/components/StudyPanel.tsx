@@ -4,6 +4,7 @@ import { HashIcon, PenIcon, SearchIcon, CompareIcon, LinkIcon, ChevronRight } fr
 import LexiconCard from './LexiconCard'
 import NotesPanel from './NotesPanel'
 import SearchPanel from './SearchPanel'
+import RetainedView from './RetainedView'
 import ApparatusPanel from './ApparatusPanel'
 import CrossRefsPanel from './CrossRefsPanel'
 import PassageInspector from './PassageInspector'
@@ -33,6 +34,7 @@ function NavBtn({
       onClick={onClick}
       disabled={disabled}
       title={title}
+      aria-label={title}
       className={`w-7 h-7 flex items-center justify-center rounded-md ${
         disabled ? 'text-faint/40' : 'text-muted hover:text-accent hover:bg-elevated'
       }`}
@@ -94,8 +96,8 @@ export default function StudyPanel(): JSX.Element {
     <div className="h-full flex flex-col bg-panel">
       <div className="h-10 shrink-0 border-b border-line flex items-center">
         <div className="flex items-center h-full px-1 gap-0.5 border-r border-line">
-          <NavBtn onClick={navBack} disabled={!strongsBack.length} title="Back" flip />
-          <NavBtn onClick={navForward} disabled={!strongsForward.length} title="Forward" />
+          <NavBtn onClick={navBack} disabled={!strongsBack.length} title="Back in word lookup history" flip />
+          <NavBtn onClick={navForward} disabled={!strongsForward.length} title="Forward in word lookup history" />
         </div>
         <div ref={barRef} className="flex-1 flex h-full">
           {TABS.map(({ id, label, Icon }) => (
@@ -117,9 +119,8 @@ export default function StudyPanel(): JSX.Element {
       </div>
 
       <div className="flex-1 min-h-0">
-        {inspector ? <PassageInspector inspector={inspector}/> : studyTab === 'search' ? (
-          <SearchPanel />
-        ) : (
+        <RetainedView active={!inspector && studyTab === 'search'}><SearchPanel /></RetainedView>
+        {inspector ? <PassageInspector inspector={inspector}/> : studyTab !== 'search' && (
           <div className="h-full overflow-y-auto p-4 text-sm text-muted leading-relaxed">
             {studyTab === 'lexicon' && <LexiconCard id={selectedStrongs} />}
             {studyTab === 'crossrefs' && <CrossRefsPanel />}

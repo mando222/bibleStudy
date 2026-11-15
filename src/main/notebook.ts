@@ -15,9 +15,8 @@ export function setNotebookFolder(folder: string): void {
 
 export function notebookFolder(): string {
   const config = cfgPath()
-  const folder = existsSync(config)
-    ? (JSON.parse(readFileSync(config, 'utf8')) as { folder: string }).folder
-    : join(studyProfile().root, 'Notebooks')
+  if (existsSync(config)) return (JSON.parse(readFileSync(config, 'utf8')) as { folder: string }).folder
+  const folder = join(studyProfile().root, 'Notebooks')
   mkdirSync(folder, { recursive: true })
   return folder
 }
@@ -56,12 +55,12 @@ export function registerNotebookIpc(): void {
   ipcMain.handle('notebook:delete', (e, name: string) => shell.trashItem(session(e.sender).checkedPath(name)))
   ipcMain.handle('notebook:getFolder', (e) => session(e.sender).folder)
   ipcMain.handle('notebook:chooseFolder', async (e) => {
-    const current = session(e.sender)
     const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender)!, {
       title: 'Choose a folder for your notebook', properties: ['openDirectory', 'createDirectory']
     })
-    if (res.canceled || !res.filePaths[0]) return current.folder
+    if (res.canceled || !res.filePaths[0]) return ''
     const folder = res.filePaths[0]
+    listNotebook(folder)
     setNotebookFolder(folder)
     sessions.set(e.sender, new NotebookSession(folder))
     return folder

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import ReadingPanel from '../src/renderer/src/components/ReadingPanel'
 import { useAppStore } from '../src/renderer/src/store/useAppStore'
 import { publishedSelection } from '../src/renderer/src/lib/scriptureSelection'
@@ -19,6 +19,11 @@ const verse: Verse = {
 }
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  Object.defineProperties(HTMLDialogElement.prototype, {
+    showModal: { configurable: true, value(this: HTMLDialogElement) { this.open = true } },
+    close: { configurable: true, value(this: HTMLDialogElement) { this.open = false } }
+  })
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
   Object.assign(window, { api: {
     getChapter: async (ref: ChapterRef) => ({ ...ref, bookName: 'Psalms', direction: 'ltr', verses: [verse] }),
     listHighlights: async () => [], listNotes: async () => [],
@@ -44,6 +49,14 @@ it('hides publisher headings or numbers independently in each column and keeps t
   const headings = [...host.querySelectorAll('[aria-label="Native passage"]')]
   expect(headings.map(h => h.textContent)).toEqual(['Psalms · BSB', 'Psalms 23 · KJV'])
   const [bsb, kjv] = host.querySelectorAll<HTMLElement>('[data-scripture-passage]')
+  expect(bsb.tabIndex).toBe(0)
+  expect(bsb.querySelectorAll('[data-passage-action][tabindex="0"]')).toHaveLength(0)
+  bsb.focus()
+  bsb.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+  expect(document.activeElement).toBe(bsb.querySelector('[data-verse-action]'))
+  document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+  expect(bsb.contains(document.activeElement)).toBe(true)
+
   expect(bsb.querySelector('[data-literary-kind="heading"]')).toBeNull()
   expect(kjv.querySelector('[data-literary-kind="heading"]')?.textContent).toBe('The LORD Is My Shepherd')
   expect(bsb.querySelector('[data-literary-kind="superscription"]')?.textContent).toBe('A Psalm of David.')
@@ -54,9 +67,10 @@ it('hides publisher headings or numbers independently in each column and keeps t
   expect(button.dataset.label).toBe('⋯')
   expect(kjv.querySelector('[data-verse-action]')?.getAttribute('data-label')).toBe('1')
   await act(async () => { button.focus(); button.click() })
-  const dialog = host.querySelector<HTMLElement>('[role="dialog"][aria-label="Verse 1 actions"]')!
+  const dialog = host.querySelector<HTMLDialogElement>('dialog[open][aria-label="Verse 1 actions"]')!
   expect(dialog).not.toBeNull()
-  await act(async () => dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+  await act(async () => dialog.dispatchEvent(new Event('cancel', { cancelable: true })))
+  expect(host.contains(dialog)).toBe(false)
   expect(document.activeElement).toBe(button)
   await act(async () => { store.setDisplayDefault('literary', false); store.setDisplayOverride('BSB', 'headings', true) })
   expect(bsb.querySelector('[data-literary-kind="heading"]')).not.toBeNull()

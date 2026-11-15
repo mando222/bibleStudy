@@ -2,18 +2,19 @@ import { useEffect, useRef, useState } from 'react'
 import type { UpdateInfo } from '@shared/types'
 import { readerChapter } from '@/lib/passage'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
-import { useAppStore } from '@/store/useAppStore'
+import { useAppStore, type Activity } from '@/store/useAppStore'
 import { useEditions } from '@/hooks/useInterlinear'
 import TopBar from '@/components/TopBar'
 import UpdateBanner from '@/components/UpdateBanner'
 import NavPanel from '@/components/NavPanel'
 import ReadingPanel from '@/components/ReadingPanel'
 import StudyPanel from '@/components/StudyPanel'
-import AboutModal from '@/components/AboutModal'
+import AboutModal, { LibrarySettings } from '@/components/AboutModal'
 import SourceWordSettings from '@/components/SourceWordSettings'
 import SettingsDialog from '@/components/SettingsDialog'
 import ChatDrawer from '@/components/ChatDrawer'
 import NotebookDrawer from '@/components/NotebookDrawer'
+import RetainedView from '@/components/RetainedView'
 import ActivityRail from '@/components/ActivityRail'
 import WordsView from '@/components/WordsView'
 import GenealogiesView from '@/components/GenealogiesView'
@@ -21,10 +22,20 @@ import TimelinesView from '@/components/TimelinesView'
 import MapsView from '@/components/MapsView'
 import LearnView from '@/components/LearnView'
 
+const activityNames: Record<Activity, string> = { bible: 'Bible', words: 'Words', timelines: 'Timeline', genealogies: 'People', maps: 'Atlas', learn: 'Languages' }
+
 export default function App(): JSX.Element {
   const theme = useAppStore((s) => s.theme)
   const setTranslations = useAppStore((s) => s.setTranslations)
   const activity = useAppStore((s) => s.activity)
+  const profileOrigin = useAppStore(s => s.profileOrigin)
+  const [verseOrigin, setVerseOrigin] = useState<Activity | null>(null)
+  useEffect(() => useAppStore.subscribe((s, prev) => {
+    if (s.activity !== prev.activity) {
+      setVerseOrigin(s.activity === 'bible' && s.readerVisit !== prev.readerVisit && prev.activity !== 'bible' ? prev.activity : null)
+    }
+  }), [])
+  const returnTo = (activity === 'genealogies' ? profileOrigin : null) || verseOrigin
   const interlinearOpen = useAppStore(s => s.activity === 'bible' && s.interlinear)
   // Searches and word maps also need the installed editions before the first interlinear visit.
   useEditions(!interlinearOpen)
@@ -90,13 +101,16 @@ export default function App(): JSX.Element {
       )}
       <div className="flex-1 min-h-0 flex">
         <ActivityRail />
-        <div className="flex-1 min-w-0">
-          {activity === 'bible' && <BibleWorkspace />}
-          {activity === 'words' && <WordsView />}
-          {activity === 'genealogies' && <GenealogiesView />}
-          {activity === 'timelines' && <TimelinesView />}
-          {activity === 'maps' && <MapsView />}
-          {activity === 'learn' && <LearnView />}
+        <div className="flex-1 min-w-0 flex flex-col">
+          {returnTo && <button className="self-start px-3 py-1 text-xs text-accent" onClick={() => useAppStore.getState().setActivity(returnTo)}>‹ Back to {activityNames[returnTo]}</button>}
+          <div className="min-h-0 flex-1">
+            <RetainedView active={activity === 'bible'}><BibleWorkspace /></RetainedView>
+            <RetainedView active={activity === 'words'}><WordsView /></RetainedView>
+            <RetainedView active={activity === 'genealogies'}><GenealogiesView /></RetainedView>
+            <RetainedView active={activity === 'timelines'}><TimelinesView /></RetainedView>
+            <RetainedView active={activity === 'maps'}><MapsView /></RetainedView>
+            <RetainedView active={activity === 'learn'}><LearnView /></RetainedView>
+          </div>
         </div>
       </div>
       <AboutModal
@@ -105,7 +119,12 @@ export default function App(): JSX.Element {
         onViewUpdate={() => banner.current?.focus()}
       />
       <SourceWordSettings />
-      <SettingsDialog />
+      <SettingsDialog>
+        <LibrarySettings update={updateDismissed ? null : update} onChecked={onManualCheck} onViewUpdate={() => {
+          useAppStore.getState().setSettingsOpen(false)
+          queueMicrotask(() => banner.current?.focus())
+        }} />
+      </SettingsDialog>
       <ChatDrawer />
       <NotebookDrawer />
     </div>

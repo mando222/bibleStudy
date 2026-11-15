@@ -1,8 +1,10 @@
-import { Fragment, useCallback, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useId, useMemo, useState } from 'react'
+import { greekOrderNote } from '@shared/apparatus'
 import type {
   WordFrequency as Frequency, WordFrequencyCounts, WordFrequencyEdition,
   WordFrequencyForm, WordFrequencyPassageQuery, WordFrequencyQuery
 } from '@shared/wordFrequency'
+import { frequencyEditionNames as editionNames } from '@shared/wordFrequency'
 import { describeFrequencyMorph } from '@shared/frequencyMorphology'
 import type { NtText } from '@shared/textPreference'
 import { BOOK_BY_ID } from '@shared/books'
@@ -10,12 +12,6 @@ import { useStudyQuery } from '@/hooks/useStudyQuery'
 import { useAppStore } from '@/store/useAppStore'
 import { FrequencyLegend, frequencyScale, FrequencyTiles, quantity, type FrequencyMetric } from './WordFrequencyMap'
 
-const editionNames: Record<WordFrequencyEdition, string> = {
-  NA: 'Critical Greek NT (NA28, STEPBible)',
-  TR: 'Textus Receptus (Scrivener 1894)',
-  BYZ: 'Byzantine (Robinson–Pierpont 2005)',
-  MT: 'Masoretic Text (Leningrad, Qere reading)'
-}
 const selectStyle = 'min-w-0 max-w-full rounded border border-line bg-elevated px-2 py-1 text-sm text-ink'
 const labelStyle = 'flex min-w-0 flex-col items-start gap-1 text-xs text-muted'
 
@@ -26,11 +22,31 @@ function QueryError({ error, retry }: { error: string; retry: () => void }) {
 /** Keep display choices while another Words entry loads or the reader opens its definition. */
 export function useFrequencySettings() {
   const [metric, setMetric] = useState<FrequencyMetric>('rate')
-  return { metric, setMetric }
+  const [place, setPlace] = useState<{ book?: string; chapter?: number }>({})
+  return { metric, setMetric, place, setPlace }
 }
 
-export default function WordFrequency({ id, settings }: { id: string; settings: ReturnType<typeof useFrequencySettings> }): JSX.Element {
-  const { metric, setMetric } = settings
+type MapSettings = ReturnType<typeof useFrequencySettings>
+
+const studyWords = [
+  { topic: 'Love', entries: [
+    ['G26', 'ἀγάπη · love (noun)'], ['G25', 'ἀγαπάω · to love'], ['G5368', 'φιλέω · to love, to show affection'],
+    ['H160', 'אַהֲבָה · love (noun)'], ['H157', 'אָהַב · to love']
+  ] },
+  { topic: 'Husband and wife', entries: [
+    ['G435', 'ἀνήρ · man, husband'], ['G1135', 'γυνή · woman, wife'],
+    ['H376', 'אִישׁ · man, husband'], ['H802', 'אִשָּׁה · woman, wife'], ['H1167', 'בַּעַל · owner, master, husband']
+  ] },
+  { topic: 'Marriage and weddings', entries: [
+    ['G1062', 'γάμος · marriage, wedding'], ['G1060', 'γαμέω · to marry'],
+    ['H2861', 'חֲתֻנָּה · wedding'], ['H1166', 'בָּעַל · to marry, to rule over']
+  ] }
+]
+
+export default function WordFrequency({ id, settings, chooseWord }: {
+  id: string; settings: MapSettings; chooseWord?: (id: string) => void
+}): JSX.Element {
+  const wordHelp = useId()
   const greekChoice = useAppStore(s => s.frequencyGreekEdition)
   const setGreekChoice = useAppStore(s => s.setFrequencyGreekEdition)
   const order = useAppStore(s => s.preferredTextOrder.nt)
@@ -41,6 +57,15 @@ export default function WordFrequency({ id, settings }: { id: string; settings: 
   const edition = isMT ? 'MT' : selected || greekEditions[0]
   return (
     <section aria-label="Word frequency" className="mt-4 space-y-3">
+      {chooseWord && <label className={labelStyle}>Word to map
+        <select aria-label="Word to map" aria-describedby={wordHelp} className={selectStyle} value={id} onChange={e => chooseWord(e.target.value)}>
+          {!studyWords.some(group => group.entries.some(([entry]) => entry === id)) && <option value={id}>{id} · Current entry</option>}
+          {studyWords.map(group => <optgroup key={group.topic} label={group.topic}>
+            {group.entries.map(([entry, meaning]) => <option value={entry} key={entry}>{entry} · {meaning}</option>)}
+          </optgroup>)}
+        </select>
+        <span id={wordHelp}>Choose an entry here or in the Words directory. The map counts all indexed uses of that original word across its meanings.</span>
+      </label>}
       <label className={labelStyle}>Source edition
         {isMT ? <span className="text-sm text-ink">{editionNames.MT}</span> : edition ? (
           <select className={selectStyle} value={selected} onChange={e => setGreekChoice(e.target.value as NtText | '')}>
@@ -49,7 +74,7 @@ export default function WordFrequency({ id, settings }: { id: string; settings: 
           </select>
         ) : <span>No Greek source edition is available.</span>}
       </label>
-      {edition && <EditionFrequency key={`${id}:${edition}`} id={id} edition={edition} metric={metric} onMetric={setMetric} />}
+      {edition && <EditionFrequency key={`${id}:${edition}`} id={id} edition={edition} settings={settings} />}
     </section>
   )
 }
@@ -60,12 +85,8 @@ function formLabel(f: WordFrequencyForm): string {
     quantity(f.count, 'occurrence')].filter(Boolean).join(' · ')
 }
 
-interface MapControls {
-  metric: FrequencyMetric
-  onMetric: (value: FrequencyMetric) => void
-}
-
-function EditionFrequency({ id, edition, metric, onMetric }: WordFrequencyQuery & MapControls): JSX.Element {
+function EditionFrequency({ id, edition, settings }: WordFrequencyQuery & { settings: MapSettings }): JSX.Element {
+  const formHelp = useId()
   const [form, setForm] = useState<string | null>(null)
   const load = useCallback(() => window.api.getWordFrequency({ id, edition }), [id, edition])
   const all = useStudyQuery(load)
@@ -77,10 +98,11 @@ function EditionFrequency({ id, edition, metric, onMetric }: WordFrequencyQuery 
     <>
       {!!all.data?.forms.length && (
         <label className={labelStyle}>Grammatical form
-          <select className={selectStyle} value={form ?? ''} onChange={e => setForm(e.target.value || null)}>
+          <select aria-label="Grammatical form" aria-describedby={formHelp} className={selectStyle} value={form ?? ''} onChange={e => setForm(e.target.value || null)}>
             <option value="">All forms ({all.data.forms.length.toLocaleString()})</option>
             {all.data.forms.map(f => <option key={f.id} value={f.id} title={f.morph}>{formLabel(f)}</option>)}
           </select>
+          <span id={formHelp}>Choose one spelling and grammatical form to narrow the map, or choose All forms to include them all.</span>
         </label>
       )}
       {all.data && all.data.coverage !== 'unavailable' && (
@@ -103,7 +125,7 @@ function EditionFrequency({ id, edition, metric, onMetric }: WordFrequencyQuery 
           {data.coverage === 'unavailable' ? (
             !data.notice && <p className="text-sm text-muted">Frequency data is unavailable for this source edition.</p>
           ) : (
-            <FrequencyResults key={form ?? ''} data={data} form={form} metric={metric} onMetric={onMetric} />
+            <FrequencyResults data={data} form={form} settings={settings} />
           )}
         </>
       )}
@@ -116,12 +138,17 @@ function mostFrequent<T extends WordFrequencyCounts>(units: T[]): T | undefined 
     (best, unit) => !best || unit.occurrences > best.occurrences ? unit : best, undefined)
 }
 
-function FrequencyResults({ data, form, metric, onMetric }: { data: Frequency; form: string | null } & MapControls): JSX.Element {
-  const [bookId, setBookId] = useState<string>()
-  const [chapterNo, setChapterNo] = useState<number>()
+function FrequencyResults({ data, form, settings }: { data: Frequency; form: string | null; settings: MapSettings }): JSX.Element {
+  const { metric, setMetric, place, setPlace } = settings
   const scale = useMemo(() => frequencyScale(data.books, metric), [data.books, metric])
-  const book = data.books.find(b => b.book === bookId) ?? mostFrequent(data.books)
-  const chapter = book?.chapters.find(c => c.chapter === chapterNo) ?? mostFrequent(book?.chapters ?? [])
+  const selectedBook = data.books.find(b => b.book === place.book)
+  const book = selectedBook ?? mostFrequent(data.books)
+  const chapter = selectedBook?.chapters.find(c => c.chapter === place.chapter) ?? mostFrequent(book?.chapters ?? [])
+  // Keep the passage the reader sees even when a word, form, or edition changes its counts.
+  useEffect(() => {
+    if (book && chapter && (place.book !== book.book || place.chapter !== chapter.chapter))
+      setPlace({ book: book.book, chapter: chapter.chapter })
+  }, [book, chapter, place, setPlace])
   const withMatches = data.books.filter(b => b.occurrences > 0).length
   const coveredBooks = data.books.filter(b => b.tagged > 0).length
   const denominator = data.language === 'Hebrew / Aramaic' ? 'Hebrew and Aramaic words' : `${data.language} words`
@@ -140,7 +167,7 @@ function FrequencyResults({ data, form, metric, onMetric }: { data: Frequency; f
           <div className="flex items-center justify-between flex-wrap gap-2">
             <h3 className="font-serif text-lg">Books</h3>
             <label className="flex items-center gap-2 text-xs text-muted">Shade by
-              <select value={metric} onChange={e => onMetric(e.target.value as FrequencyMetric)} className={selectStyle}>
+              <select value={metric} onChange={e => setMetric(e.target.value as FrequencyMetric)} className={selectStyle}>
                 <option value="rate">Uses per 1,000 tagged words</option>
                 <option value="count">Total occurrences</option>
               </select>
@@ -150,7 +177,7 @@ function FrequencyResults({ data, form, metric, onMetric }: { data: Frequency; f
             hasUncovered={coveredBooks < data.books.length || !!book?.chapters.some(c => c.tagged === 0)} />
           <FrequencyTiles label="Books in canonical order" metric={metric} scale={scale} active={book?.book} denominator={denominator}
             tiles={data.books.map(b => ({ id: b.book, name: b.name, label: b.book.replace(/^(\d)/, '$1 '), counts: b }))}
-            onSelect={tile => { setBookId(String(tile.id)); setChapterNo(undefined) }} />
+            onSelect={tile => setPlace({ book: String(tile.id) })} />
           {book && (
             <section className="border-t border-line pt-3">
               <h3 className="mb-2 font-serif text-lg">{book.name}</h3>
@@ -158,7 +185,7 @@ function FrequencyResults({ data, form, metric, onMetric }: { data: Frequency; f
                 denominator={denominator} tiles={book.chapters.map(c => ({
                   id: c.chapter, name: `${book.name} ${c.chapter}`, label: `Ch. ${c.chapter}`, counts: c
                 }))}
-                onSelect={tile => setChapterNo(Number(tile.id))} />
+                onSelect={tile => setPlace({ book: book.book, chapter: Number(tile.id) })} />
               {chapter && (
                 <section className="mt-4">
                   <h4 className="font-serif text-base">{book.name} {chapter.chapter} {chapter.tagged > 0 && <span className="text-sm font-sans text-muted">· {quantity(chapter.occurrences, 'occurrence')} in {quantity(chapter.verses, 'verse')}</span>}</h4>
@@ -201,7 +228,8 @@ function FrequencyPassages({ id, edition, form, book, chapter }: WordFrequencyPa
               <span>{quantity(v.occurrences, 'occurrence')}</span>
               {different && <span>Reader {readerLabel}</span>}
             </div>
-            <p dir={isMT ? 'rtl' : 'ltr'} lang={isMT ? undefined : 'grc'}
+            {v.orderStatus && <p className="text-xs text-muted">{greekOrderNote[v.orderStatus]}</p>}
+            <p data-study-scripture="" dir={isMT ? 'rtl' : 'ltr'} lang={isMT ? undefined : 'grc'}
               className={`mt-1 text-lg leading-relaxed ${isMT ? 'font-hebrew' : 'font-greek'}`}>
               {v.tokens.map((token, i) => (
                 <Fragment key={i}>{token.spaceBefore && ' '}{token.matching ? <mark className="rounded-sm bg-accent-soft text-ink font-semibold underline decoration-accent underline-offset-4">{token.text}</mark> : token.text}</Fragment>

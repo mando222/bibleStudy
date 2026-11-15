@@ -1,6 +1,6 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { setConfig } from './config'
-import { status, setupBundled } from './provider'
+import { status, setupBundled, cancelSetup } from './provider'
 import { answer } from './assistant'
 import { importDocument } from './documents'
 import { listDocuments, setDocumentActive, deleteDocument } from './vectors'
@@ -16,6 +16,7 @@ export function registerAiIpc(): void {
   ipcMain.handle('ai:setConfig', (_e, patch: Partial<AiConfig>) => setConfig(patch))
 
   // First-run: download the hardware-adapted bundled model(s) into userData, with progress.
+  ipcMain.handle('ai:cancelSetup', () => cancelSetup())
   ipcMain.handle('ai:setupBundled', async (e) => {
     await setupBundled((p) => {
       if (!e.sender.isDestroyed()) e.sender.send('ai:setupProgress', p)

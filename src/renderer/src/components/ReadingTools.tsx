@@ -60,7 +60,7 @@ export function StructuredPassages({ edition, book, chapter, verses }: { edition
   return <>{outlines.map(outline => {
     const rows = outline.rows.filter(row => available.has(row.firstVerse) && available.has(row.lastVerse))
     if (!rows.length) return null
-    return <details key={outline.title} className="my-2 rounded border border-line px-2 py-1 text-xs text-muted">
+    return <details key={outline.title} data-passage-outline="" className="my-2 rounded border border-line px-2 py-1 text-xs text-muted">
       <summary className="cursor-pointer text-ink">{outline.title}</summary>
       <p className="my-1">{outline.source}</p>
       <ul>{rows.map(row => <li key={row.firstVerse + row.label} className="py-0.5"><button className="text-accent hover:underline text-left" onClick={() => go(book, chapter, row.firstVerse, edition)}>{row.label} · {chapter}:{row.firstVerse}{row.lastVerse !== row.firstVerse && `–${row.lastVerse}`}</button></li>)}</ul>

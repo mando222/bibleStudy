@@ -46,7 +46,7 @@ function SpeakerGuide({ sources, margin }: { sources: Attribution[]; margin: boo
     }
   }, [open])
   const anchor = open ? trigger.current?.getBoundingClientRect() : undefined
-  const button = <button ref={trigger} type="button"
+  const button = <button ref={trigger} type="button" tabIndex={-1} data-passage-action=""
     className={`reader-marker text-accent hover:underline ${margin ? 'absolute bottom-0 [inset-inline-end:0.5em] text-sm' : ''}`}
     data-label="❝" title="Speaker and quotation guide" aria-label={`Speaker guide: ${sources.map(s => s.label).join(', ')}`}
     aria-controls={open ? id : undefined} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)} />

@@ -101,6 +101,13 @@ CREATE TABLE source_word_coverage (
   PRIMARY KEY (strongs, translation_id)
 ) WITHOUT ROWID;
 
+-- A linked publisher row whose inflected form occurs only once in the complete bilingual
+-- verse, counting untranslated words and the alternative readings given by the publisher.
+CREATE TABLE interlinear_source_rows (
+  book_id TEXT NOT NULL, chapter INTEGER NOT NULL, verse INTEGER NOT NULL, source_row TEXT NOT NULL,
+  PRIMARY KEY (book_id, chapter, verse, source_row)
+) WITHOUT ROWID;
+
 -- Selectable original-language editions for the interlinear (Masoretic, TR, Byzantine, Critical, …).
 CREATE TABLE editions (
   id         TEXT PRIMARY KEY,   -- 'MT' | 'NA' | 'TR' | 'BYZ' | 'LXX'
@@ -268,7 +275,7 @@ CREATE INDEX idx_people_name ON people (name);
 CREATE TABLE person_links (
   person_id  INTEGER NOT NULL,
   related_id INTEGER NOT NULL,
-  kind       TEXT NOT NULL         -- 'spouse' | 'child'
+  kind       TEXT NOT NULL         -- 'spouse' | 'child' | 'sibling'
 );
 CREATE INDEX idx_person_links ON person_links (person_id);
 

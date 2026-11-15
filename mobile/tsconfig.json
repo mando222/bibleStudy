@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "moduleSuffixes": [".android", ""],
+    "jsx": "react-jsx",
+    "isolatedModules": true,
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "types": ["vite/client", "node"],
+    "paths": {
+      "react": ["./node_modules/@types/react"],
+      "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime.d.ts"],
+      "zustand": ["./node_modules/zustand/index.d.ts"],
+      "zustand/*": ["./node_modules/zustand/*"],
+      "react-dom": ["./node_modules/@types/react-dom/index.d.ts"],
+      "react-dom/*": ["./node_modules/@types/react-dom/*"],
+      "@shared/*": ["../src/shared/*"],
+      "@/*": ["../src/renderer/src/*"]
+    }
+  },
+  "include": ["src", "vite.config.ts"]
+}

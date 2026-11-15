@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { mapChapter, mapPassage } from '@shared/passageMapping'
+import { canonicalChaptersForNotes, mapPassage } from '@shared/passageMapping'
 import type { Highlight, Note } from '@shared/types'
 import { useAppStore } from '@/store/useAppStore'
 
@@ -33,30 +33,22 @@ export function useHighlights(
 }
 
 /** Notes use canonical references. One native chapter can span more than one canonical chapter. */
-export function useNotes(book: string, chapter: number, edition = 'KJV', verses?: { verse: number }[]) {
+export function useNotes(book: string, chapter: number, edition = 'KJV') {
   const nonce = useAppStore((s) => s.userDataNonce)
   const [attempt, setAttempt] = useState(0)
-  const chapters = useMemo(() => {
-    const refs = verses?.length && edition === 'LXX'
-      ? verses.map((v) => mapPassage({ book, chapter, verse: v.verse }, edition, 'KJV'))
-      : [mapChapter({ book, chapter }, edition, 'KJV')]
-    return [...new Set(refs.flatMap((r) => r ? [JSON.stringify([r.book, r.chapter])] : []))]
-  }, [book, chapter, edition, verses])
-  const key = JSON.stringify([chapters, nonce, attempt])
+  const chapters = useMemo(() => canonicalChaptersForNotes(book, chapter, edition), [book, chapter, edition])
+  const key = JSON.stringify([book, chapter, edition, nonce, attempt])
   const [result, setResult] = useState<{ key: string; notes: Note[]; error?: string } | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    Promise.all(chapters.map((id) => {
-      const [book, chapter] = JSON.parse(id) as [string, number]
-      return window.api.listNotes({ book, chapter })
-    })).then((rows) => {
+    Promise.all(chapters.map(chapter => window.api.listNotes({ book, chapter }))).then((rows) => {
       if (!cancelled) setResult({ key, notes: rows.flat() })
     }).catch((e: unknown) => {
       if (!cancelled) setResult({ key, notes: [], error: e instanceof Error ? e.message : 'Could not load notes.' })
     })
     return () => { cancelled = true }
-  }, [key, chapters])
+  }, [key, chapters, book])
 
   const byVerse = new Map<number, Note[]>()
   if (result?.key === key) {
@@ -67,6 +59,7 @@ export function useNotes(book: string, chapter: number, edition = 'KJV', verses?
       byVerse.get(native.verse)!.push(note)
     }
   }
-  return { byVerse, notes: [...byVerse.values()].flat(), loading: result?.key !== key,
+  const notes = [...byVerse].sort(([a], [b]) => a - b).flatMap(([, rows]) => rows)
+  return { byVerse, notes, loading: result?.key !== key,
     error: result?.key === key ? result.error : undefined, retry: () => setAttempt((n) => n + 1) }
 }

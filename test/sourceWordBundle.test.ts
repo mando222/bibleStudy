@@ -23,6 +23,7 @@ it('distinguishes unversioned alignments from verified legacy rows without stand
     old.exec(`
       DROP TABLE source_word_singletons;
       DROP TABLE source_word_coverage;
+      DROP TABLE interlinear_source_rows;
       DROP TABLE greek_order_uncertainties;
       ALTER TABLE original_tokens DROP COLUMN source_type;
       INSERT INTO editions(id,name,language,testament) VALUES ('MT','Masoretic Text','hbo','OT');
@@ -35,6 +36,8 @@ it('distinguishes unversioned alignments from verified legacy rows without stand
         ('BSB','John',11,35,0,'Jesus',' ','G2424','Ἰησοῦς','Iēsous','Noun',NULL),
         ('BSB','John',11,35,1,'wept','.',NULL,NULL,NULL,NULL,NULL);
       INSERT INTO source_word_spans VALUES ('BSB','John',11,35,0,0,0,'92074','Greek');
+      INSERT INTO original_tokens(edition,book_id,chapter,verse,position,original,strongs)
+        VALUES ('NA','John',11,35,0,'Ἰησοῦς','G2424');
     `)
   } finally {
     old.close()
@@ -57,5 +60,8 @@ it('distinguishes unversioned alignments from verified legacy rows without stand
   try {
     expect(reopened.getChapter(ref).verses[0].tokens![0].sourceWord).toMatchObject({ text: 'Ἰησοῦς', canReplaceAlone: false })
     expect(reopened.getSourceWordCoverage('G2424')).toEqual([{ translation: 'BSB', occurrences: 1 }])
+    const row = reopened.getInterlinear('John', 11, 'NA', ['BSB']).verses[0]
+    expect(row.tokens[0].aligned).toBeUndefined()
+    expect(row.lines?.[0]).toMatchObject({ id: 'BSB', text: 'Jesus wept.' })
   } finally { reopened.bibleDb()?.close() }
 })

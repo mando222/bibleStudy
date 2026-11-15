@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
-import { isProtectedSourceName, isSourceForm, presetForm } from '../../shared/sourceWords'
+import { isProtectedSourceName, isSourceForm, locateEnglishTerm, presetForm } from '../../shared/sourceWords'
 import type { SourceWord, SourceWordCoverage } from '../../shared/types'
 
 /** Strip editorial separators only. Preserve the source edition's letters, accents and vowel points. */
@@ -25,7 +25,8 @@ function canShow(span: Span): boolean {
       /^['’]/u.test(span.trailer) || span.strongs.startsWith('G') !== (span.language === 'Greek')) return false
   const form = publisherForm(span.text, span.language)
   if (!form) return false
-  return !isProtectedSourceName(span.strongs) || !!presetForm({ ...span, text: form }, span.english)
+  const term = locateEnglishTerm(span.strongs, span.english).term
+  return !isProtectedSourceName(span.strongs) || !!presetForm({ ...span, text: form }, term)
 }
 
 /** Build counts, or recover one ID's counts from older, versioned occurrence tables. */

@@ -111,6 +111,9 @@ export default function LearnDrills({ language }: { language: LearnLanguage }): 
           )
         })}
       </div>
+      <p role="status" className="mt-3 text-sm">
+        {picked && (picked === q.answer ? `Correct. You chose “${picked}”.` : `You chose “${picked}”. The correct answer is “${q.answer}”.`)}
+      </p>
       {picked && (
         <button
           onClick={next}

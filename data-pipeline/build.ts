@@ -1162,12 +1162,21 @@ async function buildTheographic(
      VALUES (?,?,?,?,?,?,?,?,?,?,?)`
   )
   const insL = db.prepare('INSERT INTO person_links (person_id, related_id, kind) VALUES (?,?,?)')
+  // Mark 6:3 names Jesus' brothers but does not specify their parentage.
+  const brothersOfJesus = new Set([719, 1721, 1756, 2747])
+  // These entries infer a sibling from "cousin" (Col 4:10), an unnamed wife
+  // (1 Chr 4:19), or an uncle of unspecified parentage (Jer 32:7).
+  const unsupportedSiblingPairs = new Set(['1722/1941', '1544/2133', '1529/2525'])
+  const siblingPairs = new Set<string>()
   db.exec('BEGIN')
   for (const p of people) {
     const f = p.fields
     const id = f.personID as number | undefined
     if (id == null) continue
-    const vs = resolveVerses(f.verses)
+    const sourceRefs = resolveVerses(f.verses)
+    // Theographic groups the ancestor, nation and land under person 2103. Among
+    // its 149 citations only Genesis 19:37 identifies Moab, the son of Lot.
+    const vs = id === 2103 ? sourceRefs.filter(ref => ref === 'Gen.19.37') : sourceRefs
     const summary = ((f.dictionaryText as string) || '').replace(/\s+/g, ' ').trim().slice(0, 500)
     insP.run(
       id,
@@ -1175,8 +1184,8 @@ async function buildTheographic(
       (f.gender as string) || null,
       num(f.birthYear),
       num(f.deathYear),
-      personIdByRec.get(first(f.father) ?? '') ?? null,
-      personIdByRec.get(first(f.mother) ?? '') ?? null,
+      brothersOfJesus.has(id) ? null : personIdByRec.get(first(f.father) ?? '') ?? null,
+      brothersOfJesus.has(id) ? null : personIdByRec.get(first(f.mother) ?? '') ?? null,
       (f.slug as string) || null,
       summary || null,
       vs.length,
@@ -1184,7 +1193,20 @@ async function buildTheographic(
     )
     for (const c of (f.children as string[]) || []) {
       const rid = personIdByRec.get(c)
-      if (rid != null) insL.run(id, rid, 'child')
+      if (rid != null && !((id === 1715 || id === 1938) && brothersOfJesus.has(rid))) insL.run(id, rid, 'child')
+    }
+    // Keep explicit siblings even where a parent has no catalog entry, as in
+    // Mary, Martha and Lazarus. A single undirected edge supports both profiles.
+    for (const field of ['siblings', 'halfSiblingsSameFather', 'halfSiblingsSameMother']) {
+      for (const record of (f[field] as string[]) || []) {
+        const other = personIdByRec.get(record)
+        if (other == null || other === id) continue
+        const [a, b] = id < other ? [id, other] : [other, id]
+        const pair = a + '/' + b
+        if (siblingPairs.has(pair) || unsupportedSiblingPairs.has(pair)) continue
+        siblingPairs.add(pair)
+        insL.run(a, b, 'sibling')
+      }
     }
     for (const s of (f.partners as string[]) || []) {
       const rid = personIdByRec.get(s)
@@ -1241,7 +1263,7 @@ async function buildTheographic(
     if (id == null) continue
     const parts = [
       ...new Set(((f.participants as string[]) || []).map((r) => personIdByRec.get(r)).filter((x) => x != null))
-    ]
+    ].filter(person => !(id === 137 && person === 2103)) // Judges 3:15–30 concerns Eglon's kingdom of Moab.
     const plcs = [
       ...new Set(((f.locations as string[]) || []).map((r) => placeIdByRec.get(r)).filter((x) => x != null))
     ]

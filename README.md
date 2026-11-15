@@ -4,12 +4,17 @@ A **local, offline, open-source** Bible study desktop app — a free "Logos-lite
 original-language study. Everything runs on your machine; your notes and highlights stay yours.
 Installers for **macOS, Windows, and Linux**.
 
+The [Android app](docs/ANDROID.md) includes the offline study library, parallel translations,
+word-frequency maps, atlas, people, timelines, language lessons, and personal study tools.
+Read, Search, Words, and Library are available from its bottom navigation. Get the first Android APK from the same GitHub release as the desktop installers. After installation, open the phone’s in-app settings gear and choose **App updates** to download future versions.
+
 ## Features
 
 **Reading**
 - 📖 **Translations** — KJV, Berean Standard Bible, World English Bible, Young's Literal, Julia
   Smith (1876), plus the **Septuagint** (Greek OT) and **Masoretic Hebrew** as readable, searchable
   editions. **Parallel columns** with synced scrolling and a per-column translation picker.
+  Scroll in either direction to continue into the adjacent available chapter, including in the interlinear.
 - 🌗 Warm light / dark "paper" theme.
 - **Reading display** has independent switches for literary layout, speaker guides, and structured
   passages. Set them for all columns or override one translation. Literary layout follows each
@@ -23,7 +28,8 @@ Installers for **macOS, Windows, and Linux**.
 - 🔢 **Strong's numbers** — toggle on/off; click any word (tagged or not) to open its lexicon entry.
 - 🔤 **Interlinear** — word-by-word original with transliteration, Strong's, morphology and gloss;
   selectable base edition (Masoretic · Septuagint · Textus Receptus · Byzantine · Critical), stack
-  translations under each word, and a "best guess ⇄ all Scripture-attested parses" toggle.
+  translations at verified word occurrences, and a "best guess ⇄ all Scripture-attested parses" toggle.
+  A complete translated verse appears wherever word links are partial or unavailable.
 - 📚 **Lexicons** — Strong's plus scholarly **BDB · Abbott-Smith · LSJ**, with a full-verse
   **concordance** for every word.
 - **Restore words** — select a word in the reader and use the right-hand lexicon panel to show its
@@ -32,13 +38,20 @@ Installers for **macOS, Windows, and Linux**.
   The source details identify the publisher’s row. A translation without a verified link keeps
   its published wording. The toolbar also offers transliterated terms, including *ēgapēsen* for
   “loved” in BSB John 3:16. The verified four-letter Hebrew name appears as YHWH.
-  Hover over a restored word, or focus it and press Down Arrow, to compare translations.
+  Hover over a restored word on desktop or tap it on Android to see how that translation
+  printed it at that spot. In BSB Genesis 4:16, the tip on *YHWH* shows “the LORD”,
+  and “of” stays in the verse. Open **Compare translations** for other editions. On desktop,
+  you can also focus the word with the arrow keys and press Down Arrow to explore the tip.
   Copies and assistant quotations use the published text.
 - 🅰️ **Words tab** — browse the lexicon by number, transliteration, or meaning. Select an entry
   and open **Word frequency** to see where its Hebrew, Aramaic, or Greek forms occur. Each use
   counts once, even when the word occurs several times in a verse. Compare books by uses per
   1,000 tagged words or by total uses, then select a book and chapter to see the matching text.
   The map follows the selected original-language edition independently of your English translation.
+  **Word to map** offers shortcuts for love, husband and wife, and marriage and weddings.
+  A word such as Greek *gynē* counts in all its senses, including both “woman” and “wife.”
+  **Grammatical form** filters the selected entry. A book and chapter stay selected even when
+  that form has zero matches there.
 
 **Textual apparatus**
 - In **Settings → Preferred text order**, rank the three Greek New Testament editions, the
@@ -52,8 +65,10 @@ Installers for **macOS, Windows, and Linux**.
   A source note identifies readings whose word order could not be verified.
 
 **People, places & history**
-- 🌳 **Genealogies** — browse biblical people; click one to see their family and **every verse that
-  mentions them**.
+- 🌳 **Genealogies** shows siblings and groups children by their recorded mother in both Family
+  and Tree. Jacob’s profile distinguishes the children of Leah, Rachel, Bilhah, and Zilpah.
+  Follow a name to open that person or a verse link to read the evidence. A child whose mother
+  is unrecorded appears in a separate group. Each profile lists the verses that reference the person.
 - 🗺️ **Maps** — search the whole offline atlas by name or alias, including unlocated places such as
   Nod. Select a located place to center it. Proposed sites, broad areas, and approximate historical
   boundaries are labeled. **Map a person** lists people with at least one location supported by a
@@ -62,8 +77,9 @@ Installers for **macOS, Windows, and Linux**.
 - 🕰️ **Timelines** — biblical events in order, each linked to the passage that records it.
 
 **Study**
-- 🔎 **Search anything** — text, a **Strong's number** (`G26`, `H430`), or a **Greek/Hebrew word**
-  (accents and points optional — `θεος` finds `θεὸς`).
+- 🔎 **Search** accepts text, a **Strong's number** (`G26`, `H430`), or a **Greek/Hebrew word**
+  (accents and points optional — `θεος` finds `θεὸς`). Use quotation marks for an exact word or phrase.
+  In **Words**, typing a Strong’s number selects its language and lists the exact entry first.
 - ✍️ **Notes & highlighting** — verse highlights and notes in a **separate** `user.sqlite`, so app
   updates never touch your data.
 - **Back up or move your study work** in **About → Study backup**. Save the `.obsbackup` file, then restore it on the destination computer. Restore opens a new profile and keeps a recovery copy of the previous work.

@@ -16,6 +16,25 @@ Group changes under: **Added** (new features), **Changed** (changes to existing 
 
 _Nothing yet._
 
+## [0.5.0] - 2026-11-14
+
+### Added
+
+- **Android app.** Read and study offline with the same scripture library as the desktop app. Parallel translations, interlinear reading, word studies, the atlas, genealogies, and personal notes are available on the phone. The AI assistant remains a desktop feature. Install the signed APK from this release. For future updates, open **Settings → App updates** to download the installer and confirm it in Android.
+- **Continuous reading.** Scroll from one chapter into the next in the reader or interlinear. Bookmarks and reading history bring you back to the passage and edition you were studying.
+- **Family relationships.** A person’s profile lists siblings and groups children by their recorded parentage. Where Scripture identifies the mother, you can see which children belong to her and open the supporting passage.
+- **Husband, wife, and marriage** have their own word-restoration choices and shortcuts in the word-frequency view. Quoted searches let you look for an exact word or phrase.
+
+### Changed
+
+- **Restored-word tips.** Hover over a restored word on desktop or tap it on Android to see exactly what that translation printed there. In BSB Genesis 4:16, the tip on *YHWH* shows “the LORD” while “of” stays in the verse. When the source is linked to a whole phrase, the tip identifies it as a phrase. Choose **Compare translations** to see other editions.
+- **Interlinear translation lines** use verified word links. When an edition has only partial coverage for a verse, you can read its complete wording alongside the source. Greek word studies also flag places where the recorded word order is uncertain.
+
+### Fixed
+
+- Notes keep unsaved edits when you leave and return. If another editor changed the same note, you can review the saved text and your draft before choosing which to keep.
+- Parallel reading and interlinear navigation preserve the verse when editions number it differently. Desktop keyboard navigation and Android’s Back action return you to the passage or study panel you came from.
+
 ## [0.4.2] - 2026-11-11
 
 ### Added

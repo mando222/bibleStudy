@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { BOOKS, BOOKS_CHRONO, type BookMeta } from '@shared/books'
+import { openPassage, readerPassage } from '@/lib/openPassage'
 import { readerChapter } from '@/lib/passage'
 import { readingEdition, useAppStore } from '@/store/useAppStore'
 import { SearchIcon, ChevronRight } from './icons'
@@ -20,6 +21,16 @@ export default function NavPanel(): JSX.Element {
   const nt = matches.filter((b) => b.testament === 'NT')
 
   const edition = useAppStore(readingEdition)
+  const ref = readerPassage(filter)
+  const [issue, setIssue] = useState('')
+  const [opening, setOpening] = useState(false)
+  async function open() {
+    if (!ref || opening) return
+    setOpening(true)
+    try { await openPassage(ref, ref.edition); setFilter(''); setIssue('') }
+    catch (error) { setIssue(error instanceof Error ? error.message : 'Could not open this passage.') }
+    finally { setOpening(false) }
+  }
   const sourceEdition = useAppStore((s) => s.referenceEdition || s.primary)
   const verse = useAppStore((s) => s.activeVerse)
   const current = readerChapter(book, chapter, verse, sourceEdition, edition)
@@ -33,15 +44,20 @@ export default function NavPanel(): JSX.Element {
   return (
     <div className="h-full flex flex-col bg-panel">
       <div className="p-2 border-b border-line space-y-2">
-        <div className="relative">
-          <SearchIcon className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
-          <input
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Find a book…"
-            className="w-full bg-elevated border border-line rounded-md pl-8 pr-2 py-1.5 text-sm outline-none focus:border-accent placeholder:text-faint"
-          />
-        </div>
+        <form onSubmit={e => { e.preventDefault(); void open() }}>
+          <div className="relative">
+            <SearchIcon className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
+            <input
+              value={filter}
+              onChange={(e) => { setFilter(e.target.value); setIssue('') }}
+              aria-label="Find a book or go to passage" placeholder="Book or passage (John 3:16)"
+              className="w-full bg-elevated border border-line rounded-md pl-8 pr-2 py-1.5 text-sm outline-none focus:border-accent placeholder:text-faint"
+            />
+          </div>
+          {ref && <button disabled={opening} className="mt-2 text-sm text-accent" type="submit">Go to passage · {filter.trim()}</button>}
+          {issue && <p role="alert" className="text-xs text-muted">{issue}</p>}
+          {!ref && !matches.length && <p role="status" className="mt-2 text-xs text-muted">No matching book or reference in {edition}. Try John 3:16.</p>}
+        </form>
         <div className="flex rounded-md border border-line overflow-hidden text-xs" title="Book order">
           <button onClick={() => chronological && toggleChronological()} className={segBtn(!chronological)}>
             Canonical

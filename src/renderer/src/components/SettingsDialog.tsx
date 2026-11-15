@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react'
+import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import { defaultTextPreference, textEditionLabels, type TextPreference } from '@shared/textPreference'
 import { useAppStore } from '@/store/useAppStore'
 
@@ -8,12 +8,12 @@ const groups = [
   { key: 'masoretic', heading: 'Hebrew marginal readings' }
 ] as const
 
-export default function SettingsDialog(): JSX.Element | null {
+export default function SettingsDialog({ children }: { children?: ReactNode }): JSX.Element | null {
   const open = useAppStore(s => s.settingsOpen)
-  return open ? <PreferredTextSettings /> : null
+  return open ? <PreferredTextSettings>{children}</PreferredTextSettings> : null
 }
 
-function PreferredTextSettings(): JSX.Element {
+function PreferredTextSettings({ children }: { children?: ReactNode }): JSX.Element {
   const order = useAppStore(s => s.preferredTextOrder)
   const setOrder = useAppStore(s => s.setPreferredTextOrder)
   const setOpen = useAppStore(s => s.setSettingsOpen)
@@ -45,6 +45,7 @@ function PreferredTextSettings(): JSX.Element {
         <button type="button" aria-label="Close settings" onClick={() => setOpen(false)}
           className="rounded px-2 py-1 text-muted hover:bg-elevated">✕</button>
       </header>
+      {children && <details className="border-b border-line py-3"><summary className="cursor-pointer font-medium">Translations, backups and updates</summary>{children}</details>}
       <h3 className="mt-3 font-medium">Preferred text order</h3>
       <p className="mt-1 text-sm text-muted">
         Rank editions for the interlinear, Greek word searches and frequency maps, and textual comparisons.

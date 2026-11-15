@@ -1,0 +1,169 @@
+/* Keep study controls on the UI scale. Scripture follows the reader's selected size. */
+.phone :is(.page-search, .page-words, [data-lexicon-card], [data-interlinear-reader], [data-interlinear-tools], [aria-label="Translation wording"]) {
+  font-size: var(--type-body);
+  line-height: 1.5;
+}
+.phone :is(.page-search, .page-words, [data-lexicon-card], [data-interlinear-reader], [data-interlinear-tools], [aria-label="Translation wording"])
+  :is(.text-xs, [class~="text-[11px]"], [class~="text-[10px]"], [class~="text-[9px]"]) {
+  font-size: var(--type-meta);
+  line-height: 1.4;
+}
+.phone :is(.page-search, .page-words, [data-lexicon-card], [data-interlinear-reader], [data-interlinear-tools], [aria-label="Translation wording"]) .text-sm {
+  font-size: var(--type-body);
+  line-height: 1.5;
+}
+.phone :is(.page-search, .page-words, [data-lexicon-card], [data-interlinear-reader], [data-interlinear-tools], [aria-label="Translation wording"])
+  :is(input, select, button.border, .directory-back),
+.phone .word-nav button,
+.phone .interlinear-options summary,
+.phone [data-column-header] select {
+  font-size: var(--type-control);
+  line-height: 1.35;
+}
+.phone [data-column-header] select { padding-block: .25rem; }
+.phone .page-search li button > .text-accent,
+.phone [data-lexicon-card] li button > .text-accent,
+.phone .reader-pane [aria-label='Native passage'],
+.phone .page-words [aria-label='Matching verses'] .text-accent {
+  font-size: var(--type-label);
+  line-height: 1.45;
+}
+.phone .page-words [data-directory] h2 { font-size: var(--type-title); }
+.phone [data-lexicon-card] [data-lexicon-headword],
+.phone [data-lexicon-card] [aria-label='Selected word'] bdi[lang] {
+  font-size: var(--type-specimen);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.phone .page-words [data-directory] button :is(.font-hebrew, .font-greek) {
+  font-size: var(--type-subtitle);
+  line-height: 1.45;
+}
+.phone [aria-label='Word frequency'] :is(h3, strong.text-lg) { font-size: var(--type-subtitle); }
+.phone [aria-label='Word frequency'] label { font-size: var(--type-label); }
+.phone [aria-label='Word frequency'] select { width: 100%; max-width: 100%; }
+.phone .frequency-tile {
+  min-height: 2.875rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.phone .frequency-tile span:first-child { font-size: var(--type-meta); line-height: 1.35; }
+.phone .frequency-tile span:last-child { font-size: var(--type-body); line-height: 1.4; }
+.phone [aria-label='Color scale'] { font-variant-numeric: tabular-nums; }
+
+/* Source forms and complete verse previews share the scripture size in every edition. */
+.phone .reader-pane [data-scripture-passage],
+.phone [data-interlinear-reader] [data-interlinear-form],
+.phone [data-interlinear-reader] [data-interlinear-rendering],
+.phone :is(.page-search, .page-words, .reader-pane, .phone-sheet) [data-study-scripture] {
+  font-size: var(--reading-size);
+}
+.phone [data-interlinear-reader] [data-interlinear-form] {
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.phone :is(.page-search, .page-words, .reader-pane, .phone-sheet) [data-study-scripture] {
+  line-height: 1.55;
+  text-align: start;
+}
+.phone [data-interlinear-reader] [data-interlinear-gloss] {
+  font-size: var(--type-label);
+  line-height: 1.4;
+}
+.phone .reader-pane [data-scripture-passage][dir='rtl'],
+.phone :is(.page-search, .page-words, .reader-pane, .phone-sheet) [data-study-scripture]:dir(rtl) {
+  line-height: 1.8;
+}
+.phone .reader-pane [data-scripture-passage] [data-literary-kind='heading'] {
+  font-size: var(--type-control);
+  line-height: 1.4;
+}
+.phone .reader-pane [data-scripture-passage] [data-verse-action] {
+  font-size: max(var(--type-meta), calc(var(--reading-size) * .64));
+}
+.phone .reader-pane [data-scripture-passage] [data-verse-action][data-label='⋯'] {
+  font-size: var(--type-meta);
+}
+.phone :is(.reader-pane [data-reader-scroll] details, .phone-form blockquote cite) {
+  font-size: var(--type-label);
+}
+
+.phone-sheet[aria-label="Translation wording"] {
+  max-width: 28rem;
+}
+.phone-sheet[aria-label="Translation wording"] .sheet-content {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  column-gap: 1rem;
+  padding-top: .75rem;
+}
+.phone-sheet[aria-label="Translation wording"] .sheet-content > * {
+  flex: 0 0 100%;
+  min-width: 0;
+}
+.phone-sheet[aria-label="Translation wording"] .sheet-content > button {
+  text-align: start;
+}
+.phone-sheet[aria-label="Translation wording"] .sheet-content > details:not([open]),
+.phone-sheet[aria-label="Translation wording"] details:not([open]) + .link-row {
+  flex: 0 1 auto;
+  width: auto;
+}
+.phone-sheet[aria-label="Translation wording"] :is(button, summary) {
+  min-height: 44px;
+  align-content: center;
+}
+.phone-sheet[aria-label="Translation wording"] button[aria-label^="Close"] {
+  min-width: 44px;
+}
+.phone-sheet[aria-label="Translation wording"] .link-row {
+  gap: .25rem;
+  margin-top: .5rem;
+}
+.phone .phone-sheet[aria-label="Translation wording"] h2.font-serif {
+  font-size: var(--type-subtitle);
+  line-height: 1.45;
+}
+.phone .phone-sheet[aria-label="Translation wording"] dd > p:not([data-study-scripture]) {
+  font: inherit;
+  color: rgb(var(--muted));
+}
+.phone .page-words [aria-label="Word study tools"] button,
+.phone [aria-label="Result pages"] button {
+  font-size: var(--type-control);
+  line-height: 1.4;
+}
+
+.phone .reader-pane [data-passage-outline] summary,
+.phone .reader-pane [data-passage-outline] button,
+.phone .interlinear-options [aria-label='Reading display preferences'] {
+  font-size: var(--type-control);
+  line-height: 1.45;
+}
+.phone .phone-sheet :is([aria-label='Passage context'], [aria-label='Layout comparison']) h2,
+.phone .phone-sheet :is([aria-label='Passage context'], [aria-label='Layout comparison']) h3 {
+  font-size: var(--type-subtitle);
+  line-height: 1.35;
+}
+.phone .phone-sheet :is([aria-label='Passage context'], [aria-label='Layout comparison']) > p:first-of-type,
+.phone .phone-sheet [aria-label='Layout comparison'] li,
+.phone .phone-sheet [aria-label='Verse source texts'] dt {
+  font-size: var(--type-label);
+  line-height: 1.45;
+}
+/* Tappable words in a variant line are scripture, even when the sheet sets a size on buttons. */
+.phone .phone-sheet .sheet-content [data-study-scripture] button,
+.phone .phone-sheet .sheet-content button[data-study-scripture] {
+  font-size: var(--reading-size);
+  line-height: inherit;
+}
+/* The speaker guide is portalled to body alongside the phone application. */
+[role='dialog'][aria-label='Speaker and quotation guide'] {
+  font-size: var(--type-body);
+  line-height: 1.5;
+}
+[role='dialog'][aria-label='Speaker and quotation guide'] .text-xs {
+  font-size: var(--type-meta);
+}

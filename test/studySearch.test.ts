@@ -9,6 +9,7 @@ import { getChapter, getComparisonVerse, getConcordance, getInterlinear, getSour
 import { searchImportedText } from '../src/main/db/search'
 import { namedPassages } from '../src/shared/refs'
 import InterlinearVerse from '../src/renderer/src/components/InterlinearVerse'
+import Snippet from '../src/renderer/src/components/Snippet'
 
 vi.mock('node:sqlite', () => createRequire(import.meta.url)('node:sqlite'))
 vi.mock('electron', () => ({ app: { getAppPath: () => process.cwd() } }))
@@ -41,6 +42,16 @@ it('parses named verses, ranges, chapters and single-chapter books without turni
 })
 
 describe.skipIf(!existsSync('resources/bible.sqlite'))('real Scripture search and parallel reading', () => {
+  it('preserves the printed Greek match and the edition’s order warning in search previews', () => {
+    const [hit] = search({ text: 'διαμεριζόμεναι', translation: 'BSB', greekEdition: 'NA' }).hits
+    expect(hit).toMatchObject({ edition: 'NA', book: 'Acts', chapter: 2, verse: 3, orderStatus: 'unverified' })
+    const markup = renderToStaticMarkup(createElement(Snippet, { text: hit.snippet, markedGreekKey: hit.markedGreekKey }))
+    expect(markup.normalize('NFC')).toMatch(/<mark[^>]*>διαμεριζόμεναι<\/mark>/)
+    expect(markup.replace(/<[^>]+>/g, '')).toBe(hit.snippet)
+    const q = { text: 'G26', translation: 'TR', book: '1Cor' }
+    expect(search(q).hits.find(h => h.chapter === 13 && h.verse === 2)?.orderStatus).toBe('unverified')
+    expect(search({ ...q, translation: 'BSB' }).hits.find(h => h.chapter === 13 && h.verse === 2)?.orderStatus).toBeUndefined()
+  })
   it('reads the exact verse for a comparison and supplies source evidence only for aligned editions', () => {
     for (const translation of ['KJV', 'BSB']) {
       const ref = { translation, book: 'Ps', chapter: 23, verse: 1 }
@@ -145,6 +156,8 @@ describe.skipIf(!existsSync('resources/bible.sqlite'))('real Scripture search an
     expect(search({ text: 'G26', translation: 'BSB', testament: 'OT' }).total).toBe(0)
     expect(search({ text: 'G26', translation: 'BSB', testament: 'NT', limit: 2 }).total).toBe(106)
     expect(search({ text: 'G26', translation: 'ASV', book: 'Gen' }).total).toBe(0)
+    expect(search({ text: 'G1519', translation: 'LXX' })).toMatchObject({ total: 0, hits: [], notice: expect.stringMatching(/word tags/) })
+    expect(getConcordance('G1519', { translation: 'LXX', limit: 1 }).translation).toBe('KJV')
     expect(search({ text: 'G26', translation: 'BSB', book: '1John', limit: 2 }).hits)
       .toMatchObject([{ book: '1John', translation: 'BSB' }, { book: '1John', translation: 'BSB' }])
   })
@@ -160,12 +173,50 @@ describe.skipIf(!existsSync('resources/bible.sqlite'))('real Scripture search an
     expect(hit?.snippet).toMatch(/let us love one another/i)
     expect(hit?.snippet).toMatch(/for \{\{love\}\} is of God/i)
   })
-  it('stacks the corresponding words when BSB and ASV reverse Philippians 1:16–17', () => {
+  it('retains Hebrew punctuation while removing the TAHOT separator in concordance snippets', () => {
+    const hit = getConcordance('H583', { translation: 'MT', book: '1Chr' }).hits.find(h => h.chapter === 1 && h.verse === 1)
+    expect(hit?.surface).toBe('אֱנֽוֹשׁ׃')
+    expect(hit?.snippet).toContain('{{אֱנֽוֹשׁ׃}}')
+  })
+  it('uses native verse numbering for the verified BSB span and the complete ASV and KJV lines', () => {
     const chapter = getInterlinear('Phil', 1, 'NA', ['BSB','ASV','KJV'])
     const noun = chapter.verses.find(v => v.verse === 17)?.tokens.find(t => t.strongs === 'G26')
-    expect(noun?.aligned).toMatchObject({ BSB: 'love', ASV: expect.stringMatching(/love/i), KJV: 'love' })
+    expect(noun?.aligned).toEqual({ BSB: 'love' })
+    for (const [id, nativeVerse] of [['ASV', 16], ['KJV', 17]] as const) {
+      const printed = getChapter({ book: 'Phil', chapter: 1, translation: id }).verses.find(v => v.verse === nativeVerse)!
+      expect(chapter.verses.find(v => v.verse === 17)!.lines).toContainEqual(expect.objectContaining({ id, text: printed.text }))
+    }
     const rivalry = chapter.verses.find(v => v.verse === 16)?.tokens.find(t => t.strongs === 'G2052')
     expect(rivalry?.aligned?.BSB).toBe('selfish ambition')
+  })
+  it.each([
+    ['John', 17, 8, 'G1325', [['ἔδωκάς', 'You gave'], ['δέδωκα', 'I have given']]],
+    ['1Thess', 3, 5, 'G3985', [['ἐπείρασεν', 'tempted'], ['πειράζων', 'tempter']]]
+  ] as const)('renders each distinct form against its own publisher span in %s %i:%i', (book, chapter, verse, id, expected) => {
+    const row = getInterlinear(book, chapter, 'NA', ['BSB', 'ASV']).verses.find(v => v.verse === verse)!
+    const words = row.tokens.filter(t => t.strongs === id)
+    expect(words.map(t => [t.lemma!.normalize('NFC'), t.aligned?.BSB])).toEqual(expected)
+    for (const [index, token] of words.entries()) {
+      const rendered = renderToStaticMarkup(createElement(InterlinearVerse, {
+        v: { verse, text: '', tokens: [token] }, stack: ['BSB']
+      }))
+      expect(rendered).toContain(expected[index][1])
+      expect(token.aligned?.ASV).toBeUndefined()
+    }
+    expect(row.lines?.find(l => l.id === 'ASV')?.text).toBe(getComparisonVerse({ translation: 'ASV', book, chapter, verse })?.text)
+  })
+
+  it('withholds duplicate inflections and shows the complete printed verse in a partially aligned stack', () => {
+    const row = getInterlinear('John', 13, 'NA', ['BSB']).verses.find(v => v.verse === 34)!
+    expect(row.tokens.filter(t => t.lemma?.normalize('NFC') === 'ἀγαπᾶτε').map(t => t.aligned?.BSB)).toEqual([undefined, undefined])
+    expect(row.tokens.some(t => t.aligned?.BSB)).toBe(true)
+    expect(row.lines?.[0].text).toBe(getComparisonVerse({ translation: 'BSB', book: 'John', chapter: 13, verse: 34 })?.text)
+    // The publisher has two παραπτώματα rows here. Only one has printed English wording.
+    const matt = getInterlinear('Matt', 6, 'NA', ['BSB']).verses.find(v => v.verse === 15)!
+    const candidates = matt.tokens.filter(t => t.strongs === 'G3900')
+    expect(candidates).toHaveLength(1)
+    expect(candidates[0].aligned?.BSB).toBeUndefined()
+    expect(matt.lines?.[0].text).toBe(getComparisonVerse({ translation: 'BSB', book: 'Matt', chapter: 6, verse: 15 })?.text)
   })
   it('stacks English Psalm 23 under the equivalent Greek Psalm 22', () => {
     const first = getInterlinear('Ps', 22, 'LXX', ['KJV']).verses.find(v => v.verse === 1)

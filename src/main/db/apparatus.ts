@@ -9,7 +9,7 @@ import type { VerseRef } from '../../shared/types'
 
 // Older bundled databases have the same original words but lack native numbering or witness codes.
 function originalColumns(db: DatabaseSync) {
-  const fields = new Set(db.prepare('PRAGMA table_info(original_tokens)').all().map(column => column.name))
+  const fields = new Set(db.prepare("SELECT name FROM pragma_table_info('original_tokens')").all().map(column => column.name))
   return {
     native: ['native_chapter', 'native_verse'].map(name => fields.has(name) ? name : 'NULL AS ' + name).join(', '),
     sourceType: fields.has('source_type') ? 'source_type' : 'NULL AS source_type'

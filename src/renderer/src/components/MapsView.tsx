@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { PlaceItem } from '@shared/types'
 import type { PersonMapStop, StudyRange } from '@shared/passageStudy'
-import { BOOK_BY_ID } from '@shared/books'
+import { BOOK_BY_ID, catalogRefLabel as refLabel } from '@shared/books'
 import { journeySegments, locationKind, locationLabel, mapShapes, placeMatches, regionQualifier, sliderFromYear, yearFromSlider } from '@shared/atlas'
 import { useAppStore } from '@/store/useAppStore'
 import { useStudyQuery } from '@/hooks/useStudyQuery'
@@ -17,10 +17,6 @@ const loadMappedPeople = () => window.api.getMappedPeople()
 const loadRegions = async () => {
   const source = await window.api.getMapRegions()
   return source ? mapShapes(JSON.parse(source)) : []
-}
-const refLabel = (ref: string) => {
-  const [book, ch, verse] = ref.split('.')
-  return (BOOK_BY_ID[book]?.name ?? book) + ' ' + ch + ':' + verse
 }
 function rangeLabel(range: StudyRange) {
   const verses = range.firstVerse == null ? '' : ':' + range.firstVerse +
@@ -99,6 +95,7 @@ export default function MapsView(): JSX.Element {
   const year = storedYear || 1
   const activeRegions = useMemo(() => (kingdomShapes.data ?? []).filter(r =>
     showRegions && r.from != null && r.to != null && r.from <= year && year <= r.to), [kingdomShapes.data, year, showRegions])
+  const [directory, showDirectory] = useState(false)
   const [personPicker, showPeople] = useState(false)
   const [query, setQuery] = useState('')
   const [ftype, setFtype] = useState('')
@@ -126,6 +123,7 @@ export default function MapsView(): JSX.Element {
   useEffect(() => { if (target) showPeople(false) }, [target])
   const select = useCallback((p: PlaceItem) => {
     setSelected(p)
+    showDirectory(false)
     if (locationKind(p) !== 'unlocated') setFocus([p])
   }, [])
   useEffect(() => {
@@ -172,7 +170,11 @@ export default function MapsView(): JSX.Element {
     </button>
   }
 
-  return <div className="h-full flex bg-bg">
+  return <div data-atlas-directory={directory ? 'open' : 'closed'} className="h-full flex bg-bg">
+    {import.meta.env.VITE_STUDY_MOBILE === 'true' && <div className="atlas-switch">
+      <button aria-pressed={!directory} onClick={()=>showDirectory(false)}>Map</button>
+      <button aria-pressed={directory} onClick={()=>showDirectory(true)}>{target ? directoryTitle : 'Find places & people'}</button>
+    </div>}
     <aside className="w-64 max-w-[42%] shrink-0 flex flex-col border-r border-line bg-panel">
       <div className="p-3 border-b border-line space-y-2">
         <h2 className="font-serif text-lg">{personPicker ? 'People with documented locations' : directoryTitle}</h2>
@@ -187,7 +189,7 @@ export default function MapsView(): JSX.Element {
           {target && !personPicker && hasLocatedPlace &&
             <button className={action} onClick={() => setFocus([...scoped])}>Fit all locations</button>}
           {origin && origin.activity !== 'maps' && <button className={action} onClick={returnFromAtlas}>
-            {origin.activity === 'bible' ? 'Back to passage' : 'Back to profile'}</button>}
+            {{ bible: 'Back to passage', timelines: 'Back to Timeline', genealogies: 'Back to profile', words: 'Back to Words', learn: 'Back to Languages' }[origin.activity]}</button>}
         </div>
         {!target && !personPicker && <>
           <input value={query} aria-label="Search places and aliases" placeholder="Search places or aliases…"
@@ -201,7 +203,7 @@ export default function MapsView(): JSX.Element {
         {segments.length > 0 && <label className="flex items-start gap-2 text-xs text-muted">
           <input type="checkbox" checked={connect} onChange={e => setConnect(e.target.checked)} />Sequence only; road unknown.</label>}
       </div>
-      {personPicker ? <PersonSearch onPerson={id => { showPeople(false); openPerson(id) }} /> :
+      {personPicker ? <PersonSearch onPerson={id => { showPeople(false); showDirectory(false); openPerson(id) }} /> :
         <div className="flex-1 overflow-y-auto">
           {catalog.error && <button className={action} onClick={catalog.retry}>Place catalog unavailable · Retry</button>}
           {!target && <>

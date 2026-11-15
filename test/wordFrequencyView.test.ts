@@ -13,6 +13,10 @@ import type { WordFrequency as Summary, WordFrequencyQuery, WordFrequencyVerse }
 let host: HTMLElement
 let root: Root
 beforeEach(() => {
+  Object.defineProperties(HTMLDialogElement.prototype, {
+    showModal: { configurable: true, value(this: HTMLDialogElement) { this.open = true } },
+    close: { configurable: true, value(this: HTMLDialogElement) { this.open = false } }
+  })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   host = document.createElement('div')
   document.body.append(host)
@@ -24,6 +28,8 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount())
   host.remove()
+  Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal')
+  Reflect.deleteProperty(HTMLDialogElement.prototype, 'close')
 })
 
 function select(label: string) {
@@ -112,7 +118,7 @@ describe('word frequency in Words', () => {
     const getWordFrequency = vi.fn(async (q: WordFrequencyQuery) => summary(q))
     Object.assign(window.api, { getStrongs: async () => ({ id: 'G26', language: 'greek', lemma: 'ἀγάπη' }),
       getLexiconEntries: async () => [], getWordFrequency, getWordFrequencyPassages: async (q: WordFrequencyQuery) => [
-        q.form === 'b' ? { ...passage, occurrences: 1, tokens: passage.tokens.map(t => ({ ...t, matching: t.text === 'ἀγάπῃ' })) } : passage
+        q.form === 'b' ? { ...passage, occurrences: 1, tokens: passage.tokens.map(t => ({ ...t, matching: t.text === 'ἀγάπῃ' })) } : { ...passage, orderStatus: 'unverified' }
       ] })
     await act(async () => root.render(createElement(LexiconCard, { id: 'G26', inWords: true })))
     const controls = [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Word study tools"] button')]
@@ -126,6 +132,7 @@ describe('word frequency in Words', () => {
     expect(options[1].toLowerCase()).toMatch(/accusative.*singular/)
     expect(options[1]).toContain('2 occurrences')
     expect([...host.querySelectorAll('mark')].map(m => m.textContent)).toEqual(['ἀγάπην', 'ἀγάπῃ', 'ἀγάπην'])
+    expect(host.querySelector('[aria-label="Matching verses"]')?.textContent).toContain('Edition word order unverified')
     const group = '[aria-label="Books in canonical order"]'
     expect([...host.querySelectorAll(`${group} button`)].map(b => b.textContent)).toEqual(['Mark0', 'Rom3'])
     expect(host.querySelector(`${group} button:last-child`)?.getAttribute('data-level')).toBe('4') // 6 per thousand
@@ -136,6 +143,9 @@ describe('word frequency in Words', () => {
     expect(host.querySelector('mark')).toBeNull()
     await change('Grammatical form', 'b')
     expect(host.querySelector(`${group} button:last-child`)?.textContent).toBe('Rom1')
+    expect(host.querySelector(`${group} button:first-child`)?.getAttribute('aria-pressed')).toBe('true')
+    expect(host.textContent).toContain('No occurrences recorded in this chapter.')
+    await click(`${group} button:last-child`)
     expect([...host.querySelectorAll('mark')].map(m => m.textContent)).toEqual(['ἀγάπῃ'])
     expect(host.textContent).toContain('Reader Romans 16:25')
     await click('button[aria-label="Open Romans 14:24 in the interlinear at Romans 16:25"]')
@@ -164,6 +174,57 @@ describe('word frequency in Words', () => {
     expect(host.textContent).toContain('For 3 occurrences, STEPBible lists this entry as an alternate identification.')
     expect(host.textContent).not.toContain('OLD FORM')
     expect(host.textContent).not.toContain('Reader Romans 16:25')
+  })
+
+  it('switches the dictionary entry without losing keyboard focus, a chosen chapter or the active Words tab', async () => {
+    useAppStore.setState({ activity: 'words', selectedStrongs: 'G2316' })
+    const getWordFrequency = vi.fn(async (q: WordFrequencyQuery) => {
+      const data = summary(q)
+      if (q.id.startsWith('H')) data.books = [{
+        book: 'Gen', name: 'Genesis', occurrences: 1, verses: 1, tagged: 500,
+        chapters: [{ chapter: 2, occurrences: 1, verses: 1, tagged: 500 }]
+      }]
+      return data
+    })
+    Object.assign(window.api, { getStrongs: async (id: string) => ({ id, language: id.startsWith('H') ? 'hebrew' : 'greek', lemma: id }),
+      getLexiconEntries: async () => [], browseLexicon: async () => ({ total: 0, entries: [] }),
+      getWordFrequency, getWordFrequencyPassages: async () => [] })
+    await act(async () => root.render(createElement(WordsView)))
+    await click('[aria-label="Word study tools"] button:last-child')
+    const picker = select('Word to map')
+    expect(picker.value).toBe('G2316')
+    await click('[aria-label="Books in canonical order"] button:first-child')
+    await change('Grammatical form', 'b')
+    picker.focus()
+    await change('Word to map', 'G1135')
+    expect(document.activeElement).toBe(picker)
+    expect(select('Grammatical form').value).toBe('')
+    expect(host.textContent).toContain('No occurrences recorded in this chapter.')
+    expect(host.querySelector('[aria-label="Mark chapters"]')).toBeTruthy()
+    expect(useAppStore.getState().selectedStrongs).toBe('G1135')
+    await change('Word to map', 'H376')
+    expect(host.querySelector('input')?.value).toBe('H376')
+    expect(getWordFrequency).toHaveBeenLastCalledWith({ id: 'H376', edition: 'MT' })
+    expect(host.querySelector('[aria-label="Genesis chapters"]')).toBeTruthy()
+    expect(select('Word to map').value).toBe('H376')
+    expect([...picker.options].map(option => option.value)).toEqual(expect.arrayContaining(['H1167','H802','H2861','H1166','G1060','G1062','G435']))
+  })
+
+  it('shows saved selections while restoration is off and preserves partially enabled older marriage settings', async () => {
+    useAppStore.setState({ sourceWordTerms: { G1062: true }, sourceWordSettingsOpen: true })
+    await act(async () => root.render(createElement(SourceWordSettings)))
+    const input = (label: string) => [...host.querySelectorAll('label')]
+      .find(el => el.textContent?.trim() === label)!.querySelector('input')!
+    const master = input('Show verified source words in the reader')
+    expect(master.checked).toBe(false)
+    expect(input('Marriage').indeterminate).toBe(true)
+    await act(async () => input('Marriage').click())
+    await act(async () => input('Wife').click())
+    expect(input('Husband').checked).toBe(false)
+    expect(useAppStore.getState().restoreSourceWords).toBe(false)
+    await act(async () => master.click())
+    expect(useAppStore.getState()).toMatchObject({ restoreSourceWords: true,
+      sourceWordTerms: { G1060: true, G1062: true, H1166: true, H802: true, G1135: true } })
   })
 
   it('distinguishes common-word frequencies on one labeled scale across both grids and keeps zero separate from unknown', async () => {
@@ -290,6 +351,26 @@ describe('word frequency in Words', () => {
     expect(useAppStore.getState().sourceWordTerms).toEqual({ H3068: false, H3069: false })
   })
 
+  it('switches the visible dictionary when a Strong’s number identifies the other language', async () => {
+    const browseLexicon = vi.fn(async () => ({ total: 0, entries: [] }))
+    Object.assign(window.api, { browseLexicon })
+    vi.useFakeTimers()
+    try {
+      await act(async () => root.render(createElement(WordsView)))
+      const input = host.querySelector<HTMLInputElement>('input')!
+      for (const [value, language, label] of [['h0430', 'hebrew', 'Hebrew / Aramaic'], ['G26', 'greek', 'Greek']]) {
+        await act(async () => {
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+          input.dispatchEvent(new Event('input', { bubbles: true }))
+        })
+        await act(async () => { await vi.advanceTimersByTimeAsync(220) })
+        expect(browseLexicon).toHaveBeenLastCalledWith(expect.objectContaining({ language, query: value }))
+        const tab = [...host.querySelectorAll('button')].find(b => b.textContent === label)
+        expect(tab?.getAttribute('aria-pressed')).toBe('true')
+      }
+    } finally { vi.useRealTimers() }
+  })
+
   it('browses extended Hebrew headwords and opens their scholarly definitions in both Words and the study pane', async () => {
     useAppStore.getState().selectStrongs('H9003')
     const browseLexicon = vi.fn(async () => ({ total: 2, entries: [
@@ -332,12 +413,12 @@ describe('word frequency in Words', () => {
       const link = [...host.querySelectorAll('button')].find(b => b.textContent === 'H02')!
       await act(async () => link.click())
       expect(getStrongs).toHaveBeenLastCalledWith('H2')
-      expect(useAppStore.getState()).toMatchObject({ selectedStrongs: 'H2', strongsBack: ['G5'] })
+      expect(useAppStore.getState()).toMatchObject({ selectedStrongs: 'H2', strongsBack: [{ selectedStrongs: 'G5', selectedOccurrence: null }] })
       expect(host.textContent).toContain('Aramaic')
       expect(host.textContent).toContain('אַב')
-      await click('button[title="Back"]')
+      await click('button[aria-label="Back in word lookup history"]')
       expect(getStrongs).toHaveBeenLastCalledWith('G5')
-      expect(useAppStore.getState()).toMatchObject({ selectedStrongs: 'G5', strongsForward: ['H2'] })
+      expect(useAppStore.getState()).toMatchObject({ selectedStrongs: 'G5', strongsForward: [{ selectedStrongs: 'H2', selectedOccurrence: null }] })
       expect(host.textContent).toContain('Ἀββᾶ')
     } finally {
       canvas.mockRestore()

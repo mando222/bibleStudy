@@ -29,6 +29,19 @@ export interface StudyStructure {
   rows: { label: string; firstVerse: number; lastVerse: number }[]
 }
 
+export function validStudyRange(range: StudyRange): boolean {
+  return !!range && typeof range.edition === 'string' && typeof range.book === 'string' &&
+    Number.isSafeInteger(range.chapter) && range.chapter > 0 &&
+    [range.firstVerse, range.lastVerse].every(v => v === undefined || (Number.isSafeInteger(v) && v >= 0)) &&
+    (range.lastVerse === undefined || (range.firstVerse !== undefined && range.lastVerse >= range.firstVerse))
+}
+
+export function importedPassageContext(range: StudyRange, verses: { verse: number }[]): PassageContext {
+  const present = verses.some(v => v.verse >= (range.firstVerse ?? 0) &&
+    v.verse <= (range.lastVerse ?? range.firstVerse ?? Number.MAX_SAFE_INTEGER))
+  return { status: validStudyRange(range) && present ? 'unverified' : 'unavailable', people: [], places: [], events: [] }
+}
+
 const credited = 'Open Bible Study · reviewed passage notes'
 const structures: Record<string, StudyStructure> = {
   'Matt.1': {

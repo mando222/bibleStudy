@@ -9,6 +9,11 @@ vi.mock('node:sqlite', () => createRequire(import.meta.url)('node:sqlite'))
 vi.mock('electron', () => ({ app: { getAppPath: () => process.cwd() } }))
 
 describe.skipIf(!existsSync('resources/bible.sqlite'))('dictionary coverage', () => {
+  it('places the exact Strong’s entry first even when searching from the other language', () => {
+    expect(browseLexicon({ language: 'greek', query: 'h0430', limit: 1 }).entries[0]?.id).toBe('H430')
+    expect(browseLexicon({ language: 'hebrew', query: 'G26', limit: 1 }).entries[0]?.id).toBe('G26')
+    expect(browseLexicon({ language: 'hebrew', query: 'shepherd', limit: 10 }).entries.every(e => e.language === 'hebrew')).toBe(true)
+  })
   it('opens the Hebrew suffix in Genesis 1:11 even though it has no historical Strong’s entry', () => {
     const row = bibleDb()!.prepare("SELECT strongs FROM original_tokens WHERE edition='MT' AND book_id='Gen' AND chapter=1 AND verse=11 AND strongs='H9033'").get()
     expect(row?.strongs).toBe('H9033')

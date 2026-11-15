@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createRequire } from 'node:module'
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as user from '../src/main/db/user'
 import { aiDb, vecLoadablePath } from '../src/main/ai/vectors'
 import { createBackup, registerBackupIpc, stageRestore } from '../src/main/studyBackup'
-import { setNotebookFolder } from '../src/main/notebook'
+import { listNotebook, notebookFolder, setNotebookFolder } from '../src/main/notebook'
 import { activateProfile, studyProfile } from '../src/main/studyProfile'
 
 const profile = vi.hoisted(() => ({ root: '' }))
@@ -57,6 +57,31 @@ beforeAll(() => {
 afterAll(() => rmSync(temp, { recursive: true, force: true }))
 
 describe('study storage', () => {
+  it('reports a missing external notebook instead of recreating it empty', () => {
+    const missing = join(temp, 'unmounted', 'Notebooks')
+    setNotebookFolder(missing)
+    try {
+      expect(() => listNotebook(notebookFolder())).toThrow()
+      expect(existsSync(missing)).toBe(false)
+    } finally { setNotebookFolder(external) }
+  })
+
+  it('preserves the module’s encoded letters, accents and printed search wording, and rolls back an unknown reference', () => {
+    const path = join(temp, 'encoded.bbl')
+    copyFileSync('test/fixtures/imports/encoded.bbl', path)
+    const { id: translation } = user.importFromSqlite(path)
+    try {
+      const ref = { book: 'Gen', chapter: 1, translation }
+      const printed = ['I am the Α and the Ω.', 'Α & Ω & café <said> λόγος &lt;.', 'Less than 2 < 3 and 4 > 3.']
+      expect(user.getImportedChapter(ref).verses.map(v => v.text)).toEqual(printed)
+      expect(user.searchImported({ translation, text: 'λογος' }).hits[0].snippet).toBe(printed[1])
+      expect(user.searchImported({ translation, text: 'Ω' }).hits.map(h => h.snippet)).toContain(printed[0])
+      const module = new DatabaseSync(path)
+      try { module.exec("INSERT INTO Bible VALUES (1,1,4,'unreadable &unknownName;')") } finally { module.close() }
+      expect(() => user.importFromSqlite(path)).toThrow('Cannot read the character reference &unknownName; at Gen 1:4')
+      expect(user.listImported()).toHaveLength(1)
+    } finally { user.deleteImported(translation) }
+  })
   it('rolls back an entire invalid module; ordinary saves commit and another import succeeds', () => {
     expect(() => user.importFromSqlite(moduleFile('broken', true))).toThrow('Invalid verse')
     expect(user.listImported()).toEqual([])

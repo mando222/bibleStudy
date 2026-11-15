@@ -11,18 +11,31 @@ export default function LearnGrammar({ language }: { language: LearnLanguage }):
   const [done, setDone] = useState<Record<string, string>>({})
   const [revealed, setRevealed] = useState<Record<number, boolean>>({})
 
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [attempt, setAttempt] = useState(0)
   useEffect(() => {
-    window.api.getGrammarLessons().then(setLessons).catch(() => setLessons([]))
-    window.api.getLearnProgress('grammar').then(setDone).catch(() => undefined)
-  }, [])
+    let active = true
+    setLoadError('')
+    setLoading(true)
+    Promise.all([window.api.getGrammarLessons(), window.api.getLearnProgress('grammar')]).then(([all, progress]) => {
+      if (!active) return
+      const courseLessons = all.filter(lesson => lesson.course === course)
+      setLessons(courseLessons)
+      setDone(progress)
+      setSel(courseLessons.find(lesson => String(lesson.id) === progress['current:' + course]) ?? courseLessons[0] ?? null)
+    }).catch(() => { if (active) setLoadError('Could not load the course or saved progress.') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [course, attempt])
 
-  const courseLessons = lessons.filter((l) => l.course === course)
-
-  // Select this course's first lesson when the language (course) changes or lessons load.
-  useEffect(() => {
-    setSel(courseLessons[0] ?? null)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [course, lessons])
+  const courseLessons = lessons
+  const chooseLesson = (lesson: GrammarLesson | undefined) => {
+    if (!lesson) return
+    setSel(lesson)
+    window.api.setLearnProgress('grammar', 'current:' + course, String(lesson.id))
+      .catch(() => setLoadError('Could not save your place in this course.'))
+  }
 
   // Collapse revealed answers when switching lessons.
   useEffect(() => setRevealed({}), [sel])
@@ -32,6 +45,8 @@ export default function LearnGrammar({ language }: { language: LearnLanguage }):
     setDone((d) => ({ ...d, [l.id]: 'done' }))
   }
 
+  if (loading) return <p className="p-4" role="status">Loading lessons…</p>
+  if (loadError) return <p className="p-4" role="alert">{loadError} <button onClick={() => setAttempt(n => n + 1)}>Retry</button></p>
   if (!courseLessons.length) {
     return (
       <div className="p-10 text-center text-muted">
@@ -44,12 +59,16 @@ export default function LearnGrammar({ language }: { language: LearnLanguage }):
   }
 
   return (
-    <div className="h-full flex">
+    <div className="grammar-course h-full flex">
+      {import.meta.env.VITE_STUDY_MOBILE === 'true' && <label className="grammar-picker">Lesson
+        <select value={sel?.id ?? ''} onChange={e => chooseLesson(courseLessons.find(l=>l.id===Number(e.target.value)))}>
+          {courseLessons.map(l=><option key={l.id} value={l.id}>{l.chapterNo}. {l.title}{done[l.id] ? ' ✓' : ''}</option>)}
+        </select></label>}
       <div className="w-56 shrink-0 border-r border-line overflow-y-auto bg-panel">
         {courseLessons.map((l) => (
           <button
             key={l.id}
-            onClick={() => setSel(l)}
+            onClick={() => chooseLesson(l)}
             className={`w-full text-left px-3 py-2 border-b border-line/40 text-sm hover:bg-elevated ${
               sel?.id === l.id ? 'bg-accent-soft text-accent' : 'text-ink'
             }`}

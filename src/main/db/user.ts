@@ -1,3 +1,4 @@
+import type { ReadingChapter } from '../../shared/types'
 import { studyProfile } from '../studyProfile'
 import { DatabaseSync } from 'node:sqlite'
 import { randomUUID } from 'node:crypto'
@@ -7,6 +8,7 @@ import { schedule, newCard } from './srs'
 import { readPassage } from './passage'
 import type { ScripturePassage } from '../../shared/refs'
 import { searchImportedText } from './search'
+import htmlEntities from '../../shared/moduleText/htmlEntities.json'
 import type { SearchQuery, SearchResponse } from '../../shared/types'
 import type {
   ChapterRef,
@@ -289,21 +291,26 @@ export function listAllHighlights(): Highlight[] {
 
 // ---- Imported translations (user-owned NKJV/NASB etc. from MySword/e-Sword) ----
 
-const ENTITIES: Record<string, string> = {
-  '&amp;': '&',
-  '&lt;': '<',
-  '&gt;': '>',
-  '&quot;': '"',
-  '&#39;': "'",
-  '&nbsp;': ' '
+// The same HTML5 named references (Python html.entities.html5) are bundled for Android.
+function decodeEntity(entity: string, name: string, reference: string): string {
+  if (Object.hasOwn(htmlEntities, name)) return htmlEntities[name as keyof typeof htmlEntities]
+  const numeric = /^#(?:[xX]([0-9a-fA-F]+)|(\d+))$/.exec(name)
+  if (numeric) {
+    const cp = Number.parseInt(numeric[1] ?? numeric[2], numeric[1] ? 16 : 10)
+    if ((cp === 9 || cp === 10 || cp === 13 || cp >= 32) && cp <= 0x10ffff &&
+        !(cp >= 0x7f && cp <= 0x9f) && !(cp >= 0xd800 && cp <= 0xdfff)) return String.fromCodePoint(cp)
+  }
+  throw new Error(`Cannot read the character reference ${entity} at ${reference}.`)
 }
-function stripHtml(s: string): string {
-  return (s || '')
+
+function stripHtml(s: string, reference: string): string {
+  return s
     // MySword/e-Sword tags whose CONTENT is metadata, not verse text
     // (<S>strong</S>, <m>morph</m>, <n>note</n>, <f>footnote</f>).
     .replace(/<(S|m|n|f)>[\s\S]*?<\/\1>/gi, '')
-    .replace(/<[^>]+>/g, '') // remaining tags (italics, formatting) — keep their text
-    .replace(/&[#a-z0-9]+;/gi, (e) => ENTITIES[e] ?? ' ')
+    .replace(/<\/?(?:br|p|div)\b[^>]*>/gi, ' ')
+    .replace(/<\/?[a-zA-Z][\w:-]*(?:\s[^<>]*)?\s*\/?>/g, '')
+    .replace(/&(#\w*|[a-zA-Z][a-zA-Z0-9]*);/g, (entity, name: string) => decodeEntity(entity, name, reference))
     .replace(/\s+/g, ' ')
     .trim()
 }
@@ -374,7 +381,7 @@ export function importFromSqlite(filePath: string): ImportedTranslation {
         if (!Number.isSafeInteger(chapter) || chapter < 1 || !Number.isSafeInteger(verse) || verse < 1 || typeof r.s !== 'string') {
           throw new Error('Invalid verse in module. Check its chapter, verse number and text.')
         }
-        const text = stripHtml(r.s)
+        const text = stripHtml(r.s, `${book} ${chapter}:${verse}`)
         if (!text) continue
         ins.run(id, book, chapter, verse, text)
       }
@@ -419,6 +426,11 @@ export function getImportedPassage(translation: string, ref: ScripturePassage) {
 
 export function searchImported(q: SearchQuery): SearchResponse {
   return searchImportedText(required(), q)
+}
+
+export function importedChapters(edition: string): ReadingChapter[] {
+  return required().prepare('SELECT book_id AS book, chapter, MIN(verse) AS firstVerse FROM imported_verses WHERE translation_id = ? GROUP BY book_id, chapter')
+    .all(edition) as ReadingChapter[]
 }
 
 export function getImportedChapter(ref: ChapterRef): ChapterContent {

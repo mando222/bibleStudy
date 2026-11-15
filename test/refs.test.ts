@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseScriptureRefs } from '../src/shared/refs'
+import { parseScriptureRefs, typedPassage } from '../src/shared/refs'
 
 describe('parseScriptureRefs', () => {
   const one = (s: string): ReturnType<typeof parseScriptureRefs>[number] => {
@@ -55,4 +55,13 @@ describe('parseScriptureRefs', () => {
   it('rejects impossible chapters', () => {
     expect(parseScriptureRefs('John 99:1')).toHaveLength(0) // John has 21 chapters
   })
+})
+
+
+it('opens the extra Swete psalm only in its native edition and requires the entire input to be a location', () => {
+  expect(typedPassage('Psalm 151:1', 'LXX')).toMatchObject({ book: 'Ps', chapter: 151, firstVerse: 1 })
+  expect(typedPassage('Psalm 151:1', 'KJV')).toBeUndefined()
+  expect(typedPassage('John 3:16 stray text', 'BSB')).toBeUndefined()
+  expect(typedPassage('before John 3:16', 'BSB')).toBeUndefined()
+  expect(typedPassage('1 Jn 2:1', 'BSB')).toMatchObject({ book: '1John', chapter: 2, firstVerse: 1 })
 })

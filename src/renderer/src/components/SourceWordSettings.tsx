@@ -1,3 +1,4 @@
+import ModalDialog from './ModalDialog'
 import { SOURCE_WORD_TERMS, termEnabled } from '@shared/sourceWords'
 import { useStrongs } from '@/hooks/useStrongs'
 import { useAppStore } from '@/store/useAppStore'
@@ -8,38 +9,47 @@ export default function SourceWordSettings(): JSX.Element | null {
   const terms = useAppStore(s => s.sourceWordTerms)
   const sourceFormIds = useAppStore(s => s.sourceFormIds)
   const setTerm = useAppStore(s => s.setSourceTerm)
+  const restoring = useAppStore(s => s.restoreSourceWords)
+  const toggle = useAppStore(s => s.toggleSourceWords)
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={() => setOpen(false)}>
-      <section role="dialog" aria-modal="true" aria-labelledby="source-word-settings"
-        onKeyDown={e => { if (e.key === 'Escape') setOpen(false) }}
-        onClick={e => e.stopPropagation()}
-        className="w-full max-w-lg max-h-[85vh] overflow-auto rounded-xl bg-panel border border-line p-5 shadow-xl">
+    <ModalDialog label="Words to restore" className="w-[min(32rem,90vw)]" close={() => setOpen(false)}>
+      <section className="p-5">
         <div className="flex items-center justify-between gap-4">
           <h2 id="source-word-settings" className="font-semibold text-ink">Words to restore</h2>
-          <button autoFocus aria-label="Close word settings" onClick={() => setOpen(false)} className="text-muted px-2">✕</button>
+          <button aria-label="Close word settings" onClick={() => setOpen(false)} className="text-muted px-2">✕</button>
         </div>
+        <label className="mt-4 flex items-center gap-3 text-sm font-semibold">
+          <input type="checkbox" className="accent-accent" checked={restoring} onChange={toggle} />
+          Show verified source words in the reader
+        </label>
         <p className="mt-2 mb-4 text-sm text-muted">
-          Choose which words to show when Restore words is on. The presets use a verified spelling in
-          Latin letters. The four-letter Hebrew name displays as YHWH. For original script, select a
-          word in the reader’s Lexicon panel.
+          Each selected term displays its verified form in Latin letters. In BSB 1 Corinthians 7:3,
+          the two uses of “wife” show <i>gynaiki</i> and <i>gynē</i>. Only verified BSB and KJV links
+          qualify. The four-letter Hebrew name appears as YHWH. Copies keep the translation’s printed wording.
         </p>
+        <h3 className="text-sm font-medium mb-1">Words to show {restoring ? '' : 'when switched on'}</h3>
         <div className="grid gap-x-4 sm:grid-cols-2">
-          {SOURCE_WORD_TERMS.map(({ label, ids }) => (
+          {SOURCE_WORD_TERMS.map(({ label, ids }) => {
+            const count = ids.filter(id => termEnabled(id, terms)).length
+            return (
             <label key={ids[0]} className="flex items-center gap-3 py-1 text-sm text-ink">
-              <input type="checkbox" className="accent-accent" checked={termEnabled(ids[0], terms)}
+              <input type="checkbox" className="accent-accent" checked={count === ids.length}
+                ref={el => { if (el) el.indeterminate = count > 0 && count < ids.length }}
                 onChange={e => setTerm(ids, e.target.checked)} />
               {label}
             </label>
-          ))}
+            )
+          })}
         </div>
         {sourceFormIds.length > 0 && <section aria-labelledby="selected-source-forms" className="mt-4 pt-3 border-t border-line">
           <h3 id="selected-source-forms" className="font-medium text-sm text-ink">Original forms selected in the Lexicon</h3>
+          <p className="mt-1 text-xs text-muted">These entries use the source script in the reader. Other presets use Latin letters.</p>
           <ul className="mt-1">{sourceFormIds.map(id => <SelectedSourceForm key={id} id={id} />)}</ul>
         </section>}
       </section>
-    </div>
+    </ModalDialog>
   )
 }
 

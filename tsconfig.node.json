@@ -13,6 +13,7 @@
     "resolveJsonModule": true,
     "types": ["node", "electron-vite/node"]
   },
+  "exclude": ["src/main/db/*.android.ts"],
   "include": [
     "src/main/**/*",
     "src/preload/**/*",

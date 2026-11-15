@@ -108,3 +108,9 @@ export const BOOK_BY_USFM: Record<string, BookMeta> = Object.fromEntries(
 
 /** Total verse count of the KJV canon — used as a pipeline sanity assertion. */
 export const KJV_VERSE_COUNT = 31102
+
+/** Human-readable label for a catalog reference stored as Book.chapter.verse. */
+export function catalogRefLabel(key: string): string {
+  const [book, chapter, verse] = key.split('.')
+  return (BOOK_BY_ID[book]?.name ?? book) + ' ' + chapter + (verse ? ':' + verse : '')
+}

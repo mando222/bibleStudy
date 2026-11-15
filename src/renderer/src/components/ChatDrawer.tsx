@@ -54,11 +54,25 @@ export default function ChatDrawer(): JSX.Element {
   const [busy, setBusy] = useState(false)
   // A stable id per conversation so the main process can keep a KV-cached session and cancel it.
   const [convId, setConvId] = useState(() => `c_${Date.now().toString(36)}`)
-  const newConversation = (): void => {
+  const clearAfterStop = useRef(false)
+  const resetConversation = (): void => {
     setConvId(`c_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`)
     setMessages([])
   }
   const stop = (): void => void window.ai?.stop(convId)
+  const newConversation = (): void => {
+    if (busy) {
+      clearAfterStop.current = true
+      stop()
+    } else resetConversation()
+  }
+  const finishTurn = (): void => {
+    if (clearAfterStop.current) {
+      clearAfterStop.current = false
+      resetConversation()
+    }
+    setBusy(false)
+  }
   const [ground, setGround] = useState(true)
   const [showDocs, setShowDocs] = useState(false)
   const [docs, setDocs] = useState<AiDoc[]>([])
@@ -132,15 +146,15 @@ export default function ChatDrawer(): JSX.Element {
 
   const [setupBusy, setSetupBusy] = useState(false)
   const [setupProg, setSetupProg] = useState<AiSetupProgress | null>(null)
+  const [setupMessage, setSetupMessage] = useState('')
+  const cancel = () => void window.ai.cancelSetup().catch(e => setSetupMessage(String(e)))
   const runSetup = async (): Promise<void> => {
     if (setupBusy || !window.ai) return
+    setSetupMessage('')
     setSetupProg(null)
     setSetupBusy(true)
     try {
       await window.ai.setupBundled()
-    } finally {
-      setSetupBusy(false)
-      refreshStatus()
       // Build the semantic Bible index in the background so "search by meaning" just works.
       window.ai
         ?.indexStatus(primary)
@@ -149,6 +163,11 @@ export default function ChatDrawer(): JSX.Element {
           if (!done && !s.building) void buildIndex()
         })
         .catch(() => undefined)
+    } catch (e) {
+      setSetupMessage(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSetupBusy(false)
+      refreshStatus()
     }
   }
 
@@ -158,8 +177,7 @@ export default function ChatDrawer(): JSX.Element {
     await window.ai.setConfig({ chatTier: tier as never })
     const st = await window.ai.status()
     setStatus(st)
-    const needDownload = tier !== 'auto' && !st.installedTiers.includes(tier as never)
-    if (needDownload) await runSetup()
+    setSetupMessage('')
   }
 
   useEffect(() => {
@@ -167,6 +185,7 @@ export default function ChatDrawer(): JSX.Element {
     loadDocs()
     const unsubSetup = window.ai?.onSetupProgress(setSetupProg)
     const unsub = window.ai?.onToken((ev) => {
+      if (clearAfterStop.current) return
       setMessages((prev) => {
         if (!prev.length) return prev
         const copy = [...prev]
@@ -178,7 +197,6 @@ export default function ChatDrawer(): JSX.Element {
         copy[copy.length - 1] = last
         return copy
       })
-      if (ev.done) setBusy(false)
     })
     return () => {
       unsub?.()
@@ -216,14 +234,13 @@ export default function ChatDrawer(): JSX.Element {
         context.active
       )
     } catch (e) {
-      setBusy(false)
       setMessages((prev) => {
         const copy = [...prev]
         const last = copy[copy.length - 1]
         if (last?.role === 'assistant') last.content += `\n\n⚠️ ${e instanceof Error ? e.message : e}`
         return copy
       })
-    }
+    } finally { finishTurn() }
   }
 
   const send = async (): Promise<void> => {
@@ -246,14 +263,13 @@ export default function ChatDrawer(): JSX.Element {
     try {
       await window.ai.chat(convId, history, context.grounding, selection, context.active)
     } catch (e) {
-      setBusy(false)
       setMessages((prev) => {
         const copy = [...prev]
         const last = copy[copy.length - 1]
         if (last?.role === 'assistant') last.content += `\n\n⚠️ ${e instanceof Error ? e.message : e}`
         return copy
       })
-    }
+    } finally { finishTurn() }
   }
 
   const setModel = (m: string): void => {
@@ -324,10 +340,17 @@ export default function ChatDrawer(): JSX.Element {
         </button>
       </div>
 
+      {status?.activeProvider === 'bundled' && status.setupRequired && !setupBusy && (
+        <button onClick={() => void runSetup()} className="border-b border-line p-2 text-sm text-accent">
+          Download {status.setupModelLabel} setup files ({downloadSize(status.setupDownloadBytes)})
+        </button>
+      )}
+      {setupMessage && <p role="status" className="p-2 text-sm text-muted">{setupMessage}</p>}
       {setupBusy && status?.available && (
         <div className="shrink-0 border-b border-line px-3 py-2 bg-elevated/40">
           <div className="flex justify-between text-[11px] text-muted mb-1">
             <span>Downloading {setupProg?.label ?? 'model'}…</span>
+            <button className="text-accent" onClick={cancel}>Cancel download</button>
             {setupProg && setupProg.total > 0 && (
               <span className="tabular-nums">
                 {Math.round((100 * setupProg.received) / setupProg.total)}%
@@ -422,7 +445,7 @@ export default function ChatDrawer(): JSX.Element {
       )}
 
       {status && !status.available ? (
-        <Setup busy={setupBusy} progress={setupProg} onSetup={() => void runSetup()} />
+        <Setup busy={setupBusy} progress={setupProg} onSetup={() => void runSetup()} cancel={cancel} status={status} />
       ) : (
         <>
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
@@ -568,19 +591,24 @@ function Bubble({
   )
 }
 
+function downloadSize(bytes: number): string {
+  return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(2)} GB` : `${Math.ceil(bytes / 1e6)} MB`
+}
+
 function Setup({
   busy,
   progress,
-  onSetup
+  onSetup, cancel, status
 }: {
+  cancel: () => void
+  status: AiStatus
   busy: boolean
   progress: AiSetupProgress | null
   onSetup: () => void
 }): JSX.Element {
-  const mb = (n: number): string => `${(n / 1_048_576).toFixed(0)} MB`
+  const mb = (n: number): string => `${(n / 1e6).toFixed(0)} MB`
   const pct =
     progress && progress.total > 0 ? Math.min(100, Math.round((100 * progress.received) / progress.total)) : 0
-  const err = progress?.error
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-sm text-muted">
@@ -589,8 +617,9 @@ function Setup({
         <>
           <p className="text-ink font-medium">Setting up the assistant…</p>
           <p className="mt-1 max-w-xs leading-relaxed">
-            Getting things ready. This one-time step runs entirely on your computer.
+            Downloading {progress?.label ?? status.setupModelLabel}. You can cancel and resume later.
           </p>
+          <button onClick={cancel} className="mt-2 text-accent underline">Cancel download</button>
           <div className="mt-4 w-full max-w-xs">
             <div className="h-1.5 rounded bg-line overflow-hidden">
               <div className="h-full bg-accent transition-all" style={{ width: `${pct}%` }} />
@@ -605,17 +634,6 @@ function Setup({
             </div>
           </div>
         </>
-      ) : err ? (
-        <>
-          <p className="text-ink font-medium">Setup didn&rsquo;t finish</p>
-          <p className="mt-1 max-w-xs leading-relaxed text-red-500">{err}</p>
-          <button
-            onClick={onSetup}
-            className="mt-4 px-3 py-1.5 rounded-md bg-accent text-white text-sm hover:opacity-90"
-          >
-            Try again
-          </button>
-        </>
       ) : (
         <>
           <p className="text-ink font-medium">Turn on the assistant</p>
@@ -623,13 +641,13 @@ function Setup({
             Ask study questions and get answers grounded in the text you&rsquo;re reading. It runs
             privately on this computer and works offline — no account, no cloud.
           </p>
+          <p className="mt-2 text-xs">{status.setupModelLabel} and the search model require a download of up to {downloadSize(status.setupDownloadBytes)}. You can cancel during setup.</p>
           <button
             onClick={onSetup}
             className="mt-4 px-4 py-2 rounded-md bg-accent text-white text-sm font-medium hover:opacity-90"
           >
             Set up the assistant
           </button>
-          <p className="mt-2 text-[11px] text-faint">One-time setup · a few minutes</p>
         </>
       )}
     </div>

@@ -1,3 +1,5 @@
+import type { GreekOrderStatus } from './apparatus'
+
 export const WORD_FREQUENCY_VERSION = '1'
 export const WORD_FREQUENCY_PUNCTUATION = /^H901[4-9]$/
 
@@ -60,4 +62,12 @@ export interface WordFrequencyVerse {
   tokens: { text: string; matching: boolean; spaceBefore: boolean }[]
   /** Reader coordinates of the first matching occurrence in this native verse. */
   readerRef: { book: string; chapter: number; verse: number } | null
+  orderStatus?: GreekOrderStatus
+}
+
+export const frequencyEditionNames: Record<WordFrequencyEdition, string> = {
+  NA: 'Critical Greek NT (NA28, STEPBible)',
+  TR: 'Textus Receptus (Scrivener 1894)',
+  BYZ: 'Byzantine (Robinson–Pierpont 2005)',
+  MT: 'Masoretic Text (Leningrad, Qere reading)'
 }

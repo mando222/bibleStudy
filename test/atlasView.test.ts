@@ -89,8 +89,8 @@ it('keeps an unmapped person in Family and offers the map only on a supported pr
   vi.useFakeTimers()
   try {
     const people = [{ id: 13, name: 'Abel', mappedPlaceCount: 0 }, { id: 25, name: 'Paul', mappedPlaceCount: 1 }]
-    Object.assign(window.api, { getPeople: async () => people, getAncestry: async () => [],
-      getPerson: async (id: number) => ({ ...people.find(p => p.id === id), spouses: [], children: [], verses: [] }) })
+    Object.assign(window.api, { getPeoplePage: async () => ({ people: people.map(p => ({ ...p, displayName: p.name })), total: people.length }), getAncestry: async () => [],
+      getPerson: async (id: number) => ({ ...people.find(p => p.id === id), spouses: [], children: [], siblings: [], verses: [] }) })
     useAppStore.setState({ activity: 'genealogies' })
     await act(async () => root.render(createElement(GenealogiesView)))
     await act(async () => vi.advanceTimersByTimeAsync(200))
@@ -218,4 +218,29 @@ it('refits the person’s places and never offers a line across an unknown stop 
   expect(map.getAttribute('viewBox')).not.toBe(overview)
   await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Fit mapped places"]')!.click())
   expect(map.getAttribute('viewBox')).toBe(overview)
+})
+
+it('keeps children under their recorded mothers in Family and Tree, and opens a sibling by ID', async () => {
+  const joseph = { id: 1710, name: 'Joseph' }, benjamin = { id: 463, name: 'Benjamin' }
+  const rachel = { id: 2386, name: 'Rachel' }, jacob = { id: 682, name: 'Israel' }
+  const detail = { ...jacob, spouses: [rachel], children: [{ ...joseph, mother: rachel, father: jacob, motherRefs: ['Gen.35.24'] }], siblings: [], verses: [] }
+  const getPerson = vi.fn(async (id: number) => id === jacob.id ? detail : ({
+    ...(id === joseph.id ? joseph : benjamin), mother: rachel, father: jacob, children: [], spouses: [], verses: [],
+    siblings: [{ ...(id === joseph.id ? benjamin : joseph), relation: 'both' }]
+  }))
+  Object.assign(window.api, { getPeoplePage: async () => ({ people: [], total: 0 }), getPerson, getAncestry: async () => [] })
+  useAppStore.getState().focusPerson(jacob.id)
+  await act(async () => root.render(createElement(GenealogiesView)))
+  const family = () => host.querySelector('[aria-label="Children"]')!
+  expect(family().textContent).toContain('Mother · RachelJoseph')
+  expect(family().textContent).toContain('Genesis 35:24')
+  await act(async () => button('Tree').click())
+  expect(host.querySelector('[aria-label="Family tree"]')).not.toBeNull()
+  expect(family().textContent).toContain('Mother · RachelJoseph')
+  await act(async () => button('Joseph').click())
+  expect(host.querySelector('h1')?.textContent).toBe('Joseph')
+  expect(host.textContent).toContain('Both parents in commonBenjamin')
+  await act(async () => button('Benjamin').click())
+  expect(getPerson).toHaveBeenLastCalledWith(463)
+  expect(host.querySelector('h1')?.textContent).toBe('Benjamin')
 })

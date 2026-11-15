@@ -1,3 +1,5 @@
+import { familyName } from '../../shared/familyEvidence'
+
 export interface MapName {
   id: number
   name: string
@@ -32,10 +34,17 @@ const names: Record<number, { displayName?: string; aliases?: string[] }> = {
   2762: { aliases: ['Jedidiah'] } // 2 Sam 12:24–25
 }
 
+export function personAliasIds(query: string): number[] {
+  const key = query.toLowerCase()
+  return Object.entries(names).filter(([, identity]) =>
+    [identity.displayName, ...(identity.aliases ?? [])].some(name => name?.toLowerCase().includes(key))
+  ).map(([id]) => Number(id))
+}
+
 export function atlasIdentity(row: MapName) {
   const known = names[row.id]
-  let displayName = known?.displayName ?? row.name
-  if (!known?.displayName && row.hasNamesake && row.parentName) {
+  let displayName = known?.displayName ?? familyName(row)
+  if (!known?.displayName && displayName === row.name && row.hasNamesake && row.parentName) {
     const kinship = row.gender === 'Female' ? 'daughter' : row.gender === 'Male' ? 'son' : 'child'
     displayName = `${row.name} (${kinship} of ${row.parentName})`
   }

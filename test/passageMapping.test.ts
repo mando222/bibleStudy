@@ -1,7 +1,21 @@
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { describe, expect, it } from 'vitest'
-import { mapChapter, mapChapterStart, mapPassage } from '../src/shared/passageMapping'
+import { canonicalChaptersForNotes, mapChapter, mapChapterStart, mapPassage } from '../src/shared/passageMapping'
+
+it('restricts imported coordinates to their own edition, including the LXX chapter-start fallback', () => {
+  const ref = { book: 'Ps', chapter: 9, verse: 22 }
+  expect(mapPassage(ref, 'imp_a', 'imp_a')).toEqual(ref)
+  for (const other of ['BSB', 'LXX', 'imp_b']) {
+    expect(mapPassage(ref, 'imp_a', other)).toBeNull()
+    expect(mapPassage(ref, other, 'imp_a')).toBeNull()
+    expect(mapChapterStart(ref, 'imp_a', other)).toBeNull()
+    expect(mapChapterStart(ref, other, 'imp_a')).toBeNull()
+  }
+  expect(canonicalChaptersForNotes('Ps', 9, 'imp_a')).toEqual([])
+  expect(canonicalChaptersForNotes('Ps', 9, 'LXX')).toEqual([9, 10])
+  expect(canonicalChaptersForNotes('Ps', 151, 'LXX')).toEqual([])
+})
 
 describe('Swete and English references', () => {
   const ps = (chapter: number, verse: number) => ({ book: 'Ps', chapter, verse })

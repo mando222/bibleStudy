@@ -4,6 +4,12 @@ export function lexiconId(input: string): string {
   return id.replace(/^([GH])0+(\d+)$/, '$1$2')
 }
 
+/** A complete Strong’s number identifies its dictionary regardless of the active tab. */
+export function lexiconLanguage(input: string): 'hebrew' | 'greek' | undefined {
+  const id = lexiconId(input)
+  if (/^[HG]\d+$/.test(id)) return id[0] === 'H' ? 'hebrew' : 'greek'
+}
+
 export const isDivineNameId = (id: string): boolean => id === 'H3068' || id === 'H3069'
 
 /** Restore selections store dictionary IDs only. A saved label or spelling cannot become reader text. */

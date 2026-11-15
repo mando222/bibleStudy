@@ -12,6 +12,7 @@ import {
   presentChatModel,
   modelPath,
   modelPresent,
+  remainingModelBytes,
   downloadModel,
   type ChatTier
 } from './models'
@@ -136,9 +137,9 @@ export async function status(): Promise<AiStatus> {
           : ollamaUp
             ? 'ollama'
             : 'none'
-  const needsSetup = !ready && !ollamaUp
-  const hasGpu =
-    needsSetup || active === 'bundled' ? await llamacpp.detectGpu().catch(() => false) : false
+  const needsSetup = active === 'none'
+  const hasGpu = active !== 'ollama' ? await llamacpp.detectGpu().catch(() => false) : false
+  const target = modelForTier(resolveTier(cfg.chatTier ?? 'auto', hasGpu))
   const models = active === 'ollama' ? await ollamaList(cfg.baseUrl) : []
   const chatModelLabel = active === 'bundled' ? ((await bundledChatModel())?.label ?? '') : ''
   return {
@@ -149,24 +150,31 @@ export async function status(): Promise<AiStatus> {
     models,
     config: cfg,
     chatModelLabel,
+    setupDownloadBytes: remainingModelBytes(target) + remainingModelBytes(MODELS.embed),
+    setupRequired: !modelPresent(target) || !modelPresent(MODELS.embed),
+    setupModelLabel: target.label,
     installedTiers: installedTiers()
   }
 }
 
-let setupRunning = false
+let setupController: AbortController | null = null
+export function cancelSetup(): void {
+  setupController?.abort(new Error('Download cancelled. You can resume setup later.'))
+}
 export async function setupBundled(onProgress: (p: AiSetupProgress) => void): Promise<void> {
-  if (setupRunning) return
-  setupRunning = true
+  if (setupController) throw new Error('A model download is already running.')
+  setupController = new AbortController()
+  const { signal } = setupController
   try {
     const cfg = getConfig()
     const hasGpu = await llamacpp.detectGpu().catch(() => false)
     const chat = modelForTier(resolveTier(cfg.chatTier ?? 'auto', hasGpu))
     await downloadModel(chat, (received, total) =>
-      onProgress({ role: 'chat', label: chat.label, received, total, done: false })
+      onProgress({ role: 'chat', label: chat.label, received, total, done: false }), signal
     )
     onProgress({ role: 'chat', label: chat.label, received: chat.sizeBytes, total: chat.sizeBytes, done: true })
     await downloadModel(MODELS.embed, (received, total) =>
-      onProgress({ role: 'embed', label: MODELS.embed.label, received, total, done: false })
+      onProgress({ role: 'embed', label: MODELS.embed.label, received, total, done: false }), signal
     )
     onProgress({
       role: 'embed',
@@ -184,7 +192,8 @@ export async function setupBundled(onProgress: (p: AiSetupProgress) => void): Pr
       done: true,
       error: e instanceof Error ? e.message : String(e)
     })
+    throw e
   } finally {
-    setupRunning = false
+    setupController = null
   }
 }

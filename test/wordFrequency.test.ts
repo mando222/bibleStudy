@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { getWordFrequency, getWordFrequencyPassages } from '../src/main/db/wordFrequency'
@@ -23,7 +23,33 @@ const path = 'resources/bible.sqlite'
 const db = existsSync(path) ? new DatabaseSync(path, { readOnly: true }) : null
 afterAll(() => db?.close())
 
+it('checks every contributing reader verse when the heat map displays a split native verse', () => {
+  const fixture = new DatabaseSync(':memory:')
+  try {
+    fixture.exec(readFileSync('data-pipeline/schema.sql', 'utf8'))
+    fixture.exec(`INSERT INTO meta VALUES('word_frequency_version','1');
+      INSERT INTO original_tokens(edition,book_id,chapter,verse,position,native_chapter,native_verse,original) VALUES
+        ('TR','Rom',16,25,1,14,24,'ἀγάπη'), ('TR','Rom',16,26,1,14,24,'καὶ');
+      INSERT INTO word_frequency_occurrences VALUES
+        ('TR','G26','Rom',16,25,1,0,14,24,'greek','ἀγάπη','ἀγάπη','N-NSF',NULL,0,0,5,NULL);
+      INSERT INTO greek_order_uncertainties VALUES ('TR','Rom',16,26);`)
+    const query = { id: 'G26', book: 'Rom', chapter: 14, edition: 'TR' } as const
+    expect(getWordFrequencyPassages(query, fixture)).toMatchObject([{
+      chapter: 14, verse: 24, readerRef: { chapter: 16, verse: 25 }, orderStatus: 'unverified', occurrences: 1
+    }])
+    fixture.exec('DROP TABLE greek_order_uncertainties')
+    expect(getWordFrequencyPassages(query, fixture)[0].orderStatus).toBe('unknown')
+  } finally { fixture.close() }
+})
+
 describe.skipIf(!db)('source-linked word frequency in the bundled Bible', () => {
+  it('qualifies G26 at 1 Corinthians 13:2 only in editions with unverified order there', () => {
+    const query = { id: 'G26', book: '1Cor', chapter: 13 }
+    const tr = getWordFrequencyPassages({ ...query, edition: 'TR' }, db).find(v => v.verse === 2)!
+    expect(tr).toMatchObject({ orderStatus: 'unverified', occurrences: 1 })
+    expect(tr.tokens.find(t => t.matching)?.text.normalize('NFC')).toBe('ἀγάπην')
+    expect(getWordFrequencyPassages({ ...query, edition: 'NA' }, db).find(v => v.verse === 2)).not.toHaveProperty('orderStatus')
+  })
   it('reconciles all five Greek forms of agapē and counts its three uses in 1 John 4:16', () => {
     const query = { id: 'G26', edition: 'NA' } as const
     const summary = getWordFrequency(query, db)

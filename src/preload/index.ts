@@ -4,6 +4,7 @@ import type { AiApi, BibleApi, NotebookApi, UpdateProgress, UpdatesApi } from '.
 const api: BibleApi = {
   version: () => ipcRenderer.invoke('app:version'),
   listTranslations: () => ipcRenderer.invoke('bible:listTranslations'),
+  listReadingChapters: (edition, interlinear) => ipcRenderer.invoke('bible:listReadingChapters', edition, interlinear),
   getChapter: (ref) => ipcRenderer.invoke('bible:getChapter', ref),
   getComparisonVerse: (ref) => ipcRenderer.invoke('bible:getComparisonVerse', ref),
   getStrongs: (id) => ipcRenderer.invoke('bible:getStrongs', id),
@@ -11,6 +12,7 @@ const api: BibleApi = {
   browseLexicon: (opts) => ipcRenderer.invoke('bible:browseLexicon', opts),
   getWordFrequency: (query) => ipcRenderer.invoke('bible:getWordFrequency', query),
   getWordFrequencyPassages: (query) => ipcRenderer.invoke('bible:getWordFrequencyPassages', query),
+  getPeoplePage: (query, limit, offset) => ipcRenderer.invoke('bible:getPeoplePage', query, limit, offset),
   getPeople: (query, limit) => ipcRenderer.invoke('bible:getPeople', query, limit),
   getPerson: (id) => ipcRenderer.invoke('bible:getPerson', id),
   getAncestry: (id) => ipcRenderer.invoke('bible:getAncestry', id),
@@ -43,6 +45,7 @@ const api: BibleApi = {
   saveHighlight: (input) => ipcRenderer.invoke('user:saveHighlight', input),
   deleteHighlight: (id) => ipcRenderer.invoke('user:deleteHighlight', id),
 
+  listAnnotations: () => ipcRenderer.invoke('user:listAnnotations'),
   listNotes: (ref) => ipcRenderer.invoke('user:listNotes', ref),
   saveNote: (input) => ipcRenderer.invoke('user:saveNote', input),
   deleteNote: (id) => ipcRenderer.invoke('user:deleteNote', id),
@@ -75,6 +78,7 @@ const api: BibleApi = {
 const ai: AiApi = {
   status: () => ipcRenderer.invoke('ai:status'),
   setConfig: (patch) => ipcRenderer.invoke('ai:setConfig', patch),
+  cancelSetup: () => ipcRenderer.invoke('ai:cancelSetup'),
   setupBundled: () => ipcRenderer.invoke('ai:setupBundled'),
   onSetupProgress: (cb) => {
     const listener = (_e: unknown, p: Parameters<typeof cb>[0]): void => cb(p)

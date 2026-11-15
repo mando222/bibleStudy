@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { expect, it, vi } from 'vitest'
 import * as bible from '../src/main/db/bible'
-import { getPeople, getPerson } from '../src/main/db/graph'
+import { getPeople, getPeoplePage, getPerson } from '../src/main/db/graph'
 import { getMappedPeople, getPersonMap } from '../src/main/db/passageStudy'
 import { reviewedAssociations } from '../src/shared/reviewedPlaces'
 
@@ -63,4 +63,53 @@ it('retains an unlocated place with evidence and excludes a place absent from th
     active.mockRestore()
     db.close()
   }
+})
+
+it.skipIf(!existsSync('resources/bible.sqlite'))('pages the whole People directory and finds documented aliases and namesakes', () => {
+  const first = getPeoplePage('', 800, 0)
+  const all = [...first.people]
+  for (let offset = 800; offset < first.total; offset += 800) all.push(...getPeoplePage('', 800, offset).people)
+  expect(new Set(all.map(p => p.id)).size).toBe(first.total)
+  expect(first.total).toBe(3067)
+  expect(getPeoplePage('Saul', 80, 0).people.find(p => p.id === 2479)?.displayName).toContain('Paul')
+  expect(getPeoplePage('Zechariah', 80, 0).people.filter(p => p.name === 'Zechariah').every(p => p.firstRef)).toBe(true)
+  const philips = getPeoplePage('Philip', 80, 0).people
+  expect(philips.find(p => p.id === 2345)?.displayName).toBe('Philip (husband of Herodias)')
+  expect(philips.find(p => p.id === 2346)?.displayName).toBe('Philip (tetrarch of Ituraea)')
+  const azariahs = getPeoplePage('Azariah', 80, 0).people
+  expect(azariahs.find(p => p.id === 381)?.displayName).toBe('Azariah (catalog 381)')
+  expect(azariahs.find(p => p.id === 382)?.displayName).toBe('Azariah (catalog 382)')
+  expect(getPeoplePage('%', 1, 0).total).toBe(0)
+})
+
+it.skipIf(!existsSync('resources/bible.sqlite'))('groups Jacob’s children by recorded mother and distinguishes full and half siblings', () => {
+  const jacob = getPerson(682)!
+  const groups = (mother: string) => jacob.children.filter(c => c.mother?.name === mother).map(c => c.name)
+  expect(groups('Rachel')).toEqual(['Benjamin', 'Joseph'])
+  expect(groups('Bilhah')).toEqual(['Dan', 'Naphtali'])
+  expect(groups('Zilpah')).toEqual(['Asher', 'Gad'])
+  expect(groups('Leah')).toEqual(['Dinah', 'Issachar', 'Judah', 'Levi', 'Reuben', 'Simeon', 'Zebulun'])
+  expect(jacob.children.find(c => c.name === 'Dinah')?.motherRefs).toEqual(['Gen.30.21'])
+  const joseph = getPerson(1710)!
+  expect(joseph.siblings.filter(s => s.relation === 'both')).toEqual([{ id: 463, name: 'Benjamin', relation: 'both' }])
+  expect(joseph.siblings.filter(s => s.relation === 'halfFather')).toHaveLength(11)
+  expect(new Set(joseph.siblings.map(s => s.id)).size).toBe(12)
+})
+
+it.skipIf(!existsSync('resources/bible.sqlite'))('keeps unknown mothers, named siblings without parents, and unresolved parentage distinct', () => {
+  const david = getPerson(994)!
+  expect(david.children.find(c => c.id === 2822)).toMatchObject({ name: 'Tamar', mother: null, motherRefs: [] })
+  expect(david.children.find(c => c.id === 2762)).toMatchObject({ name: 'Solomon', mother: { name: 'Bathsheba' }, motherRefs: ['1Chr.3.5'] })
+  expect(getPerson(2822)?.siblings.find(s => s.id === 59)?.relation).toBe('father')
+  for (const id of [1812, 1937, 1939]) {
+    const family = getPerson(id)!
+    expect(family.father).toBeNull()
+    expect(family.mother).toBeNull()
+    expect(family.siblings.map(s => s.id).sort()).toEqual([1812, 1937, 1939].filter(other => other !== id))
+    expect(family.siblings.every(s => s.relation === 'recorded')).toBe(true)
+  }
+  // Col 4:10 identifies Mark as Barnabas’s cousin. It does not identify his mother Mary as Barnabas’s sister.
+  expect(getPerson(1722)?.siblings.some(s => s.id === 1941)).toBe(false)
+  expect(getPerson(905)?.siblings.map(s => s.relation)).toEqual(Array(4).fill('recorded'))
+  expect(getPerson(1938)?.children.map(c => c.name)).toEqual(['Jesus'])
 })

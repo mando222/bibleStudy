@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { NotebookFile } from '@shared/types'
 import { useAppStore } from '@/store/useAppStore'
 import { BOOK_BY_ID } from '@shared/books'
@@ -19,6 +19,11 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
 
   const [files, setFiles] = useState<NotebookFile[]>([])
   const { content, edit, flush, recover, checkpoint, ready, status, error } = useNotebookDocument(active, visible)
+  const [listError, setListError] = useState('')
+  const [listing, setListing] = useState(false)
+  const listRequest = useRef(0)
+  const [showDeleted, setShowDeleted] = useState(false)
+  const [deleted, setDeleted] = useState<(NotebookFile & { id: string })[]>([])
   const [folder, setFolder] = useState('')
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
@@ -27,21 +32,27 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
 
   const [instruction, setInstruction] = useState('')
   const [aiBusy, setAiBusy] = useState(false)
-  const [proposal, setProposal] = useState<string | null>(null)
+  const [proposal, setProposal] = useState<{ file: string; base: string; text: string } | null>(null)
   const [aiErr, setAiErr] = useState<string | null>(null)
 
   const refreshFiles = (): void => {
-    window.notebook
-      ?.list()
-      .then(setFiles)
-      .catch(() => setFiles([]))
+    const request = ++listRequest.current
+    setListing(true)
+    setListError('')
+    Promise.all([window.notebook.list(), window.notebook.getFolder(), window.notebook.listDeleted?.() ?? []])
+      .then(([list, dir, trash]) => {
+        if (request !== listRequest.current) return
+        setFiles(list)
+        setFolder(dir)
+        setDeleted(trash)
+      })
+      .catch(e => { if (request === listRequest.current) setListError(e instanceof Error ? e.message : 'Could not list this folder.') })
+      .finally(() => { if (request === listRequest.current) setListing(false) })
   }
 
-  // Load the folder + file list when the panel becomes visible.
   useEffect(() => {
-    if (!visible) return
-    window.notebook?.getFolder().then(setFolder).catch(() => undefined)
-    refreshFiles()
+    if (visible) refreshFiles()
+    return () => { listRequest.current++ }
   }, [visible])
 
   // AI proposals are tied to the note that requested them.
@@ -88,7 +99,8 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
 
   const changeFolder = async (): Promise<void> => {
     const dir = await window.notebook.chooseFolder()
-    if (dir === folder) return
+    if (!dir) return
+    if (dir === folder) { refreshFiles(); return }
     setFolder(dir)
     setActive(null)
     refreshFiles()
@@ -101,7 +113,7 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
 
   const askAi = async (): Promise<void> => {
     const q = instruction.trim()
-    if (!q || aiBusy || !window.ai) return
+    if (!q || !active || aiBusy || !window.ai) return
     setAiBusy(true)
     setAiErr(null)
     setProposal(null)
@@ -117,7 +129,7 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
         contextLine
       )
       if (res.error || !res.text.trim()) setAiErr(res.error || 'The assistant returned no text.')
-      else setProposal(res.text)
+      else setProposal({ file: active, text: res.text, base: content })
     } catch (e) {
       setAiErr(e instanceof Error ? e.message : String(e))
     } finally {
@@ -133,7 +145,7 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
         </span>
         <div className="flex-1" />
         <button disabled={busy || aiBusy} onClick={() => void runFileAction(changeFolder)} className="hover:text-accent whitespace-nowrap disabled:opacity-50">
-          Change…
+          Choose folder…
         </button>
       </div>
 
@@ -141,11 +153,11 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
         <select
           value={active ?? ''}
           aria-label="Notebook file"
-          disabled={busy || aiBusy}
+          disabled={busy || aiBusy || listing || !!listError}
           onChange={(e) => selectFile(e.target.value || null)}
           className="flex-1 min-w-0 bg-elevated border border-line rounded-md px-2 py-1 text-sm text-ink outline-none focus:border-accent"
         >
-          <option value="">{files.length ? 'Select a note…' : 'No notes yet'}</option>
+          <option value="">{listError ? 'Folder unavailable' : listing ? 'Loading notes…' : files.length ? 'Select a note…' : 'No notes yet'}</option>
           {files.map((f) => (
             <option key={f.name} value={f.name}>
               {f.name}
@@ -168,6 +180,21 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
           </button>
         )}
       </div>
+
+      {listError && <div role="alert" className="p-2 text-sm">Could not open the notebook folder. {listError}
+        <button onClick={refreshFiles} className="ml-2 underline">Retry folder</button></div>}
+      {window.notebook.listDeleted && <div className="border-b border-line px-2 py-1 text-sm">
+        <button aria-expanded={showDeleted} onClick={() => setShowDeleted(!showDeleted)}>Recently deleted ({deleted.length})</button>
+        {showDeleted && <div>{deleted.length === 0 ? <p>No deleted notes.</p> : deleted.map(f =>
+          <div key={f.id} className="flex items-center justify-between gap-2">
+            <span className="truncate">{f.name}</span>
+            <button aria-label={`Restore ${f.name}`} disabled={busy || aiBusy} className="text-accent" onClick={() => void runFileAction(async () => {
+              const recovered = await window.notebook.restoreDeleted!(f.id)
+              refreshFiles()
+              setActive(recovered.name)
+            })}>Restore</button>
+          </div>)}</div>}
+      </div>}
 
       {creating && (
         <div className="shrink-0 border-b border-line p-2 flex gap-1.5">
@@ -232,7 +259,7 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
         </div>
       )}
 
-      {active && ready && (
+      {import.meta.env.VITE_STUDY_MOBILE !== 'true' && active && ready && (
         <div className="shrink-0 border-t border-line p-2 space-y-2">
           <div className="flex gap-1.5">
             <input
@@ -252,37 +279,45 @@ export default function NotebookPanel({ visible = true }: { visible?: boolean })
             </button>
           </div>
           {aiErr && <div className="text-[11px] text-red-500">{aiErr}</div>}
-          {proposal != null && (
+          {proposal && proposal.file === active && (
             <div className="rounded-md border border-line bg-elevated p-2">
               <div className="text-[11px] uppercase tracking-wider text-faint mb-1">AI proposal</div>
               <pre className="text-xs text-ink whitespace-pre-wrap max-h-40 overflow-y-auto">
-                {proposal}
+                {proposal.text}
               </pre>
+              {proposal.base !== content && <div className="text-xs text-muted">
+                <p role="status">This suggestion uses an earlier draft. You can insert it below your edits or compare before replacing them.</p>
+                <details><summary>Compare with current draft</summary>
+                  <pre className="max-h-36 overflow-y-auto whitespace-pre-wrap">{content}</pre>
+                  <button className="underline" onClick={() => { edit(proposal.text); setProposal(null) }}>Replace current draft with suggestion</button>
+                </details>
+              </div>}
               <div className="flex justify-end gap-2 mt-1.5 text-xs">
                 <button onClick={() => setProposal(null)} className="px-2 py-1 text-muted hover:text-ink">
                   Dismiss
                 </button>
                 <button
-                  onClick={() => navigator.clipboard?.writeText(proposal)}
+                  onClick={() => navigator.clipboard?.writeText(proposal.text)}
                   className="px-2 py-1 text-muted hover:text-ink"
                 >
                   Copy
                 </button>
                 <button
                   onClick={() => {
-                    edit(`${content}\n\n${proposal}`)
+                    edit(`${content}\n\n${proposal.text}`)
                     setProposal(null)
                   }}
                   className="px-2 py-1 rounded-md border border-line text-muted hover:bg-panel"
                 >
                   Insert
                 </button>
-                <button
+                <button disabled={proposal.base !== content}
                   onClick={() => {
-                    edit(proposal)
+                    if (proposal.base !== content) return
+                    edit(proposal.text)
                     setProposal(null)
                   }}
-                  className="px-2.5 py-1 rounded-md bg-accent text-white hover:opacity-90"
+                  className="px-2.5 py-1 rounded-md bg-accent text-white hover:opacity-90 disabled:opacity-40"
                 >
                   Apply
                 </button>

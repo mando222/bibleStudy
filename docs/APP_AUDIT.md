@@ -12,7 +12,7 @@ not an exhaustive certification of every feature or platform.
 | Reader navigation | A verse jump could be consumed using the previous chapter's data. The previous selected verse also remained in cross-reference/assistant context. | Chapter data is scoped to its request; jumps wait for the destination; chapter navigation clears verse context and verse links set it. Ordinary chapter changes return the reading pane to the top. |
 | Annotations | Previous-chapter notes and highlights remained visible while the new chapter loaded. Open verse menus could outlive their passage. | Annotations are scoped to the displayed passage; navigation closes old menus and text-selection actions. |
 | Cross-references | Late responses could show references for the wrong selected verse; loading and failures looked like no references. | Responses are scoped, with distinct loading/error states and retry. |
-| Interlinear | Verse links did not scroll. Inferred translation alignments were returned by the backend but excluded by the UI's scholarly-tag metadata filter. | Verse links scroll and flash their destination; inferred aligned rows appear. Controls wrap within the reading pane. |
+| Interlinear | Verse links did not scroll. Reordered English phrases could be stacked under the wrong original occurrence. | Verse links scroll to their destination. The stack verifies word forms against publisher occurrences and shows the complete verse for partial or unavailable links. |
 | Notebook switching | Switching before the 600 ms autosave timer fired discarded the latest edits; late reads could fill the wrong editor. | File changes wait for saves; stale reads are ignored; writes are serialized. Failed writes keep the draft visible and block the file change. |
 | Notebook creation | “New” used the ordinary overwrite API, so an existing name erased that note. | Creation uses a separate IPC method and exclusive file creation. Duplicate names produce an error. |
 | Notebook feedback | “Saved” remained visible during later unsaved edits; write failures were hidden. | Loading, unsaved, saving, saved, and error states are explicit. Closing with a pending write waits for completion, with failure keeping the window open. |
@@ -116,3 +116,65 @@ Suggested delivery sequence:
 
 This review does **not** create an Android project or APK. Removing AI alone does not make the
 Electron database and filesystem code run on Android.
+
+### Android feasibility update · 2026-11-12
+
+**Proposed first deliverable.** An installable Android test app with BSB and KJV, book and chapter navigation,
+offline search, notes, highlights, and a word-study sheet. Bundle the existing study database for the trial.
+A phone shows one translation at a time. Tapping a word opens its entry, and a restored word offers
+**Compare translations**. Android Back returns to the same verse and scroll position. Long-press selects
+the published text for copying or sharing.
+
+**Shared code and native work.** Use a Capacitor entry point that installs the Android implementation of
+the study API before the React reader starts. Reuse verse numbering, restoration, copy rules and edition
+preferences from the current working tree. Supply chapter and verse results through native SQLite calls,
+with separate databases for the read-only library and writable study data. Keep BSB publisher rows and
+the evidence for KJV links together. The Android build should omit the assistant, notebook AI edits,
+model downloads, document indexing, vectors and AI backup data. Ordinary Scripture search uses SQLite
+full-text search. [Capacitor Android](https://capacitorjs.com/docs/android)
+
+**Offline delivery.** The current database measures 530.26 MiB on disk and 149.12 MiB with Deflate level 6.
+Those figures cover the database alone. Shipping the compressed file and extracting a private copy would
+use about 679 MiB before app code and user data. Test a fresh install and an update with limited free
+space, including the temporary space required to replace the database safely. Measure the device-specific
+download from a built app bundle before deciding whether separate content packs are worthwhile.
+[Android bundletool](https://developer.android.com/tools/bundletool#measure_size)
+
+**First device checks.** Android Studio and SDKs are installed on the development Mac. The ARM64 library
+in AndroidX’s bundled SQLite 2.7.1 contains the FTS5 compile option. The proposed native bridge still
+needs an emulator and physical-phone test with the actual database. [AndroidX SQLite](https://developer.android.com/jetpack/androidx/releases/sqlite)
+
+- Open the installed app for the first time in airplane mode. The BSB exact search `"shepherd"` should
+  return 62 verse hits. The default prefix search also finds forms such as *shepherds* and returns 114.
+  Verify accented Greek and pointed Hebrew lookup as well.
+- In BSB Genesis 4:16, display “of YHWH” and copy “of the LORD.” In BSB 1 John 2:1, show both verified
+  Greek forms beside their respective English phrases, preserving “not.” The KJV column keeps its printed
+  wording at those occurrences. Check the same actions with TalkBack and enlarged text.
+- Save a note, highlight and preferred text order, force-stop, then reopen offline. Test an app update
+  against that profile. For a subsequent interlinear build, verify that BSB Psalm 51:1 opens Swete 50:3.
+
+After this trial, the proposed next features are the interlinear, variants, full Words directory and
+frequency maps. Atlas, person maps, timelines and desktop study-backup transfer can follow. Desktop
+backup bundles can include optional assistant data, so exchanging study work needs an explicit
+Android import and export path. This assessment covers the current repository and local measurements.
+
+**Android 0.1.0 test build.** The APK now packages the full database and runs without the internet
+permission. On an Android 16 ARM64 emulator it opened for the first time in airplane mode, searched
+both scripts, and kept the two G264 occurrences distinct. The native long-press Copy and Share
+actions both supplied “of the LORD” when the displayed “YHWH” was selected in BSB Genesis 4:16.
+Notes, highlights, the reading location and the preferred text order survived reinstalling the APK in place.
+The emulator also preserved a prior database and verse notes when a replacement would not fit into
+400 MiB of free space. Retry completed after space was freed. Physical-device performance and
+distribution through Google Play are still untested. [Build and install the test app](ANDROID.md)
+
+**Android 0.2.0 device checks.** The Samsung SM-S936U running Android 17 accepted an in-place
+upgrade from 0.1.0. Its reader opened Genesis 1, offered all 11 translation choices, and loaded
+the 1,274-place atlas. Native checks verified the two Greek forms in 1 John 2:1, the five forms
+counted for G26 in the critical text, and the mapping from BSB Psalm 51:1 to Swete 50:3.
+
+On Android 16 the offline reader displayed “of YHWH” in BSB Genesis 4:16 and returned
+“of the LORD” for the selected text. An in-place upgrade reopened BSB Philippians 1:16 at the
+saved text size. A follow-up study check opened Nod without a pin, inspected Paul's ordered
+stops in Acts 13, and followed a “good shepherd” search result to John 10:11. Transfers through
+Android’s document picker included an imported Bible, a Markdown notebook and a study backup.
+A damaged backup was rejected before switching profiles. [Android study and testing guide](ANDROID.md)

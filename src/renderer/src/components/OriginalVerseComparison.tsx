@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useState } from 'react'
-import { compareGreekReadings, type GreekReadings, type MasoreticPair, type OriginalVerseReadings } from '@shared/apparatus'
+import { compareGreekReadings, greekOrderNote, type GreekReadings, type MasoreticPair, type OriginalVerseReadings } from '@shared/apparatus'
 import { BOOK_BY_ID } from '@shared/books'
 import { defaultTextPreference, textEditionLabels } from '@shared/textPreference'
 import { masoreticSourceNote } from '@shared/originalText'
@@ -26,9 +26,8 @@ export function GreekVerseReadings({ readings, chapter, verse, onWord }: {
         <dt className="text-xs font-medium text-muted">{textEditionLabels[id]}</dt>
         <dd>{reading?.words.length ? <>
           {numbering && <div className="text-xs text-muted">{numbering}</div>}
-          {reading.orderStatus && <div className="text-xs text-muted">{reading.orderStatus === 'unknown'
-            ? 'This database lacks edition word-order checks.' : 'Edition word order unverified at this reference.'}</div>}
-          <p lang="grc" className="font-greek text-[15px] leading-relaxed">{reading.words.map((word, i) => {
+          {reading.orderStatus && <div className="text-xs text-muted">{greekOrderNote[reading.orderStatus]}</div>}
+          <p data-study-scripture="" lang="grc" className="font-greek text-[15px] leading-relaxed">{reading.words.map((word, i) => {
             const marked = variant?.kind === 'greek' && i >= variant.commonStart && i < reading.words.length - variant.commonEnd
             const style = marked ? 'underline decoration-accent underline-offset-4' : undefined
             return <Fragment key={i}>{i > 0 ? ' ' : ''}{onWord && word.strongs ?
@@ -49,9 +48,9 @@ export function MasoreticPairs({ pairs, onWord }: { pairs: MasoreticPair[]; onWo
         <span className="text-xs text-muted" title={side === 'ketiv' ?
           'TAHOT records the written consonants with editorial vowel pointing.' : undefined}>{textEditionLabels[side]}</span>
         {side === 'qere' && pair.qereStrongs && onWord ?
-          <button className="font-hebrew hover:text-accent" dir="rtl" title={pair.qereStrongs}
+          <button data-study-scripture="" className="font-hebrew hover:text-accent" dir="rtl" title={pair.qereStrongs}
             onClick={() => onWord(pair.qereStrongs!)}>{pair.qere}</button> :
-          <bdi dir="rtl" className="font-hebrew">{pair[side]}</bdi>}
+          <bdi data-study-scripture="" dir="rtl" className="font-hebrew">{pair[side]}</bdi>}
       </div>)}
     </div>
   )}</div>
@@ -67,11 +66,11 @@ function OtReadings({ value }: { value: Extract<OriginalVerseReadings, { kind: '
       <dt className="text-xs font-medium text-muted">{id === 'LXX' ? sweteEditionLabel(ref.book) : textEditionLabels[id]}</dt>
       <dd>{id === 'LXX' ? lxx?.text ? <>
         <div className="text-xs text-muted">{BOOK_BY_ID[lxx.ref.book]?.name} {lxx.ref.chapter}:{lxx.ref.verse}</div>
-        <p lang="grc" className="font-greek text-base">{lxx.text}</p>
+        <p data-study-scripture="" lang="grc" className="font-greek text-base">{lxx.text}</p>
       </> : <p className="text-xs text-muted">{lxx?.issue ?? (lxx ? 'No text recorded at this reference.' : 'No verified Septuagint verse mapping.')}</p>
       : mt.words.length ? <>
         <div className="text-xs text-muted">TAHOT reading text{numbering && ' · ' + numbering}</div>
-        <p dir="rtl" className="font-hebrew text-lg">{mt.words.map((word, i) => {
+        <p data-study-scripture="" dir="rtl" className="font-hebrew text-lg">{mt.words.map((word, i) => {
           const note = masoreticSourceNote(word.sourceType ?? undefined)
           return <Fragment key={i}>{i > 0 ? ' ' : ''}<span className={note ? 'underline decoration-dotted underline-offset-4' : undefined}
             title={note?.description}>{word.surface}</span></Fragment>
@@ -85,8 +84,8 @@ function OtReadings({ value }: { value: Extract<OriginalVerseReadings, { kind: '
   )}</dl>
 }
 
-export default function OriginalVerseComparison({ translation, book, chapter, verse }: VerseRef) {
-  const [open, setOpen] = useState(false)
+export default function OriginalVerseComparison({ translation, book, chapter, verse, initiallyOpen = false }: VerseRef & { initiallyOpen?: boolean }) {
+  const [open, setOpen] = useState(initiallyOpen)
   const query = useStudyQuery(useCallback(() => window.api.getOriginalVerseReadings({ translation, book, chapter, verse }),
     [translation, book, chapter, verse]), open)
   const data = query.data

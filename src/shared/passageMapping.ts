@@ -18,6 +18,7 @@ const exceptions: Record<string, Ranges> = {
 }
 
 function mappedRange(ref: Passage, edition: string, toKjv: boolean): Passage | null {
+  if (edition.startsWith('imp_')) return null
   const ranges = edition === 'LXX' ? swete : exceptions[edition]
   let otherSideOnly = false
   for (const [nativeChapter, first, last, kjvChapter, kjvFirst] of ranges?.[ref.book] ?? []) {
@@ -63,4 +64,16 @@ export function mapChapterStart(ref: Chapter, fromEdition: string, toEdition: st
 export function mapChapter(ref: Chapter, fromEdition: string, toEdition: string): Chapter | null {
   const start = mapChapterStart(ref, fromEdition, toEdition)
   return start && { book: start.book, chapter: start.chapter }
+}
+
+/** Every KJV chapter that can contain a note belonging to this edition's native chapter. */
+export function canonicalChaptersForNotes(book: string, chapter: number, edition: string): number[] {
+  if (edition.startsWith('imp_')) return []
+  const ranges = edition === 'LXX' ? swete : exceptions[edition]
+  const chapters = new Set<number>()
+  if (edition !== 'LXX') chapters.add(chapter)
+  for (const [nativeChapter, , , kjvChapter] of ranges?.[book] ?? []) {
+    if (nativeChapter === chapter) chapters.add(kjvChapter)
+  }
+  return [...chapters]
 }

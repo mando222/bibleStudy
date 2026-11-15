@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite'
 import { bibleDb } from './bible'
 import { atlasIdentity, type MapName } from './personMapNames'
-import { getImportedChapter } from './user'
+import { validStudyRange } from '../../shared/passageStudy'
 import { mapPassage } from '../../shared/passageMapping'
 import { reviewedAssociations, reviewedSettings, stopsForPerson } from '../../shared/reviewedPlaces'
 import type { MappedPerson } from '../../shared/types'
@@ -11,13 +11,6 @@ import type {
 
 function empty(status: PassageContext['status']): PassageContext {
   return { status, people: [], places: [], events: [] }
-}
-
-function validRange(range: StudyRange): boolean {
-  return !!range && typeof range.edition === 'string' && typeof range.book === 'string' &&
-    Number.isSafeInteger(range.chapter) && range.chapter > 0 &&
-    [range.firstVerse, range.lastVerse].every(v => v === undefined || (Number.isSafeInteger(v) && v >= 0)) &&
-    (range.lastVerse === undefined || (range.firstVerse !== undefined && range.lastVerse >= range.firstVerse))
 }
 
 function verseNumbers(db: DatabaseSync, range: StudyRange): number[] {
@@ -57,16 +50,17 @@ function links(db: DatabaseSync, refs: string[]): LinkedRow[] {
 
 /** Links use only the requested native verses that actually have an equivalent KJV verse. */
 export function readPassageContext(db: DatabaseSync, range: StudyRange): PassageContext {
-  if (!validRange(range)) return empty('unavailable')
+  if (!validStudyRange(range)) return empty('unavailable')
   if (range.edition.startsWith('imp_')) return empty('unverified')
   const numbers = verseNumbers(db, range)
   if (!numbers.length) return empty('unavailable')
-  const exists = db.prepare("SELECT 1 FROM verses WHERE translation_id='KJV' AND book_id=? AND chapter=? AND verse=?")
-  const refs: string[] = []
-  for (const verse of numbers) {
-    const ref = mapPassage({ book: range.book, chapter: range.chapter, verse }, range.edition, 'KJV')
-    if (ref && exists.get(ref.book, ref.chapter, ref.verse)) refs.push(`${ref.book}.${ref.chapter}.${ref.verse}`)
-  }
+  const candidates = numbers.flatMap(verse =>
+    mapPassage({ book: range.book, chapter: range.chapter, verse }, range.edition, 'KJV') ?? [])
+  const refs = db.prepare(`SELECT v.book_id || '.' || v.chapter || '.' || v.verse AS ref
+    FROM json_each(?) selected CROSS JOIN verses v ON v.translation_id='KJV'
+      AND v.book_id=json_extract(selected.value,'$.book')
+      AND v.chapter=json_extract(selected.value,'$.chapter') AND v.verse=json_extract(selected.value,'$.verse')
+    ORDER BY selected.key`).all(JSON.stringify(candidates)).map(row => String(row.ref))
   if (!refs.length) return empty('unmapped')
   const expected = range.firstVerse === undefined ? numbers.length : (range.lastVerse ?? range.firstVerse) - range.firstVerse + 1
   const status = refs.length < expected ? 'partial' : 'available'
@@ -97,13 +91,6 @@ export function readPassageContext(db: DatabaseSync, range: StudyRange): Passage
 }
 
 export function getPassageContext(range: StudyRange): PassageContext {
-  if (!validRange(range)) return empty('unavailable')
-  if (range.edition.startsWith('imp_')) {
-    const chapter = getImportedChapter({ translation: range.edition, book: range.book, chapter: range.chapter })
-    const present = chapter.verses.some(v => v.verse >= (range.firstVerse ?? 0) &&
-      v.verse <= (range.lastVerse ?? range.firstVerse ?? Number.MAX_SAFE_INTEGER))
-    return empty(present ? 'unverified' : 'unavailable')
-  }
   const db = bibleDb()
   if (!db) throw new Error('Bible database not available')
   return readPassageContext(db, range)

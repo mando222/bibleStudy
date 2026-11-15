@@ -3,7 +3,7 @@ import * as bible from './db/bible'
 import { getWordFrequency, getWordFrequencyPassages } from './db/wordFrequency'
 import * as graph from './db/graph'
 import { getMappedPeople, getPassageContext, getPersonMap } from './db/passageStudy'
-import type { StudyRange } from '../shared/passageStudy'
+import { importedPassageContext, type StudyRange } from '../shared/passageStudy'
 import * as user from './db/user'
 import { exportMarkdown } from './export'
 import type {
@@ -21,6 +21,9 @@ export function registerIpc(): void {
     ...bible.listTranslations(),
     ...user.listImported()
   ])
+  ipcMain.handle('bible:listReadingChapters', (_e, edition: string, interlinear: boolean) =>
+    user.isImported(edition) ? user.importedChapters(edition) : bible.listReadingChapters(edition, interlinear)
+  )
   ipcMain.handle('bible:getChapter', (_e, ref: ChapterRef) =>
     user.isImported(ref.translation) ? user.getImportedChapter(ref) : bible.getChapter(ref)
   )
@@ -32,11 +35,15 @@ export function registerIpc(): void {
   ipcMain.handle('bible:browseLexicon', (_e, opts) => bible.browseLexicon(opts))
   ipcMain.handle('bible:getWordFrequency', (_e, query) => getWordFrequency(query))
   ipcMain.handle('bible:getWordFrequencyPassages', (_e, query) => getWordFrequencyPassages(query))
+  ipcMain.handle('bible:getPeoplePage', (_e, q: string, size: number, offset: number) => graph.getPeoplePage(q, size, offset))
   ipcMain.handle('bible:getPeople', (_e, q: string, limit: number) => graph.getPeople(q, limit))
   ipcMain.handle('bible:getPerson', (_e, id: number) => graph.getPerson(id))
   ipcMain.handle('bible:getAncestry', (_e, id: number) => graph.getAncestry(id))
   ipcMain.handle('bible:getPlaces', () => graph.getPlaces())
-  ipcMain.handle('bible:getPassageContext', (_e, range: StudyRange) => getPassageContext(range))
+  ipcMain.handle('bible:getPassageContext', (_e, range: StudyRange) =>
+    range?.edition?.startsWith('imp_')
+      ? importedPassageContext(range, user.getImportedChapter({ translation: range.edition, book: range.book, chapter: range.chapter }).verses)
+      : getPassageContext(range))
   ipcMain.handle('bible:getPersonMap', (_e, id: number) => getPersonMap(id))
   ipcMain.handle('bible:getMappedPeople', () => getMappedPeople())
   ipcMain.handle('bible:getPlaceVerses', (_e, id: number) => graph.getPlaceVerses(id))
@@ -76,6 +83,7 @@ export function registerIpc(): void {
   ipcMain.handle('user:saveHighlight', (_e, input: HighlightInput) => user.saveHighlight(input))
   ipcMain.handle('user:deleteHighlight', (_e, id: number) => user.deleteHighlight(id))
 
+  ipcMain.handle('user:listAnnotations', () => ({ notes: user.listAllNotes(), highlights: user.listAllHighlights() }))
   ipcMain.handle('user:listNotes', (_e, ref: { book: string; chapter: number }) =>
     user.listNotes(ref)
   )

@@ -1,22 +1,28 @@
-import { Fragment, useRef } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { InterlinearContent } from '@shared/types'
+import { chapterKey, useChapterStream } from '@/hooks/useChapterStream'
 import { useEditions, useInterlinear } from '@/hooks/useInterlinear'
 import { useVerseNavigation } from '@/hooks/useVerseNavigation'
 import { originalTextEdition, useAppStore } from '@/store/useAppStore'
+import { readerViewKey, recordPosition, restorePosition, type ReadingPosition } from '@/lib/readingPosition'
 import { readerChapter } from '@/lib/passage'
 import { mapPassage } from '@shared/passageMapping'
 import { editionDisplay } from '@shared/readingDisplay'
 import { sweteEditionLabel } from '@shared/lxxIntegrity'
 import { ReadingDisplay } from './ReadingTools'
 import { BOOK_BY_ID } from '@shared/books'
+import PassageKeyboard from './PassageKeyboard'
 import InterlinearVerse from './InterlinearVerse'
 import { BookIcon } from './icons'
 
 export default function InterlinearReader({
   book,
-  chapter
+  chapter, initial, consumeInitial
 }: {
   book: string
   chapter: number
+  initial?: ReadingPosition | null
+  consumeInitial?: () => void
 }): JSX.Element {
   const catalog = useEditions()
   const editions = catalog.editions
@@ -44,24 +50,32 @@ export default function InterlinearReader({
   const overrides = useAppStore(s => s.displayOverrides)
   const display = editionDisplay(defaults, overrides, effective)
 
-  // All bundled translations can be stacked: Strong's-tagged ones align word-for-word, the rest
-  // show as a verse line beneath the grid.
+  // Only translations with an edition-specific occurrence link can contribute a word row.
   const stackable = translations.filter((t) => t.language !== 'imported' && !(swete && t.id === 'LXX'))
   const labels = Object.fromEntries(stackable.map((t) => [t.id, t.abbrev]))
   const native = effective && !fromEdition.startsWith('imp_') ? readerChapter(book, chapter, activeVerse, fromEdition, effective) : null
   const selected = native && activeVerse != null ? mapPassage({ book, chapter, verse: activeVerse }, fromEdition, effective) : null
-  const { data, loading, error } = useInterlinear(native?.book ?? book, native?.chapter ?? chapter, native ? effective : '', stack, parses && !swete)
-  // Inferred alignments are returned too, even when metadata says hasStrongs=false.
-  const wordStack = stack.filter((id) =>
-    data?.verses.some((v) => v.tokens.some((t) => t.aligned?.[id]))
-  )
   const container = useRef<HTMLDivElement>(null)
-  useVerseNavigation(container, `${native?.book}:${native?.chapter}:${effective}`, !loading && !!data, true, effective)
+  const ref = { translation: native ? effective : '', book: native?.book ?? book, chapter: native?.chapter ?? chapter }
+  const stream = useChapterStream(container, ref, true)
+  const activeKey = [chapterKey(ref), ref.translation, stack.join(','), parses].join('/')
+  const [loaded, setLoaded] = useState<{ key: string; data: InterlinearContent } | null>(null)
+  const data = loaded?.key === activeKey ? loaded.data : null
+  useVerseNavigation(container, ref, !!data, true, true)
 
-  return (
-    <div ref={container} className="h-full overflow-y-auto">
-      <div className="max-w-5xl mx-auto px-8 py-6">
-        <div className="flex flex-wrap items-center gap-3 mb-5">
+  useEffect(() => {
+    if (!data || !initial || !container.current || initial.translation !== effective ||
+        initial.book !== ref.book || initial.chapter !== ref.chapter) return
+    restorePosition(container.current, initial)
+    consumeInitial?.()
+  }, [data, initial, effective])
+  function scrollInput() {
+    stream.input()
+    if (container.current) delete container.current.dataset.readerAnchor
+  }
+
+  const controls = (
+        <div className="flex flex-wrap items-center gap-3">
           <span className="text-[11px] uppercase tracking-wider text-faint">
             Interlinear · {native && <>{BOOK_BY_ID[native.book]?.name ?? native.book}{display.chapterNumbers && ` ${native.chapter}`} · </>}base text
           </span>
@@ -98,7 +112,7 @@ export default function InterlinearReader({
           </button>}
           {stackable.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 w-full">
-              <span className="text-[11px] uppercase tracking-wider text-faint">Stack</span>
+              <span className="text-[11px] uppercase tracking-wider text-faint">Stack translations</span>
               {stackable.map((t) => {
                 const on = stack.includes(t.id)
                 return (
@@ -106,7 +120,7 @@ export default function InterlinearReader({
                     key={t.id}
                     onClick={() => toggleStack(t.id)}
                     aria-pressed={on}
-                    title={swete ? `Show the corresponding verse from ${t.name}` : `Align ${t.name} under each word (by Strong's)`}
+                    title={`Show ${t.name} for this passage, with word links where verified`}
                     className={`text-xs px-2 py-1 rounded-md border transition-colors ${
                       on
                         ? 'bg-accent-soft border-accent text-accent'
@@ -120,6 +134,15 @@ export default function InterlinearReader({
             </div>
           )}
         </div>
+  )
+  return (
+    <div className="h-full flex flex-col">
+      <div data-interlinear-tools="" className="shrink-0 max-h-[40%] overflow-y-auto border-b border-line">
+      <div className="max-w-5xl mx-auto px-8 py-2">
+        {import.meta.env.VITE_STUDY_MOBILE === 'true' ? <details className="interlinear-options mb-3">
+          <summary>Interlinear options · {effective || 'Base text'}{stack.length ? ' · ' + stack.join(', ') : ''}</summary>
+          {controls}
+        </details> : <div className="mb-5">{controls}</div>}
 
         {swete && <p className="text-xs text-muted mb-4">{sweteEditionLabel(book)}. Each Greek word appears with its transliteration.
           {' '}This source supplies no word-by-word glosses or grammatical analyses.</p>}
@@ -131,6 +154,46 @@ export default function InterlinearReader({
           </p>
         )}
 
+      </div>
+      </div>
+      <div ref={container} data-interlinear-reader="" data-reader-edition={effective} data-reader-book={native?.book}
+        data-reader-chapter={native?.chapter} onWheelCapture={scrollInput} onPointerDownCapture={scrollInput}
+        onKeyDownCapture={scrollInput} onScroll={e => {
+          if (!stream.crossBoundary() && data) recordPosition(e.currentTarget, ref.book, ref.chapter, effective, true, readerViewKey(useAppStore.getState()))
+        }} style={{ overflowAnchor: 'none' }} className="flex-1 min-h-0 overflow-y-auto">
+        {catalog.error ? <p role="alert" className="p-4 text-sm text-muted">Couldn’t load the available editions. <button className="underline" onClick={catalog.retry}>Try again</button></p>
+        : effective && !native ? <p className="p-4 text-sm text-muted">No verified equivalent in {effective}.</p>
+        : stream.pages.map((page, i) => {
+          const active = chapterKey(page) === chapterKey(ref)
+          return <InterlinearChapter key={chapterKey(page)} {...page} effective={ref.translation} stack={stack} labels={labels}
+            parses={parses} active={active} before={!active && i === 0}
+            chapterNumbers={display.chapterNumbers} verseNumbers={display.verseNumbers} selected={active ? selected || null : null}
+            catalogLoading={catalog.loading} onSelect={verse => stream.enter(page, verse, true)}
+            onReady={result => setLoaded({ key: activeKey, data: result })} />
+        })}
+      </div>
+    </div>
+  )
+}
+
+function InterlinearChapter({ book, chapter, effective, stack, labels, parses, active, before,
+  chapterNumbers, verseNumbers, selected, catalogLoading, onSelect, onReady }: {
+  book: string; chapter: number; effective: string; stack: string[]; labels: Record<string, string>; parses: boolean
+  active: boolean; before: boolean; chapterNumbers: boolean; verseNumbers: boolean
+  selected: { book: string; chapter: number; verse: number } | null; catalogLoading: boolean
+  onSelect: (verse: number) => void; onReady: (data: InterlinearContent) => void
+}) {
+  const swete = effective === 'LXX'
+  const testament = BOOK_BY_ID[book]?.testament
+  const { data, loading, error } = useInterlinear(book, chapter, effective, stack, parses && !swete)
+  useLayoutEffect(() => {
+    if (active && data) onReady(data)
+  }, [data, active, parses])
+  return <section data-flow-chapter={chapterKey({ book, chapter })} data-flow-active={active || undefined}
+        data-flow-before={before || undefined} className="max-w-5xl mx-auto px-8 py-4">
+        <div aria-hidden="true" className="mb-4 border-t border-line pt-3 text-sm text-muted">
+          {BOOK_BY_ID[book]?.name ?? book}{chapterNumbers && ` ${chapter}`}
+        </div>
         {data && effective === 'MT' && data.masoreticAttestationAvailable === false && (
           <p className="text-xs text-muted mb-3">This database has no word-by-word Masoretic source codes.</p>
         )}
@@ -140,8 +203,7 @@ export default function InterlinearReader({
         {selected && data?.verses.length && !data.verses.some(v => v.verse === selected.verse) ? (
           <p className="text-sm text-muted mb-4" role="status">No verse text is recorded for {BOOK_BY_ID[selected.book]?.name} {selected.chapter}:{selected.verse} in {effective}.</p>
         ) : null}
-        {catalog.error ? <p role="alert" className="text-sm text-muted">Couldn’t load the available editions. <button className="underline" onClick={catalog.retry}>Try again</button></p>
-        : effective && !native ? <p className="text-sm text-muted">No verified equivalent in {effective}.</p> : catalog.loading || loading ? (
+        {catalogLoading || loading ? (
           <div className="animate-pulse space-y-4 mt-2">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="h-8 rounded bg-line/50" style={{ width: `${80 - (i % 3) * 12}%` }} />
@@ -158,17 +220,17 @@ export default function InterlinearReader({
             </p>
           </div>
         ) : (
-          data.verses.map((v) => (
+          <PassageKeyboard aria-label={`${BOOK_BY_ID[book]?.name ?? book} ${chapter} · ${effective} interlinear`} dir={data.direction}>{data.verses.map((v) => (
             <Fragment key={v.verse}>
               {data.uncertainOrderVerses?.includes(v.verse) && <p className="text-xs text-muted mb-1">
                 Verse {v.verse} · The word order in this reading could not be verified.
               </p>}
               <InterlinearVerse
                 v={{ verse: v.verse, text: '', tokens: v.tokens }}
-                onSelectVerse={() => useAppStore.getState().focusVerse(data.book, data.chapter, v.verse, effective)}
-                verseNumbers={display.verseNumbers}
+                onSelectVerse={() => onSelect(v.verse)}
+                verseNumbers={verseNumbers}
                 rtl={data.direction === 'rtl'}
-                stack={wordStack}
+                stack={stack.filter(id => v.tokens.some(t => t.aligned?.[id]))}
                 labels={labels}
                 lines={v.lines}
                 showParses={parses}
@@ -176,9 +238,7 @@ export default function InterlinearReader({
                 sourceIssue={v.sourceIssue}
               />
             </Fragment>
-          ))
+          ))}</PassageKeyboard>
         )}
-      </div>
-    </div>
-  )
+      </section>
 }

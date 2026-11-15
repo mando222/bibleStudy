@@ -24,6 +24,10 @@ const dismiss = vi.fn<UpdatesApi['dismiss']>()
 const offer = () => host.querySelector('[aria-label="Available update"]')
 
 beforeEach(async () => {
+  Object.defineProperties(HTMLDialogElement.prototype, {
+    showModal: { configurable: true, value(this: HTMLDialogElement) { this.open = true } },
+    close: { configurable: true, value(this: HTMLDialogElement) { this.open = false } }
+  })
   vi.useFakeTimers()
   vi.resetAllMocks()
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -44,6 +48,8 @@ beforeEach(async () => {
 afterEach(async () => {
   await act(async () => root.unmount())
   host.remove()
+  Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal')
+  Reflect.deleteProperty(HTMLDialogElement.prototype, 'close')
   vi.useRealTimers()
 })
 

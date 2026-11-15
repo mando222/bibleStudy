@@ -7,10 +7,17 @@ export interface ApparatusWord {
   gloss: string | null
 }
 
+export type GreekOrderStatus = 'unverified' | 'unknown'
+
+export const greekOrderNote: Record<GreekOrderStatus, string> = {
+  unverified: 'Edition word order unverified at this reference.',
+  unknown: 'This database lacks edition word-order checks.'
+}
+
 export interface GreekReading {
   words: ApparatusWord[]
   nativeRefs: string[]
-  orderStatus?: 'unverified' | 'unknown'
+  orderStatus?: GreekOrderStatus
 }
 
 export type GreekReadings = Partial<Record<NtText, GreekReading>>

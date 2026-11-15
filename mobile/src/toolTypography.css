@@ -1,0 +1,190 @@
+/* Shared desktop study components retain their own type scale outside the phone. */
+:is(.page-library, .page-genealogies, .page-maps, .page-timelines, .page-learn, .page-notebook) .work-content,
+.phone-sheet .sheet-content,
+dialog[aria-labelledby='settings-heading'],
+dialog[aria-label='Words to restore'],
+dialog[aria-label='Study backup restored'] {
+  font-size: var(--type-body);
+  line-height: 1.5;
+  overflow-wrap: break-word;
+}
+
+.sheet-bar h2,
+dialog[aria-labelledby='settings-heading'] h2,
+dialog[aria-label='Words to restore'] h2,
+dialog[aria-label='Study backup restored'] h2,
+:is(.page-genealogies, .page-learn) .work-content h1 {
+  font-size: var(--type-title);
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+}
+
+:is(.library-list, .phone-sheet) .section-label {
+  font-size: var(--type-meta);
+  line-height: 1.4;
+  letter-spacing: 0.065em;
+}
+
+:is(.library-list, .tools-list) .tool-text strong,
+.phone-sheet .credit strong {
+  font-size: var(--type-body);
+  line-height: 1.35;
+}
+
+:is(.library-list, .tools-list) .tool-text small,
+.phone-sheet :is(.credit p, .status, .saved-row small) {
+  font-size: var(--type-label);
+  line-height: 1.45;
+}
+
+.phone-sheet :is(.credit small, .credit a, .phone-form cite),
+.phone-sheet summary small {
+  font-size: var(--type-meta);
+  line-height: 1.45;
+}
+
+.phone-sheet .phone-form blockquote {
+  font-size: var(--type-subtitle);
+  line-height: 1.65;
+}
+
+.phone-sheet .phone-form blockquote:has([dir='rtl']),
+.phone-sheet .phone-form [dir='rtl'] {
+  line-height: 1.75;
+}
+
+/* Word study/translation comparison sheets have their own lexicon typography. */
+:is(.page-genealogies, .page-maps, .page-timelines, .page-learn, .page-notebook,
+    .phone-sheet:not([aria-label='Word study'], [aria-label='Translation wording']),
+    dialog[aria-labelledby='settings-heading'], dialog[aria-label='Words to restore'])
+  :is(.text-\[10px\], .text-\[11px\], .text-\[12px\], .text-xs) {
+  font-size: var(--type-meta);
+  line-height: 1.45;
+}
+
+:is(.page-genealogies, .page-maps, .page-timelines, .page-learn, .page-notebook,
+    .phone-sheet:not([aria-label='Word study'], [aria-label='Translation wording']),
+    dialog[aria-labelledby='settings-heading'], dialog[aria-label='Words to restore']) .text-sm:not(:where([data-study-scripture])) {
+  font-size: var(--type-body);
+  line-height: 1.5;
+}
+
+:is(.page-genealogies, .page-maps, .page-timelines, .page-learn, .page-notebook) .work-content
+  :is(button, input, select, summary),
+.phone-sheet .sheet-content :is(.phone-button, .link-row, .setting-row, summary),
+.phone-sheet:not([aria-label='Word study'], [aria-label='Translation wording']) .sheet-content
+  :is(button:not(.phone-icon), input, select),
+dialog[aria-labelledby='settings-heading'] button,
+dialog[aria-label='Words to restore'] button,
+dialog[aria-label='Study backup restored'] .phone-button {
+  font-size: var(--type-control);
+  line-height: 1.4;
+}
+
+.phone-sheet .phone-form label:not(.setting-row),
+.page-learn .grammar-picker {
+  font-size: var(--type-label);
+  line-height: 1.45;
+}
+
+.phone-sheet .phone-form :is(input:not([type='checkbox']), textarea, select),
+.page-notebook textarea,
+.phone-sheet textarea {
+  font-size: var(--type-body);
+  line-height: 1.5;
+}
+
+.phone-sheet :is(.action-pair, .setting-row, .saved-row) { flex-wrap: wrap; }
+.phone-sheet .setting-row :is(select, input) { margin-inline-start: auto; }
+.phone-sheet .saved-row button { overflow-wrap: anywhere; }
+
+:is(dialog[aria-label='Words to restore'], dialog[aria-labelledby='settings-heading']) h3,
+.page-maps .work-content :is(aside h2, main h3) {
+  font-size: var(--type-subtitle);
+  line-height: 1.35;
+}
+
+:is(dialog[aria-label='Words to restore'], dialog[aria-labelledby='settings-heading']) :is(label, p) {
+  line-height: 1.55;
+}
+
+.page-timelines .work-content .text-\[15px\] {
+  font-size: var(--type-subtitle);
+  line-height: 1.4;
+}
+.page-timelines .work-content .text-xs.flex,
+.page-genealogies .work-content .text-xs.flex {
+  row-gap: 0.25rem;
+}
+
+/* Scale map labels around their geographic anchors. The SVG's own font-size is in map units. */
+.page-maps [aria-label='Atlas map'] :is(g.pointer-events-none > text, [data-place-pin] > text) {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(1.2);
+}
+.page-maps [aria-label='Atlas map'] > text { font-weight: 550; }
+.page-maps main > div:has([aria-label='Atlas map']) > .absolute.bottom-2 {
+  max-inline-size: calc(100% - 1rem);
+}
+
+.page-learn .work-content > .flex > div:first-child,
+.page-learn .work-content > .flex > div:first-child > .flex,
+.page-learn .work-content .justify-center.gap-4,
+.page-genealogies .work-content .flex.gap-1.mb-3 {
+  flex-wrap: wrap;
+}
+.page-learn .work-content > .flex > div:first-child > .flex { min-inline-size: 0; }
+
+/* Keep full pronunciations visible and let the chart gain columns as its text fits. */
+.page-learn .max-w-4xl .grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+}
+.page-learn .max-w-4xl .truncate {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+.page-learn .work-content :is(.text-3xl, .text-4xl, .text-5xl, .text-7xl)[dir] {
+  font-size: var(--type-specimen);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.page-learn .work-content [dir='rtl']:is(.text-3xl, .text-4xl, .text-5xl, .text-7xl) {
+  line-height: 1.7;
+}
+.page-learn .work-content :is(.max-w-lg, .max-w-md) .rounded-xl { padding: 1.5rem 1rem; }
+.page-learn .work-content .max-w-lg .grid-cols-4 {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 4.2rem), 1fr));
+}
+.page-learn .grammar-course .grid-cols-2 {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+}
+.page-learn .grammar-course .grid-cols-2 > .flex { gap: 0.65rem; }
+.page-learn .grammar-course [dir] button.font-serif {
+  font-size: var(--type-subtitle);
+  line-height: 1.6;
+}
+
+.page-notebook [role='status'] { overflow-wrap: anywhere; }
+.page-notebook .work-content > .flex-col { overflow-y: auto; }
+.page-notebook textarea { min-block-size: 6rem; }
+
+@media (max-width: 38rem) {
+  .page-genealogies .work-content .grid-cols-2 {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  }
+}
+
+/* Leave the two move buttons reachable beside a wrapping edition name at large text sizes. */
+dialog[aria-labelledby='settings-heading'] > div,
+dialog[aria-label='Words to restore'] section.p-5 {
+  padding: clamp(0.5rem, 4vw, 1.25rem);
+}
+dialog[aria-labelledby='settings-heading'] ol { padding-inline-start: 1.4em; }
+dialog[aria-labelledby='settings-heading'] li > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+dialog[aria-labelledby='settings-heading'] li span { overflow-wrap: anywhere; }
+dialog[aria-labelledby='settings-heading'] li button { padding-inline: 0.45em; }
