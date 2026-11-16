@@ -13,6 +13,7 @@ export type Location = {
   scroll: number
 }
 interface StudyPlugin {
+  setBarSurface(args: { dark: boolean }): Promise<void>
   getChapter(ref: ChapterRef): Promise<ChapterContent>
   search(query: SearchQuery): Promise<SearchResponse>
   shareText(args: { text: string }): Promise<void>

@@ -2,6 +2,9 @@
   "appId": "org.openbiblestudy.android",
   "appName": "Open Bible Study",
   "webDir": "dist",
+  "plugins": {
+    "SystemBars": { "style": "LIGHT" }
+  },
   "android": {
     "path": "../android"
   }

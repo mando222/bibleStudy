@@ -237,10 +237,13 @@ export default function App() {
     }
   }, [attempt])
   useEffect(() => {
-    if (Capacitor.isNativePlatform())
-      void SystemBars.setStyle({
-        style: theme === 'dark' ? SystemBarsStyle.Dark : SystemBarsStyle.Light
-      }).catch(() => {})
+    if (!Capacitor.isNativePlatform()) return
+    let current = true
+    const dark = theme === 'dark'
+    void Study.setBarSurface({ dark }).then(() => {
+      if (current) return SystemBars.setStyle({ style: dark ? SystemBarsStyle.Dark : SystemBarsStyle.Light })
+    }).catch(() => {})
+    return () => { current = false }
   }, [theme])
   const imported = referenceEdition.startsWith('imp_') || edition.startsWith('imp_')
   const historyRef = imported ? null : readerChapter(book, chapter, verse, referenceEdition, 'KJV')

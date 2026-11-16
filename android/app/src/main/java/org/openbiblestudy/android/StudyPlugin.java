@@ -1,5 +1,9 @@
 package org.openbiblestudy.android;
 
+import android.graphics.Color;
+import android.os.Build;
+import android.view.Window;
+
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -83,6 +87,23 @@ public class StudyPlugin extends Plugin {
             annotations().highlight(required(call, "translation"), required(call, "book"), positive(call, "chapter"),
                 positive(call, "verse"), required(call, "color"));
             return new JSObject();
+        });
+    }
+
+    @PluginMethod public void setBarSurface(PluginCall call) {
+        boolean dark = call.getBoolean("dark", false);
+        getActivity().runOnUiThread(() -> {
+            // Capacitor SystemBars uses the activity's windowBackground behind transparent
+            // bars whenever it updates the icons, including after configuration changes.
+            getActivity().setTheme(dark ? R.style.ReaderBarsDark : R.style.AppTheme_NoActionBar);
+            if (Build.VERSION.SDK_INT < 35) {
+                Window window = getActivity().getWindow();
+                int surface = getContext().getColor(dark ? R.color.reader_bar_dark : android.R.color.white);
+                window.setStatusBarColor(surface);
+                // Android 7.0–7.1 only supports white navigation buttons.
+                window.setNavigationBarColor(Build.VERSION.SDK_INT >= 26 ? surface : Color.BLACK);
+            }
+            call.resolve();
         });
     }
 

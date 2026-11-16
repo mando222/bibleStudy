@@ -1,9 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <color name="reader_bar_dark">#222621</color>
+    <color name="reader_navigation_start">@android:color/black</color>
     <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
-        <item name="android:windowBackground">#201C17</item>
+        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:statusBarColor">@android:color/white</item>
+        <item name="android:navigationBarColor">@color/reader_navigation_start</item>
+    </style>
+    <!-- BridgeActivity installs this named theme again after the manifest theme. -->
+    <style name="AppTheme.NoActionBar" parent="AppTheme" />
+    <style name="ReaderBarsDark" parent="AppTheme.NoActionBar">
+        <item name="android:windowBackground">@color/reader_bar_dark</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:statusBarColor">#201C17</item>
-        <item name="android:navigationBarColor">#201C17</item>
+        <item name="android:windowLightNavigationBar">false</item>
     </style>
 </resources>
