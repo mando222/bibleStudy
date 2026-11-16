@@ -16,6 +16,16 @@ Group changes under: **Added** (new features), **Changed** (changes to existing 
 
 _Nothing yet._
 
+## [0.6.1] - 2026-11-16
+
+### Added
+
+- **E-ink display theme.** Open the settings gear and choose **Display theme → E-ink (high contrast)** for heavier black text on white at your usual reading size. Restored words have a solid underline, and selected words appear white on black.
+
+### Fixed
+
+- Android’s status and navigation bars now follow the selected theme so the clock and navigation controls stay legible when you switch themes.
+
 ## [0.6.0] - 2026-11-16
 
 ### Added
