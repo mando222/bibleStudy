@@ -52,7 +52,7 @@ describe.skipIf(!existsSync('resources/bible.sqlite'))('real Scripture search an
     expect(search(q).hits.find(h => h.chapter === 13 && h.verse === 2)?.orderStatus).toBe('unverified')
     expect(search({ ...q, translation: 'BSB' }).hits.find(h => h.chapter === 13 && h.verse === 2)?.orderStatus).toBeUndefined()
   })
-  it('reads the exact verse for a comparison and supplies source evidence only for aligned editions', () => {
+  it('uses each edition’s printed comparison verse and exposes verified links per occurrence', () => {
     for (const translation of ['KJV', 'BSB']) {
       const ref = { translation, book: 'Ps', chapter: 23, verse: 1 }
       const verse = getComparisonVerse(ref)
@@ -61,8 +61,9 @@ describe.skipIf(!existsSync('resources/bible.sqlite'))('real Scripture search an
       expect(native.layout?.some(mark => mark.kind === 'poetry')).toBe(true)
       expect(verse?.tokens?.find(t => t.sourceWord)?.sourceWord?.rowId).toBe('344393')
     }
-    expect(getComparisonVerse({ translation: 'ASV', book: 'Ps', chapter: 23, verse: 1 }))
-      .toEqual({ verse: 1, text: 'Jehovah is my shepherd; I shall not want.', tokens: null })
+    const asv = getComparisonVerse({ translation: 'ASV', book: 'Ps', chapter: 23, verse: 1 })
+    expect(asv).toMatchObject({ verse: 1, text: 'Jehovah is my shepherd; I shall not want.' })
+    expect(asv?.tokens?.some(t => t.sourceWord)).toBe(false)
     expect(getComparisonVerse({ translation: 'BSB', book: 'Acts', chapter: 8, verse: 37 })).toBeNull()
     expect(getComparisonVerse({ translation: 'KJV', book: 'Ps', chapter: 23, verse: NaN })).toBeNull()
   })
@@ -72,7 +73,7 @@ describe.skipIf(!existsSync('resources/bible.sqlite'))('real Scripture search an
       const verse = getChapter({ translation, book: 'Ps', chapter: 23 }).verses.find(v => v.verse === 1)!
       const token = verse.tokens!.find(t => t.strongs === 'H3068')!
       const word = token.sourceWord!
-      expect(word).toEqual({
+      expect(word).toMatchObject({
         canReplaceAlone: false,
         edition: 'BSB', language: 'Hebrew', strongs: 'H3068', morph: 'Noun - proper - masculine singular',
         rowId: '344393', book: 'Ps', chapter: 23, verse: 1,
@@ -132,7 +133,10 @@ describe.skipIf(!existsSync('resources/bible.sqlite'))('real Scripture search an
       { rowId: '199485', english: 'you will not sin', text: 'ἁμάρτητε', canReplaceAlone: false },
       { rowId: '199489', english: 'does sin', text: 'ἁμάρτῃ', canReplaceAlone: false }
     ])
-    expect(words('1John', 2, 1, 'G264', 'KJV')).toEqual([undefined, undefined])
+    expect(words('1John', 2, 1, 'G264', 'KJV').map(w =>
+      [w?.edition, w?.sourceRef?.position, w?.english, w?.text.normalize('NFC'), w?.canReplaceAlone])).toEqual([
+      ['TR', 7, 'ye sin', 'ἁμάρτητε', false], ['TR', 11, 'sin', 'ἁμάρτῃ', false]
+    ])
     expect(words('1Cor', 12, 21, 'G1410')).toMatchObject([
       { english: 'cannot', text: 'δύναται', canReplaceAlone: false }
     ])
@@ -148,7 +152,9 @@ describe.skipIf(!existsSync('resources/bible.sqlite'))('real Scripture search an
     expect(words('Dan', 2, 4, 'H2418')).toMatchObject([
       { language: 'Aramaic', text: 'חֱיִ֔י', canReplaceAlone: false }
     ])
-    expect(getSourceWordCoverage('g0264')).toEqual([{ translation: 'BSB', occurrences: 39 }])
+    expect(getSourceWordCoverage('g0264')).toEqual(expect.arrayContaining([
+      { translation: 'BSB', occurrences: 39 }, { translation: 'KJV', occurrences: 32 }
+    ]))
     expect(getSourceWordCoverage('G999999')).toEqual([])
   })
 

@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { BOOK_BY_ID } from '@shared/books'
 import { mapPassage } from '@shared/passageMapping'
-import { publishedWording, restoredVerseSegments } from '@shared/sourceWords'
+import { publishedWording, restoredVerseSegments, sameSourceOccurrence, sourceAnchorId } from '@shared/sourceWords'
 import type { Translation, Verse } from '@shared/types'
 import { useAppStore } from '@/store/useAppStore'
 import ComparisonSourceDetails from './ComparisonSourceDetails'
@@ -40,7 +40,7 @@ export function WordComparisonProvider({ children, location }: { children: React
     show(word, mode) {
       cancelTimer()
       const open = () => {
-        if (!word.anchor.isConnected || word.anchor.dataset.sourceRow !== word.source.language + ':' + word.source.rowId ||
+        if (!word.anchor.isConnected || word.anchor.dataset.sourceRow !== sourceAnchorId(word.source) ||
             !word.anchor.hasAttribute('data-restored-word') || window.getSelection()?.isCollapsed === false) return
         explore.current = mode === 'explore'
         setTarget(word)
@@ -207,9 +207,7 @@ function OtherReading({ edition, target }: { edition: Translation; target: Reade
     true, { [source.strongs]: true }, [source.strongs])
   const matched = segments.filter(s => {
     const other = s.token?.sourceWord
-    return (s.annotation || s.original !== s.display) && other?.edition === source.edition &&
-      other.rowId === source.rowId && other.language === source.language && other.strongs === source.strongs &&
-      other.text === source.text && other.book === source.book && other.chapter === source.chapter && other.verse === source.verse
+    return (s.annotation || s.original !== s.display) && other && sameSourceOccurrence(source, other)
   })
   if (matched.length === 1) return <ComparisonRow {...row}
     label={matched[0].annotation ? 'Aligned phrase' : 'Verified wording'} text={publishedWording(matched[0])} />

@@ -18,12 +18,26 @@ describe('source evidence for a restored word', () => {
   it('starts collapsed and distinguishes a publisher’s alignment from KJV corroboration', () => {
     const bsb = render('BSB', 'Iēsous', jesus)
     expect(bsb).not.toMatch(/<details[^>]*\bopen\b/)
-    for (const detail of ['Iēsous', 'Ἰησοῦς', '(BSB), row 92074', 'links this BSB wording']) {
+    for (const detail of ['Iēsous', 'Ἰησοῦς', 'BSB · John 11:35 · row 92074', 'links this BSB wording']) {
       expect(bsb).toContain(detail)
     }
     const kjv = render('KJV', 'Iēsous', { ...jesus, evidence: 'corroborated' })
     expect(kjv).toContain('KJV word tag')
     expect(kjv).toContain('Greek Textus Receptus')
+  })
+
+  it('identifies the actual source and explicitly cited counterpart for a packed edition', () => {
+    const source: SourceWord = {
+      ...jesus, translation: 'WEB', edition: 'BYZ', rowId: 'John.11.35/0', sourceRevision: 'reviewed-revision',
+      strongs: 'G1145', english: 'wept', text: 'ἐδάκρυσεν', translit: '', evidence: 'corroborated',
+      citation: 'WEB tag and TAGNT Byzantine occurrence', sourceRef: { book: 'John', chapter: 11, verse: 35, position: 0 },
+      correspondences: [{ edition: 'BSB', rowId: '92072', sourceRevision: 'publisher-revision',
+        sourceRef: { book: 'John', chapter: 11, verse: 35 }, citation: 'Reviewed Berean alignment' }]
+    }
+    const rendered = render('WEB', source.text, source)
+    for (const detail of [source.citation, 'BYZ · John 11:35 · row John.11.35/0',
+      'BSB · John 11:35 · row 92072', 'Reviewed Berean alignment']) expect(rendered).toContain(detail)
+    expect(rendered).not.toContain('KJV word tag')
   })
 
   it('distinguishes the four-consonant display from the publisher’s transliteration', () => {

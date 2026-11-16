@@ -53,6 +53,7 @@ export interface SelectedOccurrence {
   verse: number
   surface: string
   derived: boolean
+  tagCitation?: string
   sourceWord?: SourceWord
   position?: number
 }

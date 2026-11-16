@@ -9,16 +9,15 @@ we start it.
 
 ## ✅ Shipped (v1)
 
-- **Reader** — KJV, BSB, WEB, YLT, Julia Smith; parallel columns; book/chapter nav; chronological
+- **Reader** — nine English editions, including the partial Tyndale and Wycliffe texts; parallel columns; book/chapter nav; chronological
   (book-level) toggle; notes + highlighting; FTS search.
 - **Original languages** — interlinear (word-by-word); selectable editions **Masoretic (WLC),
   Septuagint (Swete), Textus Receptus, Byzantine, Critical (NA28)**; Hebrew RTL + fonts.
 - **Study tools** — Strong's toggle + lexicon card + concordance; **multi-lexicon** (BDB /
   Abbott-Smith / LSJ); click any word (even untagged) → lexicon-by-form; **source word restoration**
-  (fixed YHWH or occurrence-specific transliteration from the Berean word table);
+  (fixed YHWH, occurrence-specific transliterations, or a cited Hebrew, Aramaic, or Greek form for the selected edition);
   **TR-vs-Critical apparatus**; **"best guess ⇄ all parses"** (Scripture-attested ambiguity).
-- **Septuagint** — Swete Greek OT (CC-BY-SA), 36 protocanon books, tagged to Strong's at ~84% by
-  surface-matching the NT (no CATSS).
+- **Septuagint** — the Swete Greek Old Testament supports passage comparison and original-text search. The interlinear presents its Greek wording with edition-local references.
 - **AI assistant (opt-in)** — bundled in-process model (node-llama-cpp) with **Fast/Balanced/Quality
   tiers** (Llama-3.2-1B / 3B / Qwen2.5-7B), auto-download, grounded Bible Q&A, low-temp + strict
   grounding; **RAG** over the verse corpus + user documents (sqlite-vec), document manager.

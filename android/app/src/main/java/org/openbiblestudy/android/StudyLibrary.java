@@ -18,17 +18,20 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
 /** Read-only queries against the same versioned Bible and alignments as the desktop edition. */
 final class StudyLibrary implements AutoCloseable {
     final SQLiteConnection db;
     private final boolean verified;
+    private final boolean editionPacks;
     private static final Pattern GREEK_FORM = Pattern.compile("^\\p{IsGreek}[\\p{IsGreek}\\p{M}]*[᾽’']?$");
     private static final Pattern SEMITIC_FORM = Pattern.compile("^[א-ת][א-ת\\p{M}]*$");
 
     StudyLibrary(File file) {
         db = new BundledSQLiteDriver().open(file.getAbsolutePath(), 1); // SQLITE_OPEN_READONLY
         try {
+            editionPacks = "1".equals(scalar(db, "SELECT value FROM meta WHERE key='edition_pack_version'"));
             verified = "1".equals(scalar(db, "SELECT value FROM meta WHERE key='source_word_alignment_version'"));
         } catch (RuntimeException e) {
             db.close();
@@ -109,19 +112,30 @@ final class StudyLibrary implements AutoCloseable {
             verse.put("tokens", JSONObject.NULL);
             verses.put(verse.getInt("verse"), verse);
         }
-        if (translation.equals("BSB") || translation.equals("KJV")) {
-            for (JSObject token : rows(db, "SELECT verse,position,surface,COALESCE(trailer,' ') AS trailer," +
-                    "strongs,lemma,translit,morph,gloss FROM verse_tokens WHERE translation_id=? AND book_id=? " +
-                    "AND chapter=? ORDER BY verse,position", address)) {
-                int verse = token.getInt("verse");
-                token.remove("verse");
-                tokens.computeIfAbsent(verse, key -> new ArrayList<>()).add(token);
+        String tokenEvidence = editionPacks
+            ? "LEFT JOIN edition_token_evidence e USING(translation_id,book_id,chapter,verse,position) " : "";
+        for (JSObject token : rows(db, "SELECT verse,position,surface,COALESCE(trailer,' ') AS trailer," +
+                "strongs,lemma,translit,morph,gloss " + (editionPacks ? ",e.kind,e.citation AS tagCitation " : "") +
+                "FROM verse_tokens " + tokenEvidence + "WHERE translation_id=? AND book_id=? " +
+                "AND chapter=? ORDER BY verse,position", address)) {
+            int verse = token.getInt("verse");
+            token.remove("verse");
+            if ("inferred".equals(token.getString("kind"))) token.put("derived", true);
+            token.remove("kind");
+            if (token.isNull("tagCitation")) token.remove("tagCitation");
+            tokens.computeIfAbsent(verse, key -> new ArrayList<>()).add(token);
+        }
+        if ((editionPacks || verified) && !tokens.isEmpty()) addEvidence(translation, book, chapter, tokens);
+        if (tokens.size() < verses.size()) {
+            for (JSObject row : rows(db, "SELECT verse,strongs FROM derived_tags WHERE translation_id=? AND book_id=? AND chapter=?", address)) {
+                int verse = row.getInt("verse");
+                if (verses.containsKey(verse) && !tokens.containsKey(verse))
+                    tokens.put(verse, derivedTokens(verses.get(verse).getString("text"), row.getString("strongs")));
             }
-            if (verified && !tokens.isEmpty()) addEvidence(translation, book, chapter, tokens);
-            for (Map.Entry<Integer, List<JSObject>> entry : tokens.entrySet()) {
-                JSObject verse = verses.get(entry.getKey());
-                if (verse != null) verse.put("tokens", new JSONArray(entry.getValue()));
-            }
+        }
+        for (Map.Entry<Integer, List<JSObject>> entry : tokens.entrySet()) {
+            JSObject verse = verses.get(entry.getKey());
+            if (verse != null) verse.put("tokens", new JSONArray(entry.getValue()));
         }
         return result.put("verses", new JSONArray(verses.values()));
     }
@@ -130,7 +144,8 @@ final class StudyLibrary implements AutoCloseable {
     // multiword spans and certified singletons. Dictionary headwords never enter this join.
     private void addEvidence(String translation, String book, int chapter, Map<Integer, List<JSObject>> tokens)
             throws JSONException {
-        String sql = "SELECT s.verse,s.start_position,s.end_position,s.source_row,s.language,b.lemma AS text," +
+        String sql = editionPacks ? "SELECT *,form AS text FROM edition_occurrences WHERE translation_id=? AND book_id=? AND chapter=?"
+            : "SELECT s.verse,s.start_position,s.end_position,s.source_row,s.language,b.lemma AS text," +
             "b.translit,b.strongs,b.morph,cert.source_row IS NOT NULL AS standalone " +
             "FROM source_word_spans s JOIN verse_tokens b ON b.translation_id='BSB' AND b.book_id=s.book_id " +
             "AND b.chapter=s.chapter AND b.verse=s.verse AND b.position=s.bsb_position " +
@@ -147,21 +162,82 @@ final class StudyLibrary implements AutoCloseable {
             String id = token.getString("strongs");
             String translit = span.getString("translit");
             if (token.getInt("position") != end || id == null || !id.equals(span.getString("strongs")) ||
-                    translit == null || translit.trim().isEmpty()) continue;
+                    token.optBoolean("derived") || (!editionPacks && (translit == null || translit.trim().isEmpty()))) continue;
             String language = span.getString("language");
             String text = publisherForm(language, span.getString("text"));
             if (text == null) continue;
             StringBuilder english = new StringBuilder();
-            for (int i = start; i < end; i++) english.append(words.get(i).getString("surface"))
-                .append(words.get(i).getString("trailer"));
+            boolean overlaps = false;
+            for (int i = start; i < end; i++) {
+                JSObject prefix = words.get(i);
+                if (!prefix.isNull("strongs") || prefix.optBoolean("derived") || prefix.has("sourceWord")) overlaps = true;
+                english.append(prefix.getString("surface")).append(prefix.getString("trailer"));
+            }
+            if (overlaps) continue;
             english.append(token.getString("surface"));
-            token.put("sourceWord", new JSObject().put("edition", "BSB").put("language", language)
+            if (editionPacks && !english.toString().equals(span.getString("english"))) continue;
+            JSObject source = new JSObject().put("edition", editionPacks ? span.getString("source_edition") : "BSB").put("language", language)
                 .put("rowId", span.getString("source_row")).put("book", book).put("chapter", chapter)
                 .put("verse", verse).put("startPosition", start).put("endPosition", end).put("english", english.toString())
-                .put("text", text).put("strongs", id).put("translit", translit).put("morph", span.getString("morph", ""))
-                .put("evidence", translation.equals("BSB") ? "aligned" : "corroborated")
-                .put("canReplaceAlone", span.getInt("standalone") == 1));
+                .put("text", text).put("strongs", id).put("translit", span.isNull("translit") ? "" : translit)
+                .put("morph", span.isNull("morph") ? "" : span.getString("morph"))
+                .put("evidence", editionPacks ? span.getString("evidence") : translation.equals("BSB") ? "aligned" : "corroborated")
+                .put("canReplaceAlone", span.getInt("standalone") == 1);
+            if (editionPacks) {
+                JSObject ref = new JSObject().put("book", span.getString("source_book"))
+                    .put("chapter", span.getInteger("source_chapter")).put("verse", span.getInteger("source_verse"));
+                if (!span.isNull("source_position")) ref.put("position", span.getInteger("source_position"));
+                source.put("translation", translation).put("sourceRevision", span.getString("source_revision"))
+                    .put("citation", span.getString("citation")).put("uniqueForm", span.getInt("unique_form") == 1)
+                    .put("preservePreset", span.getInt("preserve_preset") == 1)
+                    .put("sourceRef", ref);
+            }
+            token.put("sourceWord", source);
         }
+        if (editionPacks) {
+            for (JSObject link : rows(db, "SELECT * FROM edition_correspondences WHERE translation_id=? AND book_id=? AND chapter=?",
+                    translation, book, chapter)) {
+                List<JSObject> words = tokens.get(link.getInt("verse"));
+                int position = link.getInt("end_position");
+                if (words == null || position < 0 || position >= words.size()) continue;
+                JSONObject source = words.get(position).optJSONObject("sourceWord");
+                if (source == null) continue;
+                JSONArray correspondences = source.optJSONArray("correspondences");
+                if (correspondences == null) source.put("correspondences", correspondences = new JSONArray());
+                JSObject ref = new JSObject().put("book", link.getString("source_book"))
+                    .put("chapter", link.getInteger("source_chapter")).put("verse", link.getInteger("source_verse"));
+                if (!link.isNull("source_position")) ref.put("position", link.getInteger("source_position"));
+                correspondences.put(new JSObject().put("edition", link.getString("source_edition"))
+                    .put("rowId", link.getString("source_row")).put("sourceRevision", link.getString("source_revision"))
+                    .put("citation", link.getString("citation")).put("sourceRef", ref));
+            }
+        }
+    }
+
+    // The packed lookup index is keyed by the whitespace-delimited units in shared/verseUnits.ts.
+    private static final String SPACE = "\\x09-\\x0d\\p{Zs}\\u2028\\u2029\\ufeff";
+    private static final Pattern UNIT = Pattern.compile("([^" + SPACE + "]+?)([^\\p{L}\\p{N}" + SPACE + "]*)([" + SPACE + "]*)");
+    private static final Pattern CHUNK = Pattern.compile("[^" + SPACE + "]+[" + SPACE + "]*");
+    static List<JSObject> derivedTokens(String text, String packed) {
+        List<JSObject> words = new ArrayList<>();
+        String[] slots = packed.split(" ", -1);
+        Matcher chunks = CHUNK.matcher(text);
+        for (int i = 0; chunks.find(); i++) {
+            Matcher unit = UNIT.matcher(chunks.group());
+            if (!unit.matches()) throw new IllegalStateException("Invalid derived word unit");
+            String surface = unit.group(1), trailer = unit.group(2) + unit.group(3);
+            String tag = i < slots.length ? slots[i] : "-";
+            if ("+".equals(tag) && !words.isEmpty()) {
+                JSObject prior = words.get(words.size() - 1);
+                prior.put("surface", prior.getString("surface") + prior.getString("trailer") + surface).put("trailer", trailer);
+            } else {
+                words.add(new JSObject().put("surface", surface).put("trailer", trailer).put("position", words.size())
+                    .put("strongs", "-".equals(tag) || "+".equals(tag) ? JSONObject.NULL : tag).put("derived", true)
+                    .put("lemma", JSONObject.NULL).put("gloss", JSONObject.NULL)
+                    .put("translit", JSONObject.NULL).put("morph", JSONObject.NULL));
+            }
+        }
+        return words;
     }
 
     private static String publisherForm(String language, String text) {
@@ -246,7 +322,7 @@ final class StudyLibrary implements AutoCloseable {
             }
         }
         if (entry != null) entry.put("occurrences", Integer.parseInt(scalar(db, "SELECT count(*) FROM verse_tokens WHERE strongs=?", id)));
-        JSONArray coverage = verified ? new JSONArray(rows(db, "SELECT translation_id AS translation,occurrences " +
+        JSONArray coverage = (verified || editionPacks) ? new JSONArray(rows(db, "SELECT translation_id AS translation,occurrences " +
             "FROM source_word_coverage WHERE strongs=? ORDER BY translation_id", id)) : new JSONArray();
         return new JSObject().put("entry", entry == null ? JSONObject.NULL : entry).put("coverage", coverage);
     }

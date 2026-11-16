@@ -7,7 +7,6 @@
  */
 import { DatabaseSync } from 'node:sqlite'
 import { createHash } from 'node:crypto'
-import { gunzipSync } from 'node:zlib'
 import wordSourceHashes from './assets/word-source-hashes.json'
 import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, renameSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -16,26 +15,16 @@ import { BOOKS, BOOK_BY_USFM } from '../src/shared/books'
 import { greekReadings, parseStepReference } from './step'
 import { readPrintedOrder, checkPrintedOrder } from './greekOrder'
 import { WordFrequencyIndex, parseHebrewFrequency, type HebrewWord } from './wordFrequency'
-import { buildSourceWordSpans } from './sourceWords'
+import { importEditionPacks, finishEditionPacks } from './editionPacks'
 import { buildWordDirectory } from './wordDirectory'
-import { nativeChapter, type ChapterBlock } from './literaryLayout'
-import literarySourceHashes from './assets/literary-source-hashes.json'
 import { buildStudyIndex } from './studyIndex'
 import { foldLatinHomoglyphs } from '../src/shared/originalText'
 import {
   cleanLexBody,
-  deriveVerseTags,
-  packTags,
-  type PivotWord,
-  stemWord,
-  wordKey,
-  splitVerseUnits,
   normGreek,
   normHebrew,
   normStrongs,
-  retileTokens,
   translitGreek,
-  type RawToken
 } from './lib'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -43,111 +32,6 @@ const ROOT = join(HERE, '..')
 const OUT = join(ROOT, 'resources', 'bible.sqlite')
 const STAGED = `${OUT}.${process.pid}.tmp`
 const SCHEMA = join(HERE, 'schema.sql')
-
-interface TranslationSource {
-  id: string // our id
-  helloaoId: string // helloao API id
-  abbrev: string
-  name: string
-  license: string
-  attribution: string
-  sortOrder: number
-  /** Expected coverage, for the completeness assertions. Defaults to a complete 66-book Bible;
-   *  'nt' is a New-Testament-only text (Tyndale 1534); an explicit {books, minVerses} covers any
-   *  other partial source (Wycliffe's surviving portions). */
-  scope?: 'full' | 'nt' | { books: number; minVerses: number }
-}
-
-// v1 reading set — all public domain.
-const TRANSLATIONS: TranslationSource[] = [
-  {
-    id: 'KJV',
-    helloaoId: 'eng_kjv',
-    abbrev: 'KJV',
-    name: 'King James Version',
-    license: 'Public Domain',
-    attribution: 'King James Version (1769). Public Domain.',
-    sortOrder: 1
-  },
-  {
-    id: 'BSB',
-    helloaoId: 'BSB',
-    abbrev: 'BSB',
-    name: 'Berean Standard Bible',
-    license: 'Public Domain',
-    attribution: 'Berean Standard Bible. Public Domain (berean.bible).',
-    sortOrder: 2
-  },
-  {
-    id: 'WEB',
-    helloaoId: 'ENGWEBP',
-    abbrev: 'WEB',
-    name: 'World English Bible',
-    license: 'Public Domain',
-    attribution: 'World English Bible. Public Domain (eBible.org).',
-    sortOrder: 3
-  },
-  {
-    // The ancestor of the NASB, RSV/ESV and the WEB we already ship. Kept for textual comparison:
-    // it follows the critical text against the KJV's Textus Receptus, renders the divine name as
-    // "Jehovah", and transliterates Sheol/Hades — and its versification matches the KJV exactly,
-    // so it lines up verse-for-verse in a parallel column.
-    id: 'ASV',
-    helloaoId: 'eng_asv',
-    abbrev: 'ASV',
-    name: 'American Standard Version',
-    license: 'Public Domain',
-    attribution: 'American Standard Version (1901). Public Domain (eBible.org).',
-    sortOrder: 5
-  },
-  {
-    id: 'YLT',
-    helloaoId: 'eng_ylt',
-    abbrev: 'YLT',
-    name: "Young's Literal Translation",
-    license: 'Public Domain',
-    attribution: "Young's Literal Translation (1898). Public Domain.",
-    sortOrder: 6
-  },
-  {
-    // The fountainhead of the English Bible: most of the KJV New Testament is Tyndale's wording,
-    // carried through Geneva and the Bishops' Bible. NEW TESTAMENT ONLY (27 books) and in original
-    // 1534 spelling ("worlde", "geven", "everlastinge lyfe"), so it is here for historical and
-    // textual comparison, not for everyday reading. Versification matches the KJV NT exactly.
-    id: 'TNT',
-    helloaoId: 'eng_tnt',
-    abbrev: 'TNT',
-    name: 'Tyndale New Testament',
-    license: 'Public Domain',
-    attribution: 'Tyndale New Testament (1534), William Tyndale. Public Domain (eBible.org).',
-    sortOrder: 7,
-    scope: 'nt'
-  },
-  {
-    // The Bible of the Reformation and of Shakespeare, and the missing link between Tyndale and
-    // the KJV. Original 1599 spelling, like Tyndale.
-    id: 'GNV',
-    helloaoId: 'eng_gnv',
-    abbrev: 'GNV',
-    name: 'Geneva Bible',
-    license: 'Public Domain',
-    attribution: 'Geneva Bible (1599). Public Domain (eBible.org).',
-    sortOrder: 8
-  },
-  {
-    // The earliest complete English Bible (from the Latin Vulgate, c. 1395) — but only these
-    // portions survive in a public-domain transcription: the Pentateuch and the four Gospels.
-    // The complete modern-spelling editions are CC BY-NC-ND, which this project can't bundle.
-    id: 'WYC',
-    helloaoId: 'eng_w88',
-    abbrev: 'WYC',
-    name: 'Wycliffe Bible (portions)',
-    license: 'Public Domain',
-    attribution: 'Wycliffe Bible (c. 1395), surviving portions. Public Domain (eBible.org).',
-    sortOrder: 9,
-    scope: { books: 9, minVerses: 9000 }
-  }
-]
 
 // STEPBible Translators Amalgamated OT+NT (CC BY 4.0) — tagged original-language editions.
 const STEP_REPO = 'https://raw.githubusercontent.com/STEPBible/STEPBible-Data/f71b5e51f2d768ae72e3ed69743a7a9df25ef8b5'
@@ -244,21 +128,6 @@ const STRONGS_SOURCES = {
     'https://raw.githubusercontent.com/openscriptures/strongs/master/hebrew/strongs-hebrew-dictionary.js'
 }
 
-// KJV with inline [G####]/[H####] Strong's tags, one JSON per book (canonical order).
-const KJV_STRONGS_BASE = 'https://raw.githubusercontent.com/kaiserlik/kjv/main'
-
-// BSB word-level interlinear table: one row per original-language word, aligned to the
-// BSB English rendering, with Strong's + morphology. ~85MB; cached in sources/.
-const BSB_TABLES_URL = 'https://bereanbible.com/bsb_tables.tsv'
-
-// ---- helpers ---------------------------------------------------------------
-
-async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`GET ${url} → ${res.status} ${res.statusText}`)
-  return (await res.json()) as T
-}
-
 /** Extract the JSON object literal out of an openscriptures `var X = {...};` file. */
 function parseDictJs(src: string): Record<string, Record<string, string>> {
   const eq = src.search(/var\s+strongs\w+Dictionary\s*=/)
@@ -268,344 +137,9 @@ function parseDictJs(src: string): Record<string, Record<string, string>> {
   return JSON.parse(src.slice(start, end + 1))
 }
 
-interface Tok {
-  surface: string
-  trailer: string
-  strongs: string | null
-}
-
-/** Parse kaiserlik KJV `en` strings like "In[G1722] the beginning[G746] was[G2258]".
- *  The source marks translator-supplied words with <em>…</em> HTML — strip those tags. */
-function parseKjvTokens(en: string): Tok[] {
-  const tagRe = /\[([GH]\d+)\]/g
-  const out: Tok[] = []
-  for (const raw of en.replace(/<\/?[a-z]+>/gi, '').split(/\s+/)) {
-    if (!raw) continue
-    const tags = [...raw.matchAll(tagRe)].map((m) => m[1])
-    const clean = raw.replace(tagRe, '')
-    const m = clean.match(/^(.*?)([^\p{L}\p{N}]*)$/u)
-    const surface = (m?.[1] || clean).trim()
-    const punct = m?.[2] ?? ''
-    if (!surface && !punct) continue
-    out.push({ surface: surface || clean, trailer: `${punct} `, strongs: tags[0] ?? null })
-  }
-  return out
-}
-
-/**
- * Make `verses.text` authoritative for a tagged translation by re-tiling its verse_tokens onto the
- * real words of each verse (see retileTokens in ./lib).
- *
- * The word-level Strong's sources are third-party and imperfect — kaiserlik/kjv truncates the tail
- * of thousands of verses and prepends Psalm superscriptions, bereanbible's table carries alignment
- * markup — and the reader renders FROM these tokens whenever Strong's numbers or Quick Replace are
- * on. Without this step those defects become visible (and silently truncated) Scripture text.
- */
-function reconcileVerseTokens(
-  db: DatabaseSync,
-  id: string
-): { verses: number; repaired: number; untagged: number } {
-  const texts = new Map<string, string>()
-  for (const r of db
-    .prepare('SELECT book_id, chapter, verse, text FROM verses WHERE translation_id = ?')
-    .all(id) as { book_id: string; chapter: number; verse: number; text: string }[]) {
-    texts.set(`${r.book_id}|${r.chapter}|${r.verse}`, r.text)
-  }
-
-  const byVerse = new Map<string, RawToken[]>()
-  for (const r of db
-    .prepare(
-      `SELECT book_id, chapter, verse, surface, trailer, strongs, lemma, translit, morph, gloss
-         FROM verse_tokens WHERE translation_id = ? ORDER BY book_id, chapter, verse, position`
-    )
-    .all(id) as Record<string, unknown>[]) {
-    const key = `${r.book_id}|${r.chapter}|${r.verse}`
-    let arr = byVerse.get(key)
-    if (!arr) {
-      arr = []
-      byVerse.set(key, arr)
-    }
-    arr.push({
-      surface: r.surface as string,
-      trailer: (r.trailer as string) ?? ' ',
-      strongs: (r.strongs as string) ?? null,
-      lemma: (r.lemma as string) ?? null,
-      translit: (r.translit as string) ?? null,
-      morph: (r.morph as string) ?? null,
-      gloss: (r.gloss as string) ?? null
-    })
-  }
-
-  const ins = db.prepare(
-    `INSERT INTO verse_tokens
-       (translation_id, book_id, chapter, verse, position, surface, trailer, strongs, lemma, translit, morph, gloss)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
-  )
-  let repaired = 0
-  let untagged = 0
-  db.exec('BEGIN')
-  db.prepare('DELETE FROM verse_tokens WHERE translation_id = ?').run(id)
-  for (const [key, toks] of byVerse) {
-    const text = texts.get(key)
-    if (!text) continue // a tagged verse we don't actually carry — drop the orphan tokens
-    const before = toks.map((t) => t.surface + t.trailer).join('')
-    const tiled = retileTokens(text, toks)
-    if (before !== tiled.map((t) => t.surface + t.trailer).join('')) repaired++
-    const [book, ch, v] = key.split('|')
-    tiled.forEach((t, pos) => {
-      if (!t.strongs) untagged++
-      ins.run(
-        id,
-        book,
-        Number(ch),
-        Number(v),
-        pos,
-        t.surface,
-        t.trailer,
-        t.strongs,
-        t.lemma ?? null,
-        t.translit ?? null,
-        t.morph ?? null,
-        t.gloss ?? null
-      )
-    })
-  }
-  db.exec('COMMIT')
-  return { verses: byVerse.size, repaired, untagged }
-}
-
-/**
- * Infer word→Strong's mappings for every translation that has no word tagging of its own, and
- * store them in `derived_tags`. See the header in ./lib and the table comment in schema.sql for
- * what this is and — importantly — what it isn't.
- *
- * Returns per-translation coverage and agreement for KJV units with a tag on both sides.
- * KJV token data contributes to candidate generation, so this is an internal consistency check.
- */
-function buildDerivedTags(
-  db: DatabaseSync
-): { coverage: { id: string; pct: number }[]; agreement: number } {
-  // Pivot: the BSB is 99% tagged and aligned to the originals.
-  const pivot = new Map<string, PivotWord[]>()
-  for (const r of db
-    .prepare(
-      `SELECT book_id, chapter, verse, position, surface, strongs FROM verse_tokens
-        WHERE translation_id = 'BSB' ORDER BY book_id, chapter, verse, position`
-    )
-    .all() as {
-    book_id: string
-    chapter: number
-    verse: number
-    position: number
-    surface: string
-    strongs: string | null
-  }[]) {
-    const k = `${r.book_id}|${r.chapter}|${r.verse}`
-    let arr = pivot.get(k)
-    if (!arr) pivot.set(k, (arr = []))
-    // Every word of a multi-word Berean token carries that token's position, so the words it maps
-    // to stay ONE token downstream — otherwise "of the LORD" becomes three tokens all holding
-    // H3068, and Quick Replace renders "Yahweh Yahweh Yahweh".
-    for (const w of r.surface.split(/\s+/)) {
-      const key = wordKey(w)
-      if (key) arr.push({ key, strongs: r.strongs, token: r.position })
-    }
-  }
-
-  // Which Strong's numbers each verse actually contains, and which English words are attested for
-  // each number. Both are learned from the tagged translations plus each entry's KJV usage list.
-  const candidates = new Map<string, Set<string>>()
-  const attested = new Map<string, Set<string>>()
-  const add = (m: Map<string, Set<string>>, k: string, v: string): void => {
-    let s = m.get(k)
-    if (!s) m.set(k, (s = new Set()))
-    s.add(v)
-  }
-  for (const r of db
-    .prepare(
-      `SELECT book_id, chapter, verse, surface, strongs, translation_id FROM verse_tokens
-        WHERE strongs IS NOT NULL`
-    )
-    .all() as { book_id: string; chapter: number; verse: number; surface: string; strongs: string; translation_id: string }[]) {
-    add(candidates, `${r.book_id}|${r.chapter}|${r.verse}`, r.strongs)
-    for (const w of r.surface.split(/\s+/)) {
-      const k = wordKey(w)
-      if (k) add(attested, r.strongs, stemWord(k))
-    }
-  }
-  for (const r of db
-    .prepare("SELECT id, kjv_def FROM strongs_lexicon WHERE kjv_def IS NOT NULL")
-    .all() as { id: string; kjv_def: string }[]) {
-    for (const w of r.kjv_def.match(/[A-Za-z]+/g) ?? []) {
-      const k = stemWord(wordKey(w))
-      if (k.length > 2) add(attested, r.id, k)
-    }
-  }
-
-  const tagged = new Set(
-    (db.prepare('SELECT DISTINCT translation_id AS id FROM verse_tokens').all() as { id: string }[]).map(
-      (r) => r.id
-    )
-  )
-  const targets = (
-    db
-      .prepare("SELECT id FROM translations WHERE is_original = 0 ORDER BY sort_order")
-      .all() as { id: string }[]
-  )
-    .map((r) => r.id)
-    .filter((id) => !tagged.has(id))
-
-  const ins = db.prepare(
-    'INSERT OR REPLACE INTO derived_tags (translation_id, book_id, chapter, verse, strongs) VALUES (?,?,?,?,?)'
-  )
-  const coverage: { id: string; pct: number }[] = []
-  db.exec('BEGIN')
-  for (const id of targets) {
-    let words = 0
-    let hits = 0
-    for (const r of db
-      .prepare('SELECT book_id, chapter, verse, text FROM verses WHERE translation_id = ?')
-      .all(id) as { book_id: string; chapter: number; verse: number; text: string }[]) {
-      const k = `${r.book_id}|${r.chapter}|${r.verse}`
-      const units = splitVerseUnits(r.text).map((u) => u.surface)
-      const tags = deriveVerseTags(units, pivot.get(k) ?? [], candidates.get(k) ?? new Set(), attested)
-      words += units.length
-      hits += tags.filter((x) => x.strongs).length
-      ins.run(id, r.book_id, r.chapter, r.verse, packTags(tags))
-    }
-    coverage.push({ id, pct: words ? Math.round((100 * hits) / words) : 0 })
-  }
-  db.exec('COMMIT')
-
-  // Score agreement with KJV tagging, which also contributes candidates and attested forms. Tagger
-  // tokens can span several words, so expand them to line up word-for-word with the derivation.
-  let scored = 0
-  let agreed = 0
-  const kjvVerses = db
-    .prepare("SELECT DISTINCT book_id, chapter, verse FROM verse_tokens WHERE translation_id='KJV'")
-    .all() as { book_id: string; chapter: number; verse: number }[]
-  const kjvToks = db.prepare(
-    "SELECT surface, strongs FROM verse_tokens WHERE translation_id='KJV' AND book_id=? AND chapter=? AND verse=? ORDER BY position"
-  )
-  for (const v of kjvVerses) {
-    const words: string[] = []
-    const truth: (string | null)[] = []
-    for (const tok of kjvToks.all(v.book_id, v.chapter, v.verse) as {
-      surface: string
-      strongs: string | null
-    }[]) {
-      for (const w of tok.surface.split(/\s+/)) {
-        if (!w) continue
-        words.push(w)
-        truth.push(tok.strongs)
-      }
-    }
-    const k = `${v.book_id}|${v.chapter}|${v.verse}`
-    const got = deriveVerseTags(words, pivot.get(k) ?? [], candidates.get(k) ?? new Set(), attested)
-    for (let i = 0; i < truth.length; i++) {
-      if (!truth[i] || !got[i]?.strongs) continue
-      scored++
-      if (got[i].strongs === truth[i]) agreed++
-    }
-  }
-  return { coverage, agreement: scored ? Math.round((1000 * agreed) / scored) / 10 : 0 }
-}
-
-/** Tag the BSB with per-word Strong's + original-language alignment from bsb_tables.tsv.
- *  Produces BSB verse_tokens: surface=English gloss, lemma=original word, translit, morph, strongs. */
-async function tagBsb(db: DatabaseSync): Promise<number> {
-  const path = await downloadCached('bsb_tables.tsv', BSB_TABLES_URL)
-
-  const bookByName = new Map(BOOKS.map((b) => [b.name, b.id]))
-  bookByName.set('Psalm', 'Ps') // BSB uses the singular
-
-  const insTok = db.prepare(
-    `INSERT OR REPLACE INTO verse_tokens
-       (translation_id, book_id, chapter, verse, position, surface, trailer, strongs, lemma, translit, morph, gloss)
-     VALUES ('BSB', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`
-  )
-
-  const lines = readFileSync(path, 'utf8').split('\n')
-  let book = ''
-  let chapter = 0
-  let verse = 0
-  let valid = false
-  let pos = 0
-  let count = 0
-
-  db.exec('BEGIN')
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i]
-    if (!line) continue
-    const c = line.split('\t')
-    if (c.length < 13) continue
-
-    const rawVid = (c[12] ?? '').trim()
-    if (rawVid) {
-      const m = /^(.*) (\d+):(\d+)$/.exec(rawVid)
-      const bid = m ? bookByName.get(m[1]) : undefined
-      if (m && bid) {
-        book = bid
-        chapter = Number(m[2])
-        verse = Number(m[3])
-        valid = true
-        pos = 0
-      } else {
-        valid = false
-      }
-    }
-    if (!valid) continue
-
-    const orig = (c[5] ?? '').trim()
-    if (!orig) continue // padding row (no original word)
-    const eng = (c[18] ?? '').trim()
-    if (!eng || eng === '-') continue // untranslated particle → skip for reading/interlinear
-
-    const strH = (c[10] ?? '').trim()
-    const strG = (c[11] ?? '').trim()
-    const strongs = strH ? `H${strH}` : strG ? `G${strG}` : null
-    const translit = (c[7] ?? '').trim() || null
-    const morph = (c[9] ?? '').trim() || null
-    const pnc = c[19] ?? ''
-
-    insTok.run(book, chapter, verse, pos, eng, `${pnc} `, strongs, orig, translit, morph)
-    pos++
-    count++
-  }
-  db.exec('COMMIT')
-  db.prepare('UPDATE translations SET has_strongs = 1 WHERE id = ?').run('BSB')
-  return count
-}
-
-interface JsVerse {
-  book: string
-  chapter: number
-  verse: number
-  text: string
-}
-
-/** The audited public-domain 1876 text, sourced from the Digital Bible Society via studybible.info. */
-function readJuliaSmith(): JsVerse[] {
-  const bytes = gunzipSync(readFileSync(join(HERE, 'assets', 'julia-smith-1876.json.gz')))
-  const digest = createHash('sha256').update(bytes).digest('hex')
-  if (digest !== '5702fb61513f4e97a0bb1caf71d5892caa55f1b17dea8709666af42bab606de1') {
-    throw new Error('Julia Smith text failed the source integrity check')
-  }
-  return JSON.parse(bytes.toString('utf8')) as JsVerse[]
-}
-
-// helloao complete.json shapes we rely on
-interface CompleteBook {
-  id: string
-  chapters: { chapter: { number: number; content: ChapterBlock[] } }[]
-}
-interface Complete {
-  books: CompleteBook[]
-}
-
 async function downloadCached(name: string, url: string): Promise<string> {
   const p = join(HERE, 'sources', name)
-  const expected = (wordSourceHashes as Record<string,string>)[name] ?? (literarySourceHashes as Record<string,string>)[name]
+  const expected = (wordSourceHashes as Record<string,string>)[name]
   const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
   if (!existsSync(p) || (expected && digest(readFileSync(p)) !== expected)) {
     const r = await fetch(url)
@@ -1465,83 +999,7 @@ async function main(): Promise<void> {
   BOOKS.forEach((b, i) => insBook.run(b.id, b.usfm, b.name, b.testament, i + 1, b.chapters))
   db.exec('COMMIT')
 
-  const insTrans = db.prepare(
-    `INSERT INTO translations (id, abbrev, name, language, direction, is_original, has_strongs, license, attribution, sort_order)
-     VALUES (?,?,?,?, 'ltr', 0, 0, ?, ?, ?)`
-  )
-  const insVerse = db.prepare(
-    'INSERT INTO verses (translation_id, book_id, chapter, verse, text) VALUES (?,?,?,?,?)'
-  )
-  const insFts = db.prepare(
-    'INSERT INTO verses_fts (text, translation_id, book_id, chapter, verse) VALUES (?,?,?,?,?)'
-  )
-
-  const insLayout = db.prepare(
-    'INSERT INTO verse_layout (translation_id, book_id, chapter, verse, marks) VALUES (?,?,?,?,?)'
-  )
-
-  const summary: { id: string; verses: number; chapters: number; books: number }[] = []
-
-  for (const t of TRANSLATIONS) {
-    process.stdout.write(`• ${t.id}: fetching…`)
-    const path = await downloadCached(`helloao_${t.helloaoId}.json`,
-      `https://bible.helloao.org/api/${t.helloaoId}/complete.json`)
-    const data = JSON.parse(readFileSync(path, 'utf8')) as Complete
-    insTrans.run(t.id, t.abbrev, t.name, 'eng', t.license, t.attribution, t.sortOrder)
-
-    let verseCount = 0
-    const chapterSet = new Set<string>()
-    db.exec('BEGIN')
-    for (const book of data.books) {
-      const meta = BOOK_BY_USFM[book.id]
-      if (!meta) continue // skip apocrypha / unknown books
-      for (const wrap of book.chapters) {
-        const ch = wrap.chapter
-        chapterSet.add(`${meta.id}:${ch.number}`)
-        for (const [verse, { text, layout }] of nativeChapter(ch.content)) {
-          if (layout.length) insLayout.run(t.id, meta.id, ch.number, verse, JSON.stringify(layout))
-          insVerse.run(t.id, meta.id, ch.number, verse, text)
-          insFts.run(text, t.id, meta.id, ch.number, verse)
-          verseCount++
-        }
-      }
-    }
-    db.exec('COMMIT')
-    summary.push({
-      id: t.id,
-      verses: verseCount,
-      chapters: chapterSet.size,
-      books: new Set([...chapterSet].map((k) => k.split(':')[0])).size
-    })
-    process.stdout.write(` ${verseCount} verses, ${chapterSet.size} chapters\n`)
-  }
-
-  process.stdout.write('• Julia Smith: loading bundled text…')
-  const jsVerses = readJuliaSmith()
-  insTrans.run(
-    'JuliaSmith',
-    'Smith',
-    'Julia Smith (1876)',
-    'eng',
-    'Public Domain',
-    'Julia E. Smith Parker Translation (1876). Public Domain. Text via studybible.info (Digital Bible Society).',
-    4
-  )
-  const jsChapters = new Set<string>()
-  db.exec('BEGIN')
-  for (const v of jsVerses) {
-    insVerse.run('JuliaSmith', v.book, v.chapter, v.verse, v.text)
-    insFts.run(v.text, 'JuliaSmith', v.book, v.chapter, v.verse)
-    jsChapters.add(`${v.book}:${v.chapter}`)
-  }
-  db.exec('COMMIT')
-  summary.push({
-    id: 'Smith',
-    verses: jsVerses.length,
-    chapters: jsChapters.size,
-    books: new Set([...jsChapters].map((k) => k.split(':')[0])).size
-  })
-  process.stdout.write(` ${jsVerses.length} verses, ${jsChapters.size} chapters\n`)
+  const summary = importEditionPacks(db)
 
   // Strong's lexicon
   process.stdout.write('• Strong’s lexicon: fetching…')
@@ -1570,73 +1028,6 @@ async function main(): Promise<void> {
   }
   process.stdout.write(` ${lexCount} entries\n`)
 
-  // KJV word-level Strong's tagging → verse_tokens
-  process.stdout.write('• KJV Strong’s tagging: fetching…')
-  // books.json: { "books": [ {"Genesis":"Gen"}, {"Exodus":"Exo"}, ... ] } (canonical order)
-  const booksMeta = await fetchJson<{ books: Record<string, string>[] }>(
-    `${KJV_STRONGS_BASE}/books.json`
-  )
-  const abbrevs = booksMeta.books.map((o) => Object.values(o)[0])
-  if (abbrevs.length !== 66) throw new Error(`kaiserlik books.json: expected 66, got ${abbrevs.length}`)
-
-  const insTok = db.prepare(
-    `INSERT OR REPLACE INTO verse_tokens (translation_id, book_id, chapter, verse, position, surface, trailer, strongs)
-     VALUES ('KJV', ?, ?, ?, ?, ?, ?, ?)`
-  )
-  let tokenCount = 0
-  db.exec('BEGIN')
-  for (let i = 0; i < abbrevs.length; i++) {
-    const ab = abbrevs[i]
-    const myBook = BOOKS[i] // canonical order alignment
-    // Some source files have unescaped quotes in non-English fields, so we
-    // extract only the leading "en" value per verse by regex (never JSON.parse the file).
-    const text = await (await fetch(`${KJV_STRONGS_BASE}/${ab}.json`)).text()
-    const verseRe = new RegExp(
-      `"${ab}\\|(\\d+)\\|(\\d+)"\\s*:\\s*\\{\\s*"en"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`,
-      'g'
-    )
-    let m: RegExpExecArray | null
-    while ((m = verseRe.exec(text)) !== null) {
-      const chapter = Number(m[1])
-      const verse = Number(m[2])
-      let en: string
-      try {
-        en = JSON.parse(`"${m[3]}"`) as string
-      } catch {
-        continue
-      }
-      const toks = parseKjvTokens(en)
-      toks.forEach((tk, pos) => {
-        insTok.run(myBook.id, chapter, verse, pos, tk.surface, tk.trailer, tk.strongs)
-        tokenCount++
-      })
-    }
-  }
-  db.exec('COMMIT')
-  db.prepare('UPDATE translations SET has_strongs = 1 WHERE id = ?').run('KJV')
-  // Report distinct stored rows (source has a few duplicated blocks that REPLACE, not add).
-  tokenCount = (
-    db.prepare("SELECT COUNT(*) n FROM verse_tokens WHERE translation_id='KJV'").get() as {
-      n: number
-    }
-  ).n
-  process.stdout.write(` ${tokenCount} tokens\n`)
-
-  // BSB word-level Strong's + original-language alignment → verse_tokens
-  process.stdout.write('• BSB interlinear tagging:')
-  const bsbTokens = await tagBsb(db)
-  process.stdout.write(` ${bsbTokens} tokens\n`)
-
-  // Re-tile both tagged translations onto their real verse text, so the reader can never show
-  // truncated Scripture or tagger markup. Runs before the divine-name backfill below, so words
-  // the taggers dropped are restored first and then get tagged like any other.
-  process.stdout.write('• reconciling tokens to verse text:')
-  for (const id of ['KJV', 'BSB']) {
-    const r = reconcileVerseTokens(db, id)
-    process.stdout.write(` ${id} ${r.repaired}/${r.verses} verses repaired`)
-  }
-  process.stdout.write('\n')
-
   const insEdition = db.prepare(
     'INSERT OR REPLACE INTO editions (id, name, language, testament, sort_order) VALUES (?,?,?,?,?)'
   )
@@ -1649,36 +1040,7 @@ async function main(): Promise<void> {
   const grcCount = await buildGreekEditions(db, frequencies)
   frequencies.finish()
   process.stdout.write(` ${grcCount}\n`)
-  // Verify each KJV link against its Hebrew/Aramaic or Greek witness and its own original tags.
-  process.stdout.write('• Verifying Berean source-word spans…')
-  buildSourceWordSpans(db, join(HERE, 'sources', 'bsb_tables.tsv'))
-  process.stdout.write(' done\n')
-
-  // Backfill divine-name tags the KJV Strong's source left blank. In the KJV OT, small-caps
-  // LORD/GOD conventionally render the Tetragrammaton (YHWH, and YHWH beside Adonai).
-  // Backfilled links are available for word study after the restoration evidence has been sealed.
-  const otBooks = "(SELECT id FROM books WHERE testament='OT')"
-  const fixLord = db
-    .prepare(
-      `UPDATE verse_tokens SET strongs='H3068' WHERE translation_id='KJV' AND surface='LORD' AND strongs IS NULL AND book_id IN ${otBooks}`
-    )
-    .run()
-  const fixGod = db
-    .prepare(
-      `UPDATE verse_tokens SET strongs='H3069' WHERE translation_id='KJV' AND surface='GOD' AND strongs IS NULL AND book_id IN ${otBooks}`
-    )
-    .run()
-  process.stdout.write(
-    `  divine-name backfill: LORD +${Number(fixLord.changes)}, GOD +${Number(fixGod.changes)}\n`
-  )
-
-  // Derived word tags for the translations with no scholarly tagging of their own.
-  process.stdout.write('• deriving word tags (inferred, kept apart from scholarship):')
-  const derived = buildDerivedTags(db)
-  process.stdout.write(
-    ' ' + derived.coverage.map((c) => `${c.id} ${c.pct}%`).join(' · ') +
-      `  |  ${derived.agreement}% agreement vs the KJV's own tagging\n`
-  )
+  finishEditionPacks(db)
 
   process.stdout.write('• Septuagint (Swete + Esdras B)…')
   const lxxCount = await buildSeptuagintEdition(db)
@@ -1732,7 +1094,7 @@ async function main(): Promise<void> {
   insMeta.run('schema_version', '1')
   insMeta.run(
     'sources',
-    'helloao Free Use Bible API; openscriptures/strongs (CC-BY-SA); kaiserlik/kjv (KJV+Strong’s); bereanbible.com bsb_tables (BSB interlinear, public domain); STEPBible TAHOT/TAGNT + lexicons TBESH/TBESG/TFLSJ (CC-BY); Septuagint: Swete via Open Greek and Latin / First1KGreek, nathans/lxx-swete (CC-BY-SA 4.0); Theographic Bible Metadata (people/places/events, CC-BY-SA 4.0); Natural Earth land (public domain); Treasury of Scripture Knowledge cross-references via OpenBible.info (CC-BY); hand-authored kingdoms overlay (this project, CC0); Greek grammar course authored for this project, readings rendered from the NA28 readings represented by STEPBible TAGNT (CC BY 4.0)'
+    'Pinned English edition repositories: helloao Free Use Bible API; eBible.org USFM; CrossWire KJV2003 and Maurice Robinson (New Testament); Julia E. Smith via StudyBible.info; openscriptures/strongs (CC-BY-SA); kaiserlik/kjv (KJV+Strong’s); bereanbible.com bsb_tables (BSB interlinear, public domain); STEPBible TAHOT/TAGNT + lexicons TBESH/TBESG/TFLSJ (CC-BY); Septuagint: Swete via Open Greek and Latin / First1KGreek, nathans/lxx-swete (CC-BY-SA 4.0); Theographic Bible Metadata (people/places/events, CC-BY-SA 4.0); Natural Earth land (public domain); Treasury of Scripture Knowledge cross-references via OpenBible.info (CC-BY); hand-authored kingdoms overlay (this project, CC0); Greek grammar course authored for this project, readings rendered from the NA28 readings represented by STEPBible TAGNT (CC BY 4.0)'
   )
 
   // ---- assertions --------------------------------------------------------
@@ -1765,10 +1127,10 @@ async function main(): Promise<void> {
   }
 
   for (const s of summary) {
-    if (s.id === 'Smith' && s.verses !== 31102) {
+    if (s.id === 'JuliaSmith' && s.verses !== 31102) {
       errors.push(`Julia Smith: expected 31,102 verses, found ${s.verses}`)
     }
-    const scope = TRANSLATIONS.find((x) => x.id === s.id)?.scope ?? 'full'
+    const scope = s.id === 'WYC' ? { books: 9, minVerses: 9000 } : s.id === 'TNT' ? 'nt' : 'full'
     if (typeof scope === 'object') {
       if (s.books !== scope.books) errors.push(`${s.id}: ${s.books} books (expected ${scope.books})`)
       if (s.verses < scope.minVerses) {
@@ -1880,16 +1242,6 @@ async function main(): Promise<void> {
     errors.push(`TNT John 3:16 should keep 1534 spelling: ${tntJohn?.text ?? '(missing)'}`)
   }
 
-  // Detect regressions in the internal KJV agreement metric.
-  if (derived.agreement < 90) {
-    errors.push(`derived word tags only ${derived.agreement}% agreement vs the KJV (expected >= 90%)`)
-  }
-  // A floor to catch a broken pivot (which would collapse every translation to ~0%), not a quality
-  // bar. Wycliffe's Middle English — "louede", "yaf", "bigetun" — genuinely sits around 29%, which
-  // is the honest low-water mark for this method; modern English lands at 52-71%.
-  for (const cov of derived.coverage) {
-    if (cov.pct < 20) errors.push(`${cov.id}: derived tags cover only ${cov.pct}% of words`)
-  }
   const derivedRows = (
     db.prepare('SELECT COUNT(*) n FROM derived_tags').get() as { n: number }
   ).n
@@ -1899,7 +1251,7 @@ async function main(): Promise<void> {
     db
       .prepare(
         `SELECT COUNT(*) n FROM derived_tags d
-          WHERE EXISTS (SELECT 1 FROM verse_tokens v WHERE v.translation_id = d.translation_id)`
+          WHERE d.translation_id IN ('BSB','KJV')`
       )
       .get() as { n: number }
   ).n

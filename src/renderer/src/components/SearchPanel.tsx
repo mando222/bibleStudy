@@ -86,6 +86,7 @@ export default function SearchPanel(): JSX.Element {
                   <div data-study-scripture="" dir="auto" className="text-sm text-ink leading-snug">
                     <Snippet text={h.snippet} markedGreekKey={h.markedGreekKey} />
                   </div>
+                  {h.tagEvidence && <div className="text-xs text-muted">{h.tagEvidence === 'mixed' ? 'Includes inferred links' : 'Inferred word link'}</div>}
                   {h.orderStatus && <div className="text-xs text-muted">{greekOrderNote[h.orderStatus]}</div>}
                 </button>
               </li>

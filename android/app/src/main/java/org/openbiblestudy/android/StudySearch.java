@@ -8,7 +8,6 @@ import org.json.JSONArray;
 
 import java.text.Normalizer;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
@@ -119,31 +118,61 @@ final class StudySearch {
     private static JSObject concordance(SQLiteConnection db, String edition, String id, String book, String testament,
             int limit, int offset) {
         boolean original = edition.equals("MT") || isGreekNt(edition);
-        if (!original && !edition.equals("BSB") && !edition.equals("KJV"))
-            return empty().put("notice", "This edition has no verified Strong’s word tags in the Android reader.");
+        boolean tagged = original || scalar(db, "SELECT 1 FROM verse_tokens WHERE translation_id=? LIMIT 1", edition) != null;
+        boolean inferred = !original && scalar(db, "SELECT 1 FROM derived_tags WHERE translation_id=? LIMIT 1", edition) != null;
+        if (!tagged && !inferred) return empty().put("notice", "This translation has no Strong’s word tags.");
+        boolean packs = !original && "1".equals(scalar(db, "SELECT value FROM meta WHERE key='edition_pack_version'"));
         String table = original ? "original_tokens" : "verse_tokens";
         String editionColumn = original ? "edition" : "translation_id";
-        List<Object> args = new ArrayList<>(Arrays.asList(edition, id));
-        String refs = "SELECT DISTINCT t." + editionColumn + " AS edition,t.book_id,t.chapter,t.verse FROM " + table + " t WHERE t." + editionColumn +
-                "=? AND t.strongs=?" + scope(args, book, testament);
+        List<Object> args = new ArrayList<>();
+        List<String> queries = new ArrayList<>();
+        if (tagged) {
+            args.add(edition); args.add(id);
+            queries.add("SELECT DISTINCT t." + editionColumn + " AS edition,t.book_id,t.chapter,t.verse,0 AS inferred FROM " + table +
+                " t WHERE t." + editionColumn + "=? AND t.strongs=?" + scope(args, book, testament));
+        }
+        if (inferred) {
+            args.add(edition); args.add("% " + id + " %");
+            queries.add("SELECT t.translation_id AS edition,t.book_id,t.chapter,t.verse,1 AS inferred FROM derived_tags t " +
+                "WHERE t.translation_id=? AND ' ' || t.strongs || ' ' LIKE ?" + scope(args, book, testament) +
+                (tagged ? " AND NOT EXISTS (SELECT 1 FROM verse_tokens v WHERE v.translation_id=t.translation_id AND " +
+                    "v.book_id=t.book_id AND v.chapter=t.chapter AND v.verse=t.verse)" : ""));
+        }
+        String refs = TextUtils.join(" UNION ALL ", queries);
         int total = Integer.parseInt(scalar(db, "SELECT count(*) FROM (" + refs + ")", args.toArray()));
         args.add(limit); args.add(offset);
         String statusField = isGreekNt(edition) ? "," + orderStatus(db, "r.edition", "r") + " AS orderStatus" : "";
-        List<JSObject> hits = rows(db, "SELECT r.book_id AS book,b.name AS bookName,r.chapter,r.verse" + statusField + " FROM (" + refs +
+        List<JSObject> hits = rows(db, "SELECT r.book_id AS book,b.name AS bookName,r.chapter,r.verse,r.inferred" + statusField + " FROM (" + refs +
             ") r JOIN books b ON b.id=r.book_id ORDER BY b.sort_order,r.chapter,r.verse LIMIT ? OFFSET ?", args.toArray());
         for (JSObject hit : hits) {
-            List<JSObject> words = rows(db, "SELECT " + (original ? "original AS surface" : "surface,trailer") +
-                ",strongs FROM " + table + " WHERE " + editionColumn + "=? AND book_id=? AND chapter=? AND verse=? ORDER BY position",
-                edition, hit.getString("book"), hit.getInteger("chapter"), hit.getInteger("verse"));
+            Object[] address = {edition, hit.getString("book"), hit.getInteger("chapter"), hit.getInteger("verse")};
+            List<JSObject> words;
+            if (hit.getInteger("inferred") == 1) {
+                JSObject data = rows(db, "SELECT text,strongs FROM verses JOIN derived_tags USING(translation_id,book_id,chapter,verse) " +
+                    "WHERE translation_id=? AND book_id=? AND chapter=? AND verse=?", address).get(0);
+                words = StudyLibrary.derivedTokens(data.getString("text"), data.getString("strongs"));
+            } else {
+                String tagEvidence = packs ? " LEFT JOIN edition_token_evidence USING(translation_id,book_id,chapter,verse,position)" : "";
+                words = rows(db, "SELECT " + (original ? "original AS surface" : "surface,trailer") +
+                    ",strongs" + (packs ? ",kind" : "") + " FROM " + table + tagEvidence + " WHERE " + editionColumn +
+                    "=? AND book_id=? AND chapter=? AND verse=? ORDER BY position", address);
+            }
+            hit.remove("inferred");
+            int inferredMatches = 0, matches = 0;
             StringBuilder snippet = new StringBuilder();
             for (int i = 0; i < words.size(); i++) {
                 JSObject word = words.get(i);
                 String surface = word.getString("surface");
                 if (edition.equals("MT")) surface = surface.replace("\\", "");
-                if (id.equals(word.getString("strongs"))) snippet.append("{{").append(surface).append("}}");
+                if (id.equals(word.getString("strongs"))) {
+                    matches++;
+                    if (word.optBoolean("derived") || "inferred".equals(word.getString("kind"))) inferredMatches++;
+                    snippet.append("{{").append(surface).append("}}");
+                }
                 else snippet.append(surface);
                 snippet.append(word.getString("trailer", i + 1 < words.size() ? " " : ""));
             }
+            if (inferredMatches > 0) hit.put("tagEvidence", inferredMatches == matches ? "inferred" : "mixed");
             hit.put("translation", edition).put("snippet", snippet.toString());
             if (isGreekNt(edition)) hit.put("edition", edition);
         }

@@ -16,6 +16,23 @@ Group changes under: **Added** (new features), **Changed** (changes to existing 
 
 _Nothing yet._
 
+## [0.6.0] - 2026-11-16
+
+### Added
+
+- Each of the nine bundled English editions has a public data repository. You can inspect a book’s text, formatting, word links, sources, and coverage at the exact revision used by the app.
+- Word study can use an edition’s own published Strong’s tags and independently corroborated original-language occurrences. In the World English Bible, John 11:35 links “wept” to its Greek form. The word tip and copying preserve WEB’s printed wording. The same verse has independently supported links in ASV and KJV.
+- KJV gains 62,112 checked Greek occurrence links from CrossWire’s word alignment, including the two different forms of “sin” in 1 John 2:1. WEB and ASV gain more than 100,000 dictionary lookups between them.
+
+### Changed
+
+- Word evidence is resolved for each occurrence. An edition can have a verified link in one verse and an inferred dictionary lookup in the next. The evidence panel identifies the source, and translation comparisons use links to a specific original occurrence.
+- Desktop and Android installers now share one checksum-verified offline library. Existing edition IDs and verse addresses carry notes, bookmarks, highlights, and reading positions into the update.
+
+### Fixed
+
+- The WEB and ASV distributor files tag both “God” and “earth” in Genesis 1:1 with the entry for “heavens.” The app excludes those tags and records the conflicts in each edition’s data.
+
 ## [0.5.0] - 2026-11-14
 
 ### Added

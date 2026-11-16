@@ -51,6 +51,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -60,9 +62,50 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
-  build:
+  corpus:
     needs: [check, test]
     if: needs.check.outputs.is_new == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      sha256: ${{ steps.digest.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build the shared offline database from pinned editions
+        run: npm run db:build
+      - name: Verify the edition migration against the published v0.5.0 database
+        if: needs.check.outputs.version == '0.6.0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apk=Open-Bible-Study-Android-0.5.0.apk
+          gh release download v0.5.0 --pattern "$apk" --dir "$RUNNER_TEMP"
+          echo "0bbdcc8288040a37b9573f55cdb9c86d6376a90bc94c585b4e231f4c43e748a9  $RUNNER_TEMP/$apk" | sha256sum -c -
+          unzip -p "$RUNNER_TEMP/$apk" assets/library/bible.pack | gzip -dc > "$RUNNER_TEMP/v0.5.0.sqlite"
+          node --experimental-sqlite --import tsx data-pipeline/editionPacks.ts parity "$RUNNER_TEMP/v0.5.0.sqlite" resources/bible.sqlite
+      - name: Check release data and reader behavior
+        run: npm run test:release-db
+      - id: digest
+        name: Record corpus SHA-256
+        run: |
+          hash=$(sha256sum resources/bible.sqlite | cut -d' ' -f1)
+          echo "sha256=$hash" >> "$GITHUB_OUTPUT"
+          echo "Offline corpus SHA-256: \`$hash\`" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: offline-corpus
+          path: resources/bible.sqlite
+          if-no-files-found: error
+          retention-days: 2
+
+  build:
+    needs: [corpus]
     strategy:
       fail-fast: false
       matrix:
@@ -79,14 +122,26 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Build the Bible database (pipeline assertions gate the data)
-        run: npm run db:build
-      - name: DB integrity test
-        run: npm run test:release-db
+      - uses: actions/download-artifact@v4
+        with:
+          name: offline-corpus
+          path: resources
       - name: Package the app
         run: npx electron-vite build && npx electron-builder --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify the packaged desktop database against the shared build
+        shell: bash
+        env:
+          CORPUS_SHA256: ${{ needs.corpus.outputs.sha256 }}
+        run: |
+          case "$RUNNER_OS" in
+            macOS) db='dist/mac-arm64/Open Bible Study.app/Contents/Resources/bible.sqlite' ;;
+            Windows) db='dist/win-unpacked/resources/bible.sqlite' ;;
+            Linux) db='dist/linux-unpacked/resources/bible.sqlite' ;;
+          esac
+          node build/check-corpus.mjs "$db"
+          node build/check-corpus.mjs resources/bible.sqlite
       - name: Smoke-test the packaged app (boots, opens DB, loads native deps)
         shell: bash
         run: |
@@ -134,6 +189,11 @@ jobs:
             exit 1
           fi
           bash build/android-release.sh
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            apk=(dist/android-release/*.apk)
+            "$ANDROID_HOME/build-tools/36.1.0/apksigner" verify --print-certs "${apk[0]}" > "$RUNNER_TEMP/apk-certificate.txt"
+            grep -Fx 'Signer #1 certificate SHA-256 digest: 6545af4303ce1f742d84af731994b7d1244f96ddfab849d6f508192d6ca536d4' "$RUNNER_TEMP/apk-certificate.txt"
+          fi
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
@@ -148,7 +208,7 @@ jobs:
 
   # Publish the Release only after every platform built + passed its smoke test.
   release:
-    needs: [check, build]
+    needs: [check, corpus, build]
     if: github.event_name == 'push' && needs.check.outputs.is_new == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -156,8 +216,22 @@ jobs:
       - name: Download all installers
         uses: actions/download-artifact@v4
         with:
+          pattern: installers-*
           path: installers
+      - name: Check all expected installers
+        shell: bash
+        run: |
+          shopt -s globstar nullglob
+          for ext in dmg exe AppImage deb apk; do
+            files=(installers/**/*."$ext")
+            if (( ${#files[@]} != 1 )); then
+              echo "::error::Expected one .$ext installer, found ${#files[@]}"
+              exit 1
+            fi
+          done
       - name: Build release notes from CHANGELOG.md
+        env:
+          CORPUS_SHA256: ${{ needs.corpus.outputs.sha256 }}
         shell: bash
         run: |
           VERSION="${{ needs.check.outputs.version }}"
@@ -167,6 +241,8 @@ jobs:
             /^## \[/ { f=0 }
             f { print }
           ' CHANGELOG.md > RELEASE_BODY.md
+          echo >> RELEASE_BODY.md
+          printf 'Bundled offline database SHA-256 `%s`\n' "$CORPUS_SHA256" >> RELEASE_BODY.md
           cat >> RELEASE_BODY.md <<'EOF'
 
           ### Download

@@ -10,7 +10,7 @@ import { foldLatinHomoglyphs } from '../../shared/originalText'
 import { sweteReadingIssue } from '../../shared/lxxIntegrity'
 import { lexiconId, lexiconLanguage } from '../../shared/lexiconId'
 import { splitVerseUnits, unpackTags } from '../../shared/verseUnits'
-import { SOURCE_WORD_ALIGNMENT_VERSION } from '../../shared/sourceWords'
+import { SOURCE_WORD_ALIGNMENT_VERSION, validSourceWitness } from '../../shared/sourceWords'
 import { countSourceSpans, publisherForm } from './sourceWordCoverage'
 import type {
   Translation,
@@ -20,6 +20,7 @@ import type {
   Verse,
   VerseToken,
   SourceWord,
+  SourceWitness,
   SourceWordCoverage,
   StrongsEntry,
   SearchQuery,
@@ -41,6 +42,8 @@ import type {
 
 let db: DatabaseSync | null = null
 let hasVerifiedSourceWords = false
+let hasEditionPacks = false
+let hasCorrespondences = false
 let hasSourceSingletons = false
 let hasInterlinearRows = false
 let hasSourceCoverage = false
@@ -61,9 +64,12 @@ export function openBibleDb(): boolean {
   hasGreekOrderReview = hasTable('greek_order_uncertainties')
   hasVerifiedSourceWords = hasTable('source_word_spans') && hasTable('meta') &&
     db.prepare("SELECT value FROM meta WHERE key = 'source_word_alignment_version'").get()?.value === SOURCE_WORD_ALIGNMENT_VERSION
+  hasEditionPacks = hasTable('edition_occurrences') && hasTable('edition_token_evidence') && hasTable('meta') &&
+    db.prepare("SELECT value FROM meta WHERE key='edition_pack_version'").get()?.value === '1'
+  hasCorrespondences = hasEditionPacks && hasTable('edition_correspondences')
   hasSourceSingletons = hasVerifiedSourceWords && hasTable('source_word_singletons')
   hasInterlinearRows = hasVerifiedSourceWords && hasTable('interlinear_source_rows')
-  hasSourceCoverage = hasVerifiedSourceWords && hasTable('source_word_coverage')
+  hasSourceCoverage = (hasVerifiedSourceWords || hasEditionPacks) && hasTable('source_word_coverage')
   return true
 }
 
@@ -86,7 +92,7 @@ export function bibleDb(): DatabaseSync | null {
 
 export function getSourceWordCoverage(input: string): SourceWordCoverage[] {
   const id = typeof input === 'string' ? lexiconId(input) : ''
-  if (!/^[GH][1-9]\d*$/.test(id) || !isReady() || !hasVerifiedSourceWords) return []
+  if (!/^[GH][1-9]\d*$/.test(id) || !isReady() || (!hasVerifiedSourceWords && !hasEditionPacks)) return []
   const d = required()
   if (hasSourceCoverage) {
     return d.prepare(`SELECT translation_id AS translation, occurrences FROM source_word_coverage
@@ -147,8 +153,9 @@ export function getChapter(ref: ChapterRef): ChapterContent {
 
   // Translations with no scholarly tagging get inferred tags instead (see derived_tags in
   // schema.sql), materialised into the same token shape and marked `derived`.
-  if (tokensByVerse.size === 0) {
-    for (const [verse, toks] of derivedTokens(ref.translation, ref.book, ref.chapter, verseRows)) {
+  const missing = verseRows.filter(v => !tokensByVerse.has(v.verse))
+  if (missing.length) {
+    for (const [verse, toks] of derivedTokens(ref.translation, ref.book, ref.chapter, missing)) {
       tokensByVerse.set(verse, toks)
     }
   }
@@ -177,15 +184,14 @@ export function getChapter(ref: ChapterRef): ChapterContent {
   }
 }
 
-/** Look up a comparison using this edition's native address. Only the two aligned
- * translations need token evidence. All other editions return just their printed text. */
+/** Compare the native verse and any verified occurrence links this edition supplies. */
 export function getComparisonVerse(ref: VerseRef): Verse | null {
   if (!Number.isSafeInteger(ref.verse) || ref.verse < 1) return null
   const row = required().prepare(
     'SELECT text FROM verses WHERE translation_id = ? AND book_id = ? AND chapter = ? AND verse = ?'
   ).get(ref.translation, ref.book, ref.chapter, ref.verse)
   if (!row) return null
-  const withEvidence = hasVerifiedSourceWords && (ref.translation === 'KJV' || ref.translation === 'BSB')
+  const withEvidence = hasEditionPacks || (hasVerifiedSourceWords && (ref.translation === 'KJV' || ref.translation === 'BSB'))
   const tokens = withEvidence ? taggedTokens(ref, ref.verse).get(ref.verse) : null
   return { verse: ref.verse, text: String(row.text), tokens: tokens ?? null }
 }
@@ -198,7 +204,10 @@ function taggedTokens(ref: ChapterRef, verseNumber?: number): Map<number, VerseT
   const tokenRows = d
     .prepare(
       `SELECT verse, position, surface, trailer, strongs, lemma, translit, morph, gloss
-       FROM verse_tokens WHERE translation_id = ? AND book_id = ? AND chapter = ?
+         ${hasEditionPacks ? ', e.kind, e.citation' : ''}
+       FROM verse_tokens ${hasEditionPacks
+         ? 'LEFT JOIN edition_token_evidence e USING(translation_id,book_id,chapter,verse,position)' : ''}
+       WHERE translation_id = ? AND book_id = ? AND chapter = ?
        ${verseNumber === undefined ? '' : 'AND verse = ?'} ORDER BY verse, position`
     )
     .all(...params) as Record<string, unknown>[]
@@ -208,6 +217,8 @@ function taggedTokens(ref: ChapterRef, verseNumber?: number): Map<number, VerseT
     const v = t.verse as number
     if (!tokensByVerse.has(v)) tokensByVerse.set(v, [])
     tokensByVerse.get(v)!.push({
+      ...(t.kind === 'inferred' ? { derived: true } : {}),
+      ...(typeof t.citation === 'string' ? { tagCitation: t.citation } : {}),
       position: t.position as number,
       surface: t.surface as string,
       trailer: (t.trailer as string) ?? ' ',
@@ -219,8 +230,9 @@ function taggedTokens(ref: ChapterRef, verseNumber?: number): Map<number, VerseT
     })
   }
 
-  if (hasVerifiedSourceWords && tokenRows.length && (ref.translation === 'KJV' || ref.translation === 'BSB')) {
-    const spans = d.prepare(`SELECT s.verse, s.start_position, s.end_position, s.source_row, s.language,
+  if (tokenRows.length && (hasEditionPacks || (hasVerifiedSourceWords && ['BSB', 'KJV'].includes(ref.translation)))) {
+    const spans = d.prepare(hasEditionPacks ? `SELECT *, form AS text FROM edition_occurrences s
+      WHERE translation_id=? AND book_id=? AND chapter=? ${verseNumber === undefined ? '' : 'AND verse=?'}` : `SELECT s.verse, s.start_position, s.end_position, s.source_row, s.language,
         b.lemma AS text, b.translit, b.strongs, b.morph,
         ${hasSourceSingletons ? 'cert.source_row IS NOT NULL' : '0'} AS standalone
       FROM source_word_spans s JOIN verse_tokens b ON b.translation_id='BSB'
@@ -236,20 +248,44 @@ function taggedTokens(ref: ChapterRef, verseNumber?: number): Map<number, VerseT
       const tokens = tokensByVerse.get(verse)
       const token = tokens?.[endPosition]
       if (!tokens || !token || token.position !== endPosition || !token.strongs || token.strongs !== span.strongs ||
-          typeof span.text !== 'string' || typeof span.translit !== 'string' || !span.translit.trim()) continue
+          token.derived || typeof span.text !== 'string' || (!hasEditionPacks && !String(span.translit ?? '').trim())) continue
       const startPosition = Number(span.start_position)
       if (!Number.isInteger(startPosition) || startPosition < 0 || startPosition > endPosition) continue
       const english = tokens.slice(startPosition, endPosition).map(t => t.surface + t.trailer).join('') + token.surface
       const language = span.language as SourceWord['language']
       const text = publisherForm(span.text, language)
-      if (!text) continue
-      token.sourceWord = {
-        edition: 'BSB', language, rowId: String(span.source_row),
+      if (!text || (hasEditionPacks && span.english !== english) ||
+          tokens.slice(startPosition, endPosition).some(t => t.strongs || t.derived || t.sourceWord)) continue
+      const source: SourceWord = {
+        ...(hasEditionPacks ? {
+          translation: ref.translation, sourceRevision: String(span.source_revision ?? ''),
+          citation: String(span.citation ?? ''), uniqueForm: span.unique_form === 1, preservePreset: span.preserve_preset === 1,
+          sourceRef: { book: String(span.source_book ?? ''), chapter: Number(span.source_chapter), verse: Number(span.source_verse),
+            ...(span.source_position == null ? {} : { position: Number(span.source_position) }) }
+        } : {}),
+        edition: hasEditionPacks ? String(span.source_edition ?? '') : 'BSB', language, rowId: String(span.source_row ?? ''),
         book: ref.book, chapter: ref.chapter, verse, startPosition, endPosition,
         english, text, strongs: token.strongs, morph: String(span.morph ?? ''),
-        translit: span.translit, evidence: ref.translation === 'BSB' ? 'aligned' : 'corroborated',
+        translit: String(span.translit ?? ''), evidence: hasEditionPacks ? span.evidence as SourceWord['evidence']
+          : ref.translation === 'BSB' ? 'aligned' : 'corroborated',
         canReplaceAlone: span.standalone === 1
       }
+      if (validSourceWitness(source, ref.translation)) token.sourceWord = source
+    }
+  }
+  if (hasCorrespondences && tokenRows.length) {
+    const links = d.prepare(`SELECT verse, end_position, source_edition, source_revision, source_book, source_chapter,
+        source_verse, source_row, source_position, citation FROM edition_correspondences
+      WHERE translation_id=? AND book_id=? AND chapter=? ${verseNumber === undefined ? '' : 'AND verse=?'}`).all(...params)
+    for (const r of links) {
+      const word = tokensByVerse.get(Number(r.verse))?.[Number(r.end_position)]?.sourceWord
+      if (!word) continue
+      const link: SourceWitness = { edition: String(r.source_edition), rowId: String(r.source_row),
+        sourceRevision: String(r.source_revision), citation: String(r.citation),
+        sourceRef: { book: String(r.source_book), chapter: Number(r.source_chapter), verse: Number(r.source_verse),
+          ...(r.source_position == null ? {} : { position: Number(r.source_position) }) } }
+      if (word.correspondences) word.correspondences.push(link)
+      else word.correspondences = [link]
     }
   }
   return tokensByVerse
@@ -585,21 +621,32 @@ export function getConcordance(strongs: string, opts: ConcordanceOptions = {}): 
   // from other editions. They cannot identify occurrences in Swete's own concordance.
   const original = requested === 'MT' || greekNtEditions.has(requested)
   const tagged = !original && hasRealTagging(requested)
-  const inferred = !original && !tagged && hasTable('derived_tags') &&
+  const inferred = !original && hasTable('derived_tags') &&
     !!d.prepare('SELECT 1 FROM derived_tags WHERE translation_id = ? LIMIT 1').get(requested)
   // The lexicon labels its KJV fallback for translations without word tagging.
   const translation = original || inferred || tagged ? requested : 'KJV'
   const books = scopedBooks(opts)
-  const result: ConcordanceResponse = { translation, derived: inferred, total: 0, hits: [] }
+  const result: ConcordanceResponse = { translation, derived: inferred && !tagged, total: 0, hits: [] }
   if (books?.length === 0) return result
 
-  const source = inferred ? 'derived_tags' : original ? 'original_tokens' : 'verse_tokens'
+  const includeNative = original || tagged || !inferred
+  const source = original ? 'original_tokens' : 'verse_tokens'
   const editionColumn = original ? 'edition' : 'translation_id'
-  const match = inferred ? "' ' || t.strongs || ' ' LIKE ?" : 't.strongs = ?'
-  const params = [translation, inferred ? `% ${sid} %` : sid, ...(books ?? [])]
   const scope = books ? ` AND t.book_id IN (${books.map(() => '?').join(',')})` : ''
-  const refs = `SELECT DISTINCT t.${editionColumn} AS edition, t.book_id, t.chapter, t.verse FROM ${source} t
-    WHERE t.${editionColumn} = ? AND ${match}${scope}`
+  const queries: string[] = []
+  const params: string[] = []
+  if (includeNative) {
+    queries.push(`SELECT DISTINCT t.${editionColumn} AS edition, t.book_id, t.chapter, t.verse, 0 AS inferred
+      FROM ${source} t WHERE t.${editionColumn}=? AND t.strongs=?${scope}`)
+    params.push(translation, sid, ...(books ?? []))
+  }
+  if (inferred) {
+    queries.push(`SELECT t.translation_id AS edition, t.book_id, t.chapter, t.verse, 1 AS inferred FROM derived_tags t
+      WHERE t.translation_id=? AND ' ' || t.strongs || ' ' LIKE ?${scope}
+      ${tagged ? 'AND NOT EXISTS (SELECT 1 FROM verse_tokens v WHERE v.translation_id=t.translation_id AND v.book_id=t.book_id AND v.chapter=t.chapter AND v.verse=t.verse)' : ''}`)
+    params.push(translation, `% ${sid} %`, ...(books ?? []))
+  }
+  const refs = queries.join(' UNION ALL ')
   result.total = Number(d.prepare(`SELECT COUNT(*) AS n FROM (${refs})`).get(...params)?.n)
   const orderStatus = greekNtEditions.has(translation) ? greekOrderStatusSql(d, 'r') : 'NULL'
   const page = d.prepare(`SELECT r.*, b.name, ${orderStatus} AS orderStatus FROM (${refs}) r JOIN books b ON b.id=r.book_id
@@ -608,19 +655,23 @@ export function getConcordance(strongs: string, opts: ConcordanceOptions = {}): 
   if (!page.length) return result
   // Rehydrate only the requested page, in one round trip. The ordinal keeps repeated IDs in
   // different verses apart without relying on a translation's own verse numbering or text.
-  const pageJson = JSON.stringify(page.map(ref => [ref.book_id, ref.chapter, ref.verse]))
-  const selected = `FROM json_each(?) selection CROSS JOIN ${source} t ON t.${editionColumn}=?
+  const pageJson = JSON.stringify(page.map(ref => [ref.book_id, ref.chapter, ref.verse, ref.inferred]))
+  const selected = (packed: boolean) => `FROM json_each(?) selection CROSS JOIN ${packed ? 'derived_tags' : source} t ON t.${editionColumn}=?
+    AND json_extract(selection.value,'$[3]')=${packed ? 1 : 0}
     AND t.book_id=json_extract(selection.value,'$[0]') AND t.chapter=json_extract(selection.value,'$[1]')
     AND t.verse=json_extract(selection.value,'$[2]')`
-  type Token = { surface: string; trailer?: string; strongs: string | null }
+  type Token = { surface: string; trailer?: string; strongs: string | null; derived?: boolean | number }
   const grouped = new Map<number, Token[]>()
   if (inferred) {
-    const rows = d.prepare(`SELECT selection.key ord, v.text, t.strongs ${selected}
+    const rows = d.prepare(`SELECT selection.key ord, v.text, t.strongs ${selected(true)}
       JOIN verses v USING(translation_id,book_id,chapter,verse) ORDER BY selection.key`).all(pageJson, translation)
     for (const row of rows) grouped.set(Number(row.ord), decodeDerivedTokens(String(row.text), String(row.strongs)))
-  } else {
+  }
+  if (includeNative) {
+    const tagEvidence = !original && hasEditionPacks
     const fields = original ? 't.original AS surface, t.strongs' : 't.surface, t.trailer, t.strongs'
-    const rows = d.prepare(`SELECT selection.key ord, ${fields} ${selected}
+    const rows = d.prepare(`SELECT selection.key ord, ${fields} ${tagEvidence ? ", e.kind = 'inferred' AS derived" : ''} ${selected(false)}
+      ${tagEvidence ? 'LEFT JOIN edition_token_evidence e USING(translation_id,book_id,chapter,verse,position)' : ''}
       ORDER BY selection.key, t.position`).all(pageJson, translation) as (Token & { ord: number })[]
     for (const token of rows) {
       // TAHOT uses a backslash to introduce punctuation. Preserve the punctuation in the snippet.
@@ -637,7 +688,10 @@ export function getConcordance(strongs: string, opts: ConcordanceOptions = {}): 
     const snippet = tokens.map((t, i) =>
       (t.strongs === sid ? `{{${t.surface}}}` : t.surface) + (t.trailer ?? (i + 1 < tokens.length ? ' ' : ''))
     ).join('')
-    result.hits.push({ book: String(ref.book_id), bookName: String(ref.name),
+    const matches = tokens.filter(t => t.strongs === sid)
+    const inferredCount = matches.filter(t => t.derived).length
+    result.hits.push({ ...(inferredCount ? {tagEvidence: inferredCount === matches.length ? 'inferred' : 'mixed'} as const : {}),
+      book: String(ref.book_id), bookName: String(ref.name),
       chapter: Number(ref.chapter), verse: Number(ref.verse), snippet,
       ...(ref.orderStatus === 'unverified' || ref.orderStatus === 'unknown' ? { orderStatus: ref.orderStatus } : {}),
       surface: tokens.find(t => t.strongs === sid)?.surface ?? '' })
@@ -733,7 +787,7 @@ export function getInterlinear(
   const rowQuery = hasInterlinearRows && translations.length
     ? d.prepare('SELECT verse, source_row FROM interlinear_source_rows WHERE book_id=? AND chapter=?') : null
   const chapterRows = new Map<string, Set<string>>()
-  if (rowQuery) for (const [verse, tokens] of byVerse) {
+  if (rowQuery || hasEditionPacks) for (const [verse, tokens] of byVerse) {
     const forms = new Map<string, VerseToken | null>()
     for (const t of tokens) {
       const form = interlinearForm(t.lemma, masoretic)
@@ -768,18 +822,24 @@ export function getInterlinear(
       let aligned = 0
       let covered = 0
       const originals = uniqueWords.get(verse)
-      if (rowQuery && originals && (tid === 'BSB' || tid === 'KJV')) {
+      if (originals) {
         let reviewed = chapterRows.get(key)
-        if (!reviewed) {
+        if (!hasEditionPacks && rowQuery && !reviewed) {
           reviewed = new Set(rowQuery.all(target.book, target.chapter).map(r => r.verse + '/' + r.source_row))
           chapterRows.set(key, reviewed)
         }
         for (const t of text.tokens ?? []) {
           const span = t.sourceWord
-          if (!span || !reviewed.has(target.verse + '/' + span.rowId)) continue
+          if (!span) continue
           const form = interlinearForm(span.text, masoretic)
-          const tok = form && originals.get(form)
-          if (!tok || tok.strongs !== span.strongs) continue
+          if (!form) continue
+          const ref = span.sourceRef
+          const direct = span.edition === edition && ref?.book === book && ref.chapter === chapter && ref.verse === verse
+          const reviewedBerean = span.edition === 'BSB' &&
+            (hasEditionPacks ? span.uniqueForm : reviewed?.has(target.verse + '/' + span.rowId))
+          const tok = direct && ref?.position !== undefined ? tokens.find(t => t.position === ref.position)
+            : reviewedBerean ? originals.get(form) : undefined
+          if (!tok || tok.strongs !== span.strongs || interlinearForm(tok.lemma, masoretic) !== form || tok.aligned?.[tid]) continue
           tok.aligned = { ...tok.aligned, [tid]: span.english }
           aligned++
           covered += span.endPosition - span.startPosition + 1

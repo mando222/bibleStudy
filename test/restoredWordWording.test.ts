@@ -4,11 +4,12 @@ import { createRequire } from 'node:module'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { getChapter, listTranslations } from '../src/main/db/bible'
+import { bibleDb, getChapter, getComparisonVerse, listTranslations } from '../src/main/db/bible'
 import { WordComparisonProvider } from '../src/renderer/src/components/RestoredWordComparison'
 import VerseView from '../src/renderer/src/components/VerseView'
 import { publishedSelection } from '../src/renderer/src/lib/scriptureSelection'
 import { useAppStore } from '../src/renderer/src/store/useAppStore'
+import { sourceAnchorId } from '../src/shared/sourceWords'
 import type { VerseRef } from '../src/shared/types'
 
 vi.mock('node:sqlite', () => {
@@ -95,6 +96,35 @@ describe.skipIf(!existsSync('resources/bible.sqlite'))('published wording in res
     expect(second.word.textContent).toBe('ἁμάρτῃ')
     expect(second.wording).toBe('does sin')
   })
+
+  it.skipIf(bibleDb()?.prepare("SELECT value FROM meta WHERE key='edition_pack_version'").get()?.value !== '1')(
+    'previews the WEB rendering, cites its own source link, and copies the printed verse', async () => {
+      const ref = { translation: 'WEB', book: 'John', chapter: 11, verse: 35 }
+      const text = await renderVerse(ref, ['G1145'])
+      const occurrence = getChapter(ref).verses.find(v => v.verse === 35)?.tokens?.find(t => t.strongs === 'G1145')?.sourceWord
+      expect(occurrence?.citation).toBeTruthy()
+      const { word, wording, edition } = await openWord(sourceAnchorId(occurrence!))
+      expect(word.textContent).toBe(occurrence!.text)
+      expect(wording).toBe('wept')
+      expect(edition).toBe('WEB')
+      const dialog = document.querySelector('[role="dialog"]')!
+      expect(dialog.querySelector('details')?.textContent).toContain(occurrence!.citation)
+      const previousApi = window.api
+      try {
+        window.api = { ...previousApi, getComparisonVerse: async ref => getComparisonVerse(ref) }
+        const compare = [...dialog.querySelectorAll('button')].find(b => b.textContent === 'Compare translations')!
+        await act(async () => compare.click())
+        for (const edition of ['BSB', 'ASV']) {
+          const description = [...dialog.querySelectorAll('dt')].find(e => e.textContent === edition)?.nextElementSibling
+          expect(description?.textContent).toMatch(/Verified wording|Aligned phrase/)
+          expect(description?.querySelector('p')?.textContent).toBe('wept')
+        }
+      } finally { window.api = previousApi }
+
+      const range = document.createRange()
+      range.selectNodeContents(host)
+      expect(publishedSelection(host, range)?.text).toBe(text)
+    })
 
   it('previews the printed verb at an Aramaic source occurrence', async () => {
     await renderVerse({ translation: 'BSB', book: 'Dan', chapter: 2, verse: 22 }, ['H1541'])

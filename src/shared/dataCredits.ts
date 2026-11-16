@@ -26,6 +26,8 @@ export const ORIGINALS: Source[] = [
   { what: 'Septuagint (Greek OT)', detail: 'Swete — via Open Greek and Latin / First1KGreek', license: 'CC BY-SA 4.0 — nathans/lxx-swete', url: 'https://github.com/nathans/lxx-swete' },
   { what: "Strong's Greek & Hebrew lexicons", detail: 'Strong (1890/1894), JSON', license: 'CC BY-SA — OpenScriptures', url: 'https://github.com/openscriptures/strongs' },
   { what: 'Lexicons: BDB · Abbott-Smith · LSJ', detail: 'TBESH / TBESG / TFLSJ, keyed to Strong’s', license: 'CC BY 4.0 — STEPBible / Tyndale House', url: 'https://github.com/STEPBible/STEPBible-Data' },
+  { what: 'WEB and ASV word tags', detail: 'eBible.org USFM editions · per-word Strong’s tags', license: 'Public Domain', url: 'https://ebible.org/Scriptures/' },
+  { what: 'KJV 2003 word alignment', detail: 'CrossWire Bible Society, Bible Foundation, and Maurice Robinson · KJV with Strong’s and morphology', license: 'CrossWire general public license for use for any purpose', url: 'https://www.crosswire.org/sword/modules/ModInfo.jsp?modName=KJV' },
   { what: "KJV Strong's word tagging", detail: 'kaiserlik/kjv', license: 'Open', url: 'https://github.com/kaiserlik/kjv' },
   { what: 'Verse-text distribution', detail: 'helloao Free Use Bible API', license: 'Open', url: 'https://bible.helloao.org' }
 ]
@@ -34,8 +36,8 @@ export const DERIVED: Source[] = [
   {
     what: 'Inferred word mappings',
     detail:
-      'Translations without scholarly tagging (ASV, WEB, YLT, Smith, Tyndale, Geneva, Wycliffe) get word→Strong’s links inferred from the Berean alignment and are marked as inferred in the reader',
-    license: 'Computed at build time by this project',
+      'Edition-specific English lookup candidates use the Berean alignment, KJV lexical evidence, and mapped verse references. The reader identifies inferred links.',
+    license: 'Derived data · Open Bible Study',
     url: 'https://berean.bible'
   }
 ]

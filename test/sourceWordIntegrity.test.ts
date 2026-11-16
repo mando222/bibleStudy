@@ -1,4 +1,5 @@
 import { createReadStream, existsSync } from 'node:fs'
+import { createGunzip } from 'node:zlib'
 import { createRequire } from 'node:module'
 import { createInterface } from 'node:readline'
 import { describe, expect, it, vi } from 'vitest'
@@ -10,7 +11,7 @@ import type { ChapterRef, SourceWord, Verse } from '../src/shared/types'
 vi.mock('node:sqlite', () => createRequire(import.meta.url)('node:sqlite'))
 vi.mock('electron', () => ({ app: { getAppPath: () => process.cwd() } }))
 
-const publisherFile = 'data-pipeline/sources/bsb_tables.tsv'
+const publisherFile = 'data/editions/bsb/sources/bsb_tables.tsv.gz'
 const identifiers = SOURCE_WORD_TERMS.flatMap(term => term.ids)
 const allTerms = Object.fromEntries(identifiers.map(id => [id, true]))
 const noTerms = Object.fromEntries(identifiers.map(id => [id, false]))
@@ -41,7 +42,7 @@ interface PublishedVerse {
 // Keep the word offset in the untouched English row order so repeated words cannot trade forms.
 async function readPublisher(): Promise<Map<string, PublishedVerse>> {
   const verses = new Map<string, PublishedVerse>()
-  const lines = createInterface({ input: createReadStream(publisherFile), crlfDelay: Infinity })
+  const lines = createInterface({ input: createReadStream(publisherFile).pipe(createGunzip()), crlfDelay: Infinity })
   let current: PublishedVerse | undefined
   let header = true
   for await (const line of lines) {
@@ -92,7 +93,7 @@ function occurrences(words: string[], needle: string[]): number {
 const families = SOURCE_WORD_TERMS.map(term => ({
   ...term, settings: { ...noTerms, ...Object.fromEntries(term.ids.map(id => [id, true])) }
 }))
-const hasPublisher = existsSync(publisherFile)
+
 
 function auditExactForms(ref: ChapterRef, verse: Verse, published: PublishedVerse | undefined, counts: Map<string, number>) {
   const selected = verse.tokens?.flatMap(t => t.sourceWord ? [t.sourceWord.strongs] : []) ?? []
@@ -107,7 +108,15 @@ function auditExactForms(ref: ChapterRef, verse: Verse, published: PublishedVers
     if (!span.annotation && span.display === span.original) continue
     const source = span.token!.sourceWord!
     const row = published?.rows.get(source.language + ':' + source.rowId)
-    if (published) {
+    if (source.edition !== 'BSB') {
+      const ref = source.sourceRef!
+      const witness = bibleDb()!.prepare('SELECT original,strongs,morph FROM original_tokens WHERE edition=? AND book_id=? AND chapter=? AND verse=? AND position=?')
+        .get(source.edition,ref.book,ref.chapter,ref.verse,ref.position!)
+      if (!witness || String(witness.original).replace(/[.,;··:!?]+$/u, '').normalize('NFC') !== source.text.normalize('NFC') ||
+          witness.strongs !== source.strongs || witness.morph !== source.morph || span.original !== source.english) {
+        throw Error('Additional occurrence disagrees with its named source: ' + source.rowId)
+      }
+    } else if (published) {
       const form = source.language === 'Greek' ? row?.form :
         row?.form.replace(/׃[פס]$/u, '').replace(/^[־׀׃]+|[־׀׃]+$/gu, '')
       if (!row || row.strongs !== source.strongs || form !== source.text || row.form !== row.alternate ||
@@ -256,9 +265,8 @@ function verifyVerse(
 }
 
 describe.skipIf(!existsSync('resources/bible.sqlite'))('source word restoration across both tagged Bibles', () => {
-  it('preserves every verse and isolates each setting' +
-      (hasPublisher ? ' against the publisher’s raw bilingual rows' : ' (publisher table unavailable)'), async () => {
-    const publisher = hasPublisher ? await readPublisher() : undefined
+  it('preserves every verse and isolates each setting against the pinned publisher rows', async () => {
+    const publisher = await readPublisher()
     const restoredIds = new Set<string>()
     expect(new Set(identifiers).size).toBe(52)
     for (const [translation, size, yhwh, other] of [['BSB', 31086, 5678, 4357], ['KJV', 31102, 1916, 1]] as const) {
@@ -272,7 +280,9 @@ describe.skipIf(!existsSync('resources/bible.sqlite'))('source word restoration 
             const address = (book.id === 'Ps' ? 'Psalm' : book.name) + ' ' + chapter + ':' + verse.verse
             const published = publisher?.get(address)
             if (publisher && !published) throw new Error('Missing publisher verse at ' + address)
-            verifyVerse(ref, verse, address, published, coverage)
+            // Preset parity is specific to the original set of Berean-sourced links.
+            const migrated = { ...verse, tokens: verse.tokens?.map(t=>t.sourceWord && t.sourceWord.edition !== 'BSB' ? {...t,sourceWord:undefined} : t) }
+            verifyVerse(ref, migrated, address, published, coverage)
             auditExactForms(ref, verse, published, exactCounts)
             count++
           }

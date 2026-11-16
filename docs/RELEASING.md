@@ -31,10 +31,13 @@ This document is the source of truth for **anyone (including Claude) cutting a r
 
 2. **Run the local gates** (the same ones CI runs — catch failures before spending CI minutes):
    ```bash
+   git submodule update --init --recursive
+   npm ci
+   npm ci --prefix mobile
    npm run typecheck
    npm test
    npm run db:build        # data-pipeline assertions must pass
-   npx vitest run test/db.test.ts
+   npm run test:release-db
    ```
 
 3. **Write the changelog.** Add a new section to [`CHANGELOG.md`](../CHANGELOG.md) at the top
@@ -63,7 +66,8 @@ present:
 
 - runs typecheck + unit tests,
 - builds installers for **macOS (Apple Silicon), Windows, Linux, and Android**,
-- rebuilds the Bible database (pipeline assertions gate the data) and runs the DB-integrity test,
+- builds one SQLite library from the nine pinned edition commits and shared study sources, runs the release data tests and records its SHA-256 in the corpus job summary,
+- sends that same artifact to every platform and checks the packaged database against its digest,
 - **smoke-tests each packaged desktop app** (it boots, opens the DB, loads native deps),
 - verifies the Android release signature, package identity, version, release mode, and bundled offline database against the desktop build,
 - and publishes a **GitHub Release** named `v0.1.3`, tagged `v0.1.3`, with your changelog section as

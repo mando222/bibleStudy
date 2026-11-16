@@ -13,12 +13,12 @@ export const APP_GUIDE: GuideSection[] = [
   {
     title: "Turn on Strong's numbers",
     keywords: "strongs number lexicon original word define definition dictionary tag",
-    body: "Click the Strong's toggle (the superscript-number icon) in the top toolbar to show Strong's numbers over each tagged word. Click any word — or its number — to open its lexicon entry (definition, morphology, and every place it occurs) in the study pane on the right. Strong's are available for tagged translations like the KJV and BSB."
+    body: "Click the Strong's toggle (the superscript-number icon) in the top toolbar to show Strong's numbers over each tagged word. Select a tagged word or its number to open the dictionary and concordance. A dotted underline identifies an inferred link. The selected word’s details show the source form and its evidence when that translation has a verified link for the occurrence."
   },
   {
     title: "See the Greek or Hebrew (interlinear)",
     keywords: "greek hebrew original language interlinear word-by-word literal septuagint masoretic transliteration",
-    body: "Click the Interlinear toggle in the top toolbar to show the passage word-by-word with the original Greek or Hebrew, transliteration, Strong's number, and gloss under each word. In the interlinear you can choose the base edition (Masoretic Hebrew, Septuagint, Textus Receptus, Byzantine, or the Critical text) and stack translations under each original word."
+    body: "Click the Interlinear toggle in the top toolbar to show the passage word-by-word with the original Greek or Hebrew, transliteration, Strong's number, and gloss under each word. Choose a base edition and add a translation to compare its wording. The interlinear places verified wording under the corresponding source word. When coverage is incomplete, it also shows the translation’s full verse. The Swete Septuagint supplies Greek text for comparison."
   },
   {
     title: "Set your preferred text order",
@@ -48,7 +48,7 @@ export const APP_GUIDE: GuideSection[] = [
   {
     title: "Restore source words and the divine name",
     keywords: "restore words replace occurrences original form lexicon panel greek hebrew aramaic agape divine names yahweh yhwh tetragrammaton lord god elohim adonai jehovah",
-    body: "Select a word in the reader. The right-hand lexicon panel lets you show its written form wherever the edition has a verified source link. Each occurrence uses its own source row. A translated phrase can keep its wording with the source form beside it. Restore words in the toolbar controls visibility, and Choose words to restore manages your choices. The verified four-letter Hebrew divine name displays as YHWH. Hover over a displayed source form or focus it and press Down Arrow to compare translations. Copies and assistant selections quote the published translation."
+    body: "Select a word in the reader. The right-hand lexicon panel lets you show its written form wherever the edition has a verified source link. Each occurrence uses its own source row. A translated phrase can keep its wording with the source form beside it. Restore words in the toolbar controls visibility, and Choose words to restore manages your choices. The verified four-letter Hebrew divine name displays as YHWH. Hover over a displayed source form or focus it and press Down Arrow to see the edition’s printed wording. Compare translations shows wording from a shared or explicitly corresponding source occurrence. Editions without that evidence show the full verse. Copies and assistant selections quote the published translation."
   },
   {
     title: "Highlight and take notes",

@@ -1,7 +1,7 @@
 # Data sources & attribution
 
 The app bundles/derives text and lexical data from the following open sources. The build
-pipeline (`npm run db:build`) uses publisher downloads and the credited snapshots below.
+pipeline (`npm run db:build`) reads the nine [pinned English edition repositories](../data/editions) and the shared study sources below. Each edition includes an inventory of candidate sources, terms of use, checksums, and coverage by book.
 
 ## Bible text
 
@@ -26,8 +26,10 @@ pipeline (`npm run db:build`) uses publisher downloads and the credited snapshot
 
 - Word frequency uses the original word and component records in STEPBible TAHOT and TAGNT. The English translations and inferred Septuagint tags do not contribute to these counts. Grammatical labels expand the publisher’s exact codes from [TEHMC and TEGMC](https://github.com/STEPBible/STEPBible-Data/tree/f71b5e51f2d768ae72e3ed69743a7a9df25ef8b5/Morphology%20codes), **CC BY 4.0**, STEPBible / Tyndale House. The app shortens the explanations and retains an unrecognized code as written.
 
-- The word-to-Strong’s mappings for ASV, WEB, YLT, Julia Smith, Tyndale, Geneva and Wycliffe are computed from the Berean alignment and the lexical candidates for each verse. The reader marks these links as inferred. The KJV benchmark scores agreement conditional on both sides having a tag. It uses KJV records in its lookup tables. See the [paired evaluation](SCRIPTURE_ACCURACY_AUDIT.md#word-level-accuracy) for the denominators.
-- Source word restoration uses the inflected form and transliteration on the Berean row aligned to the selected English word. YHWH represents the four Hebrew consonants. KJV restorations also require independent English tagging and an original-language witness. For terms other than YHWH, the KJV and BSB verse wording must agree exactly, and the Masoretic Hebrew/Aramaic or Textus Receptus Greek witness must confirm the specific form. [Berean alignment source](https://bereanbible.com/bsb_tables.tsv)
+- The inferred word-to-Strong’s mappings for ASV, WEB, YLT, Julia Smith, Tyndale, Geneva and Wycliffe use the Berean alignment and lexical candidates at the mapped passage. The reader marks these links as inferred. The KJV benchmark scores agreement conditional on both sides having a tag. It uses KJV records in its lookup tables. See the [paired evaluation](SCRIPTURE_ACCURACY_AUDIT.md#word-level-accuracy) for the denominators.
+- The [WEB](https://ebible.org/details.php?id=engwebp) and [ASV](https://ebible.org/details.php?id=eng-asv) USFM downloads include tags on portions of their English text. Both editions are public domain. Open Bible Study records accepted tags, conflicts, and unresolved matches separately. A source form also requires identifiable occurrence evidence.
+- The [CrossWire KJV project](https://www.crosswire.org/sword/modules/ModInfo.jsp?modName=KJV) credits Bible Foundation, the KJV2003 volunteers and Maurice Robinson. CrossWire grants use of its work for any purpose and lists GPL as its module distribution license. The KJV data repository identifies the specific OSIS revision and license used in this release.
+- The original v0.5.0 restoration links use the inflected form and transliteration on the Berean row aligned to the selected English word. YHWH represents the four Hebrew consonants. KJV restorations also require independent English tagging and an original-language witness. For terms other than YHWH, the KJV and BSB verse wording must agree exactly, and the Masoretic Hebrew/Aramaic or Textus Receptus Greek witness must confirm the specific form. [Berean alignment source](https://bereanbible.com/bsb_tables.tsv)
 
 ## Original languages & lexicons
 

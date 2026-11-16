@@ -112,7 +112,7 @@ describe('verified word restoration', () => {
 
   it('preserves both translated phrases and adds the written form from each distinct G264 row', () => {
     const where = { book: '1John', chapter: 2, translation: 'BSB' }
-    const sin = { ...source, ...where, language: 'Greek' as const, strongs: 'G264', morph: 'Verb',
+    const sin = { ...source, book: where.book, chapter: where.chapter, language: 'Greek' as const, strongs: 'G264', morph: 'Verb',
       rowId: '199485', english: 'you will not sin', text: 'ἁμάρτητε', translit: 'hamartēte' }
     const other = { ...sin, rowId: '199489', startPosition: 1, endPosition: 1,
       english: 'does sin', text: 'ἁμάρτῃ', translit: 'hamartē' }

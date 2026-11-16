@@ -1,6 +1,6 @@
 import { Fragment, useContext, useMemo, type ReactNode } from 'react'
 import type { ChapterRef, Highlight, Verse, VerseToken } from '@shared/types'
-import { publishedWording, restoredVerseSegments, type VerseSegment } from '@shared/sourceWords'
+import { publishedWording, restoredVerseSegments, sourceAnchorId, type VerseSegment } from '@shared/sourceWords'
 import { useAppStore } from '@/store/useAppStore'
 import { highlightVar } from '@/lib/highlights'
 import { getReviewedSpeakers } from '@shared/passageStudy'
@@ -35,7 +35,7 @@ export default function VerseView({ v, translation, book, chapter, literary = fa
     if (!token.strongs || window.getSelection()?.isCollapsed === false) return
     selectStrongs(token.strongs, {
       translation, book, chapter, verse: v.verse, position: token.sourceWord?.startPosition ?? token.position, surface: token.sourceWord?.english ?? token.surface,
-      derived: !!token.derived, sourceWord: token.sourceWord
+      derived: !!token.derived, sourceWord: token.sourceWord, tagCitation: token.tagCitation
     })
   }
   const bg = highlight ? {
@@ -69,7 +69,7 @@ export default function VerseView({ v, translation, book, chapter, literary = fa
         const source = changed ? linked?.sourceWord : undefined
         // The restored term, without the published words the publisher bundled around it.
         const term = display.slice(before.length, display.length - after.length)
-        const native = source && (annotation || term === source.text) ? (
+        const native = source && (annotation === source.text || (!annotation && term === source.text)) ? (
           <bdi dir={source.language === 'Greek' ? 'ltr' : 'rtl'}
             lang={source.language === 'Greek' ? 'grc' : source.language === 'Hebrew' ? 'he' : 'arc'}
             className={source.language === 'Greek' ? 'font-greek' : 'font-hebrew'}>{source.text}</bdi>
@@ -84,7 +84,7 @@ export default function VerseView({ v, translation, book, chapter, literary = fa
             data-aligned-english={annotation && !comparisonLink ? '' : undefined}
             title={token?.derived ? 'Inferred word mapping' : undefined}
             data-restored-word={comparisonLink ? '' : undefined}
-            data-source-row={comparisonLink && source ? source.language + ':' + source.rowId : undefined}
+            data-source-row={comparisonLink && source ? sourceAnchorId(source) : undefined}
             aria-haspopup={comparisonLink ? 'dialog' : undefined}
             aria-description={comparisonLink && word ? `${translation} ${annotation ? 'aligned phrase' : 'wording'}: ${word.published}. ${touch ? 'Tap to compare translations.' : 'Down Arrow explores translations. Enter opens the lexicon.'}` : undefined}
             onMouseEnter={comparisonLink ? e => { if (!e.buttons) preview(e.currentTarget, 'hover') } : undefined}
@@ -119,7 +119,7 @@ export default function VerseView({ v, translation, book, chapter, literary = fa
         return (
           <Fragment key={index}>
             {annotation ? <span data-scripture-part="" data-published={original} data-aligned-phrase={source?.english}>
-              {renderWord(display, false, false)}<span className="text-[0.88em] text-accent"> [{renderWord(native, true, false)}]</span>
+              {renderWord(display, false, false)}<span className="text-[0.88em] text-accent"> [{renderWord(native ?? annotation, true, false)}]</span>
             </span> : word ? <>
               {before && <span data-scripture-part="">{before}</span>}
               {renderWord(native ?? term, true, true)}

@@ -1,3 +1,4 @@
+import { sourceLocation } from '@shared/sourceWords'
 import type { SourceWord } from '@shared/types'
 
 interface Props {
@@ -18,14 +19,17 @@ export default function ComparisonSourceDetails({ source, translation, display }
             className={greek ? 'font-greek text-base text-ink' : 'font-hebrew text-base text-ink'}>
             {source.text}
           </bdi>
-          {' · '}Berean translation table ({source.edition}), row {source.rowId}
+          {' · '}{sourceLocation(source)}
         </p>
-        <p>The publisher transliterates this form as <bdi>{source.translit}</bdi>.</p>
+        {source.translit && <p>Transliteration · <bdi>{source.translit}</bdi></p>}
+        {source.correspondences?.map(link => <p key={link.edition + link.rowId}>
+          Corresponding occurrence · {sourceLocation(link)}{link.citation !== source.citation && ' · ' + link.citation}
+        </p>)}
         {display === 'YHWH' && <p>Restore words shows YHWH for the four Hebrew consonants.</p>}
         <p>
-          {source.evidence === 'corroborated'
+          {source.citation ?? (source.evidence === 'corroborated'
             ? `The ${translation} word tag agrees with the Berean alignment and ${greek ? 'the Greek Textus Receptus' : 'the Masoretic text'} at this verse.`
-            : `The Berean translation table links this ${translation} wording to the source form at this verse.`}
+            : `The Berean translation table links this ${translation} wording to the source form at this verse.`)}
         </p>
       </div>
     </details>

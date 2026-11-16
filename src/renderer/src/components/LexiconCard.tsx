@@ -9,7 +9,7 @@ import { useStudyQuery } from '@/hooks/useStudyQuery'
 import { useAppStore, type SelectedOccurrence } from '@/store/useAppStore'
 import { BOOK_BY_ID } from '@shared/books'
 import { isDivineNameId } from '@shared/lexiconId'
-import { termEnabled } from '@shared/sourceWords'
+import { sourceLocation, termEnabled } from '@shared/sourceWords'
 import { HashIcon } from './icons'
 import StrongsText from './StrongsText'
 import Snippet from './Snippet'
@@ -148,23 +148,23 @@ function Occurrence({ details }: { details: SelectedOccurrence }): JSX.Element {
       <p className="mt-1 text-ink">{surface}</p>
       {sourceWord ? (
         <>
-          <div className="mt-2 text-xs text-muted">{sourceWord.language} form in the Berean source for this verse</div>
+          <div className="mt-2 text-xs text-muted">{sourceWord.language} form in {sourceWord.edition}</div>
           <div className="flex flex-wrap items-baseline gap-x-2">
             <bdi dir={rtl ? 'rtl' : 'ltr'} lang={sourceWord.language === 'Greek' ? 'grc' : sourceWord.language === 'Aramaic' ? 'arc' : 'he'}
               className={`text-2xl ${rtl ? 'font-hebrew' : 'font-greek'}`}>{sourceWord.text}</bdi>
-            <span className="text-sm text-muted">Publisher transliteration · <i>{sourceWord.translit}</i></span>
+            {sourceWord.translit && <span className="text-sm text-muted">Transliteration · <i>{sourceWord.translit}</i></span>}
           </div>
           <p className="mt-1 text-xs text-muted">
-            Berean translation table ({sourceWord.edition})
-            {' · '}{BOOK_BY_ID[sourceWord.book]?.name ?? sourceWord.book} {sourceWord.chapter}:{sourceWord.verse} · row {sourceWord.rowId}
+            {sourceLocation(sourceWord)}
+            {sourceWord.citation && <span className="block">{sourceWord.citation}</span>}
           </p>
-          {sourceWord.evidence === 'corroborated' && <p className="mt-1 text-xs text-muted">
+          {!sourceWord.citation && sourceWord.evidence === 'corroborated' && <p className="mt-1 text-xs text-muted">
             {isDivineNameId(sourceWord.strongs)
               ? 'The KJV tag and Masoretic text identify the four consonants יהוה.'
               : `Corroborated by the KJV word tag and the ${rtl ? 'Masoretic text' : 'Greek Textus Receptus'}.`}
           </p>}
         </>
-      ) : <p className="mt-1 text-xs text-muted">{details.derived ? 'Inferred Strong’s link. ' : ''}An exact source form is unavailable for this selection.</p>}
+      ) : <p className="mt-1 text-xs text-muted">{details.derived ? 'Inferred Strong’s link. ' : ''}An exact source form is unavailable for this selection. {details.tagCitation}</p>}
       <OriginalVerseComparison book={book} chapter={chapter} verse={verse} translation={translation} />
     </section>
   )
@@ -299,6 +299,7 @@ function Concordance({ id, occurrences, translation }: { id: string; occurrences
                   <span data-study-scripture="" dir="auto" className="text-sm text-ink leading-snug">
                     <Snippet text={h.snippet} />
                   </span>
+                  {!data.derived && h.tagEvidence && <span className="block text-xs text-muted">{h.tagEvidence === 'mixed' ? 'Includes inferred links' : 'Inferred word link'}</span>}
                   {h.orderStatus && <span className="block text-xs text-muted">{greekOrderNote[h.orderStatus]}</span>}
                 </button>
               </li>

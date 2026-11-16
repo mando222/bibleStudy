@@ -326,9 +326,9 @@ suite('bible.sqlite integrity', () => {
     expect(n("SELECT COUNT(*) n FROM verses WHERE text LIKE '%`%'"), 'stray backticks').toBe(0)
   })
 
-  it('derived word tags exist, stay out of the tagged translations, and line up with the text', () => {
+  it('inference stays separate from publisher tags and aligns with native text', () => {
     // Inferred mappings for translations with no scholarly tagging — see derived_tags in schema.sql.
-    const tagged = all("SELECT DISTINCT translation_id id FROM verse_tokens").map((r) => r.id)
+    const tagged = all("SELECT id FROM translations WHERE has_strongs=1 AND is_original=0").map((r) => r.id)
     const derivedIds = all('SELECT DISTINCT translation_id id FROM derived_tags').map((r) => r.id)
     expect(derivedIds.length).toBeGreaterThan(4)
     for (const id of derivedIds) expect(tagged, `${id} has real tagging`).not.toContain(id)

@@ -17,16 +17,17 @@ type Span = {
   morph: string
   english: string
   trailer: string
+  source_edition?: string
   source_row: string
 }
 
 function canShow(span: Span): boolean {
-  if (!span.translit?.trim() || !span.text || !/^[1-9]\d*(?:\.\d+)?$/.test(span.source_row) ||
+  if (!span.text || (!span.source_edition && (!span.translit?.trim() || !/^[1-9]\d*(?:\.\d+)?$/.test(span.source_row))) ||
       /^['’]/u.test(span.trailer) || span.strongs.startsWith('G') !== (span.language === 'Greek')) return false
   const form = publisherForm(span.text, span.language)
   if (!form) return false
   const term = locateEnglishTerm(span.strongs, span.english).term
-  return !isProtectedSourceName(span.strongs) || !!presetForm({ ...span, text: form }, term)
+  return !isProtectedSourceName(span.strongs) || !!presetForm({ ...span, translit: span.translit ?? '', text: form }, term)
 }
 
 /** Build counts, or recover one ID's counts from older, versioned occurrence tables. */
@@ -46,7 +47,13 @@ export function countSourceSpans(db: DatabaseSync, id?: string): Map<string, Map
       AND t.chapter=s.chapter AND t.verse=s.verse AND t.position=s.end_position AND t.strongs=b.strongs
     WHERE s.translation_id='KJV' ${id ? 'AND b.strongs=?' : ''}`
   const counts = new Map<string, Map<Span['translation_id'], number>>()
-  const rows = db.prepare(bsb + ' UNION ALL ' + kjv).iterate(...(id ? [id, id] : []))
+  const packed = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='edition_occurrences'").get() &&
+    db.prepare('SELECT 1 FROM edition_occurrences LIMIT 1').get()
+  const sql = packed ? `SELECT s.translation_id,s.source_row,s.source_edition,s.language,s.strongs,s.form AS text,
+      s.translit,s.morph,s.english,t.trailer FROM edition_occurrences s JOIN verse_tokens t
+      ON t.translation_id=s.translation_id AND t.book_id=s.book_id AND t.chapter=s.chapter AND t.verse=s.verse
+      AND t.position=s.end_position AND t.strongs=s.strongs ${id ? 'WHERE s.strongs=?' : ''}` : bsb + ' UNION ALL ' + kjv
+  const rows = db.prepare(sql).iterate(...(id ? (packed ? [id] : [id, id]) : []))
   for (const row of rows) {
     const span = row as unknown as Span
     if (!canShow(span)) continue

@@ -26,8 +26,7 @@ export default function SourceWordSettings(): JSX.Element | null {
         </label>
         <p className="mt-2 mb-4 text-sm text-muted">
           Each selected term displays its verified form in Latin letters. In BSB 1 Corinthians 7:3,
-          the two uses of “wife” show <i>gynaiki</i> and <i>gynē</i>. Only verified BSB and KJV links
-          qualify. The four-letter Hebrew name appears as YHWH. Copies keep the translation’s printed wording.
+          the two uses of “wife” show <i>gynaiki</i> and <i>gynē</i>. A term appears only where the edition has a verified link to that occurrence. The four-letter Hebrew name appears as YHWH. Copies keep the translation’s printed wording.
         </p>
         <h3 className="text-sm font-medium mb-1">Words to show {restoring ? '' : 'when switched on'}</h3>
         <div className="grid gap-x-4 sm:grid-cols-2">

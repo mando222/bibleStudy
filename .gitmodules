@@ -1,0 +1,27 @@
+[submodule "data/editions/asv"]
+	path = data/editions/asv
+	url = https://github.com/mando222/bible-data-asv.git
+[submodule "data/editions/bsb"]
+	path = data/editions/bsb
+	url = https://github.com/mando222/bible-data-bsb.git
+[submodule "data/editions/gnv"]
+	path = data/editions/gnv
+	url = https://github.com/mando222/bible-data-gnv.git
+[submodule "data/editions/juliasmith"]
+	path = data/editions/juliasmith
+	url = https://github.com/mando222/bible-data-juliasmith.git
+[submodule "data/editions/tnt"]
+	path = data/editions/tnt
+	url = https://github.com/mando222/bible-data-tnt.git
+[submodule "data/editions/kjv"]
+	path = data/editions/kjv
+	url = https://github.com/mando222/bible-data-kjv.git
+[submodule "data/editions/web"]
+	path = data/editions/web
+	url = https://github.com/mando222/bible-data-web.git
+[submodule "data/editions/wyc"]
+	path = data/editions/wyc
+	url = https://github.com/mando222/bible-data-wyc.git
+[submodule "data/editions/ylt"]
+	path = data/editions/ylt
+	url = https://github.com/mando222/bible-data-ylt.git

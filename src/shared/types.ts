@@ -22,6 +22,7 @@ export interface VerseToken {
   /** True when the Strong's number was INFERRED rather than taken from scholarly tagging
    *  (see derived_tags in schema.sql). The reader marks these links visually. */
   derived?: boolean
+  tagCitation?: string
   /** STEPBible TAHOT's attestation code for this Masoretic interlinear word. */
   sourceType?: string
   /** The written alternative that TAHOT pairs with this precise read form. */
@@ -39,9 +40,24 @@ export interface VerseToken {
   parses?: WordParse[] // interlinear "all parses": Scripture-attested analyses of this form
 }
 
-/** An occurrence in the Berean publisher's bilingual table. Positions bracket the intact English span. */
+export interface SourceWitness {
+  edition: string
+  rowId: string
+  sourceRevision: string
+  sourceRef: { book: string; chapter: number; verse: number; position?: number }
+  citation: string
+}
+
+/** A cited source occurrence connected to a span at the English edition’s native address. */
 export interface SourceWord {
-  edition: 'BSB'
+  edition: string
+  translation?: string // absent on legacy v0.5 occurrence records
+  sourceRevision?: string
+  sourceRef?: SourceWitness['sourceRef']
+  correspondences?: SourceWitness[]
+  citation?: string
+  uniqueForm?: boolean
+  preservePreset?: boolean // reviewed term boundaries retained from an earlier alignment
   language: 'Hebrew' | 'Aramaic' | 'Greek'
   rowId: string // publisher's Heb Sort or Greek Sort, including fractional IDs
   book: string
@@ -60,7 +76,7 @@ export interface SourceWord {
 }
 
 export interface SourceWordCoverage {
-  translation: 'BSB' | 'KJV'
+  translation: string
   occurrences: number
 }
 
@@ -143,6 +159,7 @@ export interface SearchQuery {
 }
 
 export interface SearchHit {
+  tagEvidence?: 'inferred' | 'mixed'
   translation?: string // actual corpus, including the edition ID for an interlinear hit
   edition?: string // a hit requiring the interlinear reader
   book: string
@@ -163,6 +180,7 @@ export interface SearchResponse {
 
 /** A verse where a given Strong's number occurs (word-study concordance). */
 export interface ConcordanceHit {
+  tagEvidence?: 'inferred' | 'mixed'
   book: string
   bookName: string
   chapter: number

@@ -38,17 +38,20 @@ async function connect(t) {
     const request = pending.get(response.id)
     if (!request) return
     pending.delete(response.id)
-    const error = response.error?.message || response.result.exceptionDetails?.exception?.description
+    const error = response.error?.message || response.result?.exceptionDetails?.exception?.description
     if (error) request.reject(Error(error))
-    else request.resolve(response.result.result.value)
+    else request.resolve(response.result)
   }
-  function evaluate(expression) {
+  function command(method, params = {}) {
     const id = ++nextId
     return new Promise((resolve, reject) => {
       pending.set(id, { resolve, reject })
-      ws.send(JSON.stringify({ id, method: 'Runtime.evaluate', params: { expression, awaitPromise: true, returnByValue: true } }))
+      ws.send(JSON.stringify({ id, method, params }))
     })
   }
+  const evaluate = async expression => (await command('Runtime.evaluate',
+    { expression, awaitPromise: true, returnByValue: true })).result.value
+  evaluate.command = command
   for (let attempt = 0; attempt < 50; attempt++) {
     if (await evaluate('typeof window.Capacitor?.nativePromise === "function"')) {
       return evaluate
@@ -75,10 +78,26 @@ test('installed offline corpus preserves aligned forms, MT witnesses and origina
     ['199485', 'ἁμάρτητε', 'you will not sin', false], ['199489', 'ἁμάρτῃ', 'does sin', false]
   ])
   assert.equal(dictionary.entry.lemma, 'ἁμαρτάνω')
-  assert.deepEqual(dictionary.coverage, [{ translation: 'BSB', occurrences: 39 }])
-  assert.ok(verse(kjv, 1).tokens.filter(t => t.strongs === 'G264').every(t => !t.sourceWord))
+  assert.deepEqual(dictionary.coverage.find(c => c.translation === 'BSB'), { translation: 'BSB', occurrences: 39 })
+  assert.deepEqual(verse(kjv, 1).tokens.filter(t => t.strongs === 'G264').map(({ sourceWord: w }) =>
+    [w.english, w.text.normalize('NFC'), w.edition, w.sourceRef.position, w.canReplaceAlone]), [
+    ['ye sin', 'ἁμάρτητε', 'TR', 7, false], ['sin', 'ἁμάρτῃ', 'TR', 11, false]
+  ])
+  assert.ok(dictionary.coverage.find(c => c.translation === 'KJV')?.occurrences >= 2)
   const name = verse(genesis, 16).tokens.find(t => t.strongs === 'H3068').sourceWord
   assert.deepEqual([name.english, name.rowId, name.text], ['of the LORD', '2266', 'יְהוָ֑ה'])
+
+  const web = verse(await read('WEB', 'John', 11), 35)
+  const wept = web.tokens.find(t => t.surface === 'wept')
+  assert.equal(wept.strongs, 'G1145')
+  assert.equal(wept.sourceWord.english, 'wept')
+  assert.equal(wept.sourceWord.text.normalize('NFC'), 'ἐδάκρυσεν')
+  assert.ok(wept.sourceWord.correspondences?.some(link => link.edition === 'BSB' && link.rowId === '92072' && link.citation))
+  assert.ok(wept.sourceWord.translation === 'WEB' && wept.sourceWord.citation && wept.sourceWord.sourceRevision)
+  const conflict = verse(await read('WEB', 'Gen', 1), 1)
+  assert.ok(!conflict.tokens.some(t => /^(?:God)$/i.test(t.surface) && t.strongs === 'H8064'))
+  const nativeLookup = await call('search', { text: 'G1145', translation: 'WEB', book: 'John', limit: 50 })
+  assert.ok(nativeLookup.hits.some(h => h.chapter === 11 && h.verse === 35 && h.snippet.includes('{{wept}}')))
 
   const paired = verse(hebrew, 11).tokens.find(t => t.ketiv)
   assert.deepEqual([paired.sourceType, paired.surface, paired.ketiv], ['Q(K)', 'לוּדִ֧ים', 'לוּדִיִּים'])
@@ -124,6 +143,13 @@ test('phone study tools read the full desktop corpus through the worker', { time
   const inferred = await call('getChapter', { translation: 'ASV', book: 'Ps', chapter: 23 })
   assert.ok(inferred.verses[0].tokens.some(t => t.derived))
   assert.ok(inferred.verses[0].tokens.every(t => !t.sourceWord))
+  const web = await call('getComparisonVerse', { translation: 'WEB', book: 'John', chapter: 11, verse: 35 })
+  const link = web.tokens.find(t => t.surface === 'wept')?.sourceWord
+  assert.equal(link?.english, 'wept')
+  assert.equal(link?.text.normalize('NFC'), 'ἐδάκρυσεν')
+  assert.ok(link?.citation && link?.sourceRevision)
+  const evidence = await call('getSourceWordCoverage', 'G1145')
+  assert.ok(evidence.some(r => r.translation === 'WEB' && r.occurrences >= 1))
   const swete = await call('search', { text: 'G1519', translation: 'LXX' })
   assert.equal(swete.hits.length, 0)
   assert.match(swete.notice, /word tags/i)
@@ -215,4 +241,75 @@ test('installed phone stylesheet keeps scripture and study controls on their own
   }
   assert.ok(enlarged[0] > normal[0])
   assert.deepEqual(enlarged.slice(2), normal.slice(2), 'reading preference changes scripture independently')
+})
+
+
+test('restored WEB word opens its wording on tap and Android copies the printed English', { timeout: 90000 }, async t => {
+  const evaluate = await connect(t)
+  // Exercise a real startup and WebView in an isolated in-memory reading profile.
+  // Restore the installed app's original settings and reading position on the next load.
+  const waitFor = async (expression, description) => {
+    for (let attempt = 0; attempt < 150; attempt++) {
+      if (await evaluate(expression).catch(() => false)) return
+      await pause(200)
+    }
+    throw new Error('Timed out waiting for ' + description)
+  }
+  await waitFor("Boolean(window.api?.studyProfile && document.querySelector('.phone'))", 'the installed reader')
+  const previousUrl = await evaluate('location.href')
+  const testUrl = new URL(previousUrl)
+  testUrl.searchParams.set('word-qa', Date.now().toString(36))
+  const profile = await evaluate('window.api.studyProfile()')
+  const key = profile.id ? 'obs-app-state:' + profile.id : 'obs-app-state'
+  const location = { translation: 'WEB', book: 'John', chapter: 11, verse: 35, scroll: null }
+  const state = { book: 'John', chapter: 11, primary: 'WEB', referenceEdition: 'WEB', activeVerse: 35,
+    parallels: ['WEB'], interlinear: false, restoreSourceWords: true, sourceFormIds: ['G1145'] }
+  const seed = { [key]: JSON.stringify({ state, version: 1 }), [key + ':phone-position']: JSON.stringify(location) }
+  await evaluate.command('Page.enable')
+  const testProfile = await evaluate.command('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {
+    const memory = new Map(Object.entries(${JSON.stringify(seed)}))
+    window.__obsTestProfile = true
+    const realGet = Storage.prototype.getItem
+    Storage.prototype.getItem = function(key) {
+      return memory.has(key) ? memory.get(key) : realGet.call(this, key)
+    }
+    Storage.prototype.setItem = function(key, value) { memory.set(key, String(value)) }
+    Storage.prototype.removeItem = function(key) { memory.set(key, null) }
+  })()` })
+  try {
+    await evaluate.command('Page.navigate', { url: testUrl.href })
+    await waitFor(`location.href === ${JSON.stringify(testUrl.href)} && window.__obsTestProfile`, 'the isolated reading profile')
+    const wordSelector = '[data-reader-scroll="WEB"] [data-restored-word]'
+    const locate = `[...document.querySelectorAll(${JSON.stringify(wordSelector)})].find(e => e.textContent.normalize('NFC') === 'ἐδάκρυσεν')`
+    for (let i = 0; i < 150; i++) {
+      if (await evaluate('Boolean(' + locate + ')').catch(() => false)) break
+      await pause(200)
+    }
+    const diagnostics = await evaluate(`({
+      testProfile: Boolean(window.__obsTestProfile), ready: document.readyState,
+      columns: [...document.querySelectorAll('[data-reader-scroll]')].map(el => [el.dataset.readerScroll, el.dataset.readerBook, el.dataset.readerChapter]),
+      startup: document.querySelector('.startup')?.textContent, api: Boolean(window.api),
+      selected: JSON.parse(localStorage.getItem(${JSON.stringify(key)}) ?? '{}').state?.primary
+    })`)
+    assert.ok(await evaluate('Boolean(' + locate + ')'), 'WEB source word did not render: ' + JSON.stringify(diagnostics))
+    const copied = await evaluate(`(() => {
+      const word = ${locate}
+      const r = document.createRange(); r.selectNodeContents(word)
+      const selection = getSelection(); selection.removeAllRanges(); selection.addRange(r)
+      const printed = window.studyPublishedSelection()
+      selection.removeAllRanges(); word.click()
+      return printed
+    })()`)
+    assert.equal(copied, 'wept')
+    const wording = `[...document.querySelectorAll('dt')].find(e => e.textContent === 'WEB')?.nextElementSibling?.querySelector('p')?.textContent`
+    for (let i = 0; i < 20 && !(await evaluate(wording)); i++) await pause(100)
+    assert.equal(await evaluate(wording), 'wept')
+    const citation = await evaluate(`document.querySelector('.phone details:last-of-type')?.textContent`)
+    assert.match(citation, /TAGNT/)
+  } finally {
+    await evaluate.command('Page.removeScriptToEvaluateOnNewDocument', { identifier: testProfile.identifier })
+    await evaluate.command('Page.navigate', { url: previousUrl })
+    await waitFor(`location.href === ${JSON.stringify(previousUrl)} && !window.__obsTestProfile &&
+      Boolean(window.api?.studyProfile && document.querySelector('.phone'))`, 'the restored reader')
+  }
 })

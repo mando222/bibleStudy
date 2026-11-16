@@ -1,0 +1,11 @@
+{
+  "WEB": ["engwebp", "3bb1ac4fe06e9adf50fe6659237fa0b3743bf651ce15cc9acebc36c5070ae62d", "ENGWEBP"],
+  "ASV": ["eng-asv", "00b7b6c76cb1eb67b22ca51bd5ac13c2df526c13e1c38e78b862a7a2367f7071", "eng_asv"],
+  "KJV": ["eng-kjv", "9d37aa78180ceefd5e4aeeaedceccf16f21484e5eb17d5662e8beff31bc3d8a5", "eng_kjv"],
+  "BSB": ["engbsb", "75ca91d5a5c69ca4cbdeabdb03ea1a458db20cf3966abe15d86df086acf7fbc4", "BSB"],
+  "YLT": ["engylt", "c526b4e362fef13916a14765a7e331267f6a1227db58549fc61d3288a930a12b", "eng_ylt"],
+  "TNT": ["engtnt", "a86faa9c69f021686e95bc26a7b598d6d7b33da391f523cac49cf8d3cd93822c", "eng_tnt"],
+  "GNV": ["enggnv", "6ed7356ea8bee3c042e168c8a1650aefed08f1bf24f158794506608b27715ebe", "eng_gnv"],
+  "WYC": ["engWycliffe", "8702afe48f1f3e0527107d23f938ecd7fbfcbe0e55ceaf386f129bd279a5b4d9", "eng_w88"],
+  "JuliaSmith": [null, null, null]
+}

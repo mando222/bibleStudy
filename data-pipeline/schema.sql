@@ -394,3 +394,37 @@ CREATE TABLE derived_tags (
   strongs        TEXT NOT NULL,
   PRIMARY KEY (translation_id, book_id, chapter, verse)
 ) WITHOUT ROWID;
+
+-- A verified English span bound to one immutable original-language source occurrence.
+CREATE TABLE edition_occurrences (
+  translation_id TEXT NOT NULL, book_id TEXT NOT NULL, chapter INTEGER NOT NULL, verse INTEGER NOT NULL,
+  start_position INTEGER NOT NULL, end_position INTEGER NOT NULL, english TEXT NOT NULL,
+  source_edition TEXT NOT NULL, source_revision TEXT NOT NULL, source_book TEXT NOT NULL,
+  source_chapter INTEGER NOT NULL, source_verse INTEGER NOT NULL, source_row TEXT NOT NULL,
+  source_position INTEGER, language TEXT NOT NULL CHECK(language IN ('Hebrew','Aramaic','Greek')),
+  form TEXT NOT NULL, translit TEXT, strongs TEXT NOT NULL, morph TEXT, evidence TEXT NOT NULL
+    CHECK(evidence IN ('aligned','corroborated')), citation TEXT NOT NULL,
+  standalone INTEGER NOT NULL CHECK(standalone IN (0,1)), unique_form INTEGER NOT NULL CHECK(unique_form IN (0,1)),
+  preserve_preset INTEGER NOT NULL DEFAULT 0 CHECK(preserve_preset IN (0,1)),
+  PRIMARY KEY (translation_id,book_id,chapter,verse,end_position)
+) WITHOUT ROWID;
+CREATE INDEX idx_edition_occurrence_source ON edition_occurrences
+  (source_edition,source_revision,source_book,source_chapter,source_verse,source_row);
+CREATE INDEX idx_edition_occurrence_strongs ON edition_occurrences (strongs,translation_id);
+
+-- Per-token provenance on verses where reviewed evidence and inferred lookup coexist.
+CREATE TABLE edition_token_evidence (
+  translation_id TEXT NOT NULL, book_id TEXT NOT NULL, chapter INTEGER NOT NULL, verse INTEGER NOT NULL,
+  position INTEGER NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('inferred','published','corroborated','unlinked')),
+  citation TEXT NOT NULL,
+  PRIMARY KEY (translation_id,book_id,chapter,verse,position)
+) WITHOUT ROWID;
+
+-- Optional independently reviewed identity across named source editions. This never creates a restoration.
+CREATE TABLE edition_correspondences (
+  translation_id TEXT NOT NULL, book_id TEXT NOT NULL, chapter INTEGER NOT NULL, verse INTEGER NOT NULL,
+  end_position INTEGER NOT NULL, source_edition TEXT NOT NULL, source_revision TEXT NOT NULL,
+  source_book TEXT NOT NULL, source_chapter INTEGER NOT NULL, source_verse INTEGER NOT NULL,
+  source_row TEXT NOT NULL, source_position INTEGER, citation TEXT NOT NULL,
+  PRIMARY KEY (translation_id,book_id,chapter,verse,end_position,source_edition,source_revision,source_book,source_chapter,source_verse,source_row)
+) WITHOUT ROWID;

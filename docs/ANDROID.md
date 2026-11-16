@@ -31,7 +31,7 @@ The current test APK is `dist/android/Open-Bible-Study-Android-test.apk`. Transf
 adb install -r dist/android/Open-Bible-Study-Android-test.apk
 ```
 
-The first launch extracts and verifies the bundled scripture database in private app storage. The extracted library is about 530 MiB in addition to the APK. Updating to a changed corpus temporarily requires space for both extracted copies. Notes and highlights live in a separate, private SQLite database. Reading preferences and location are local to this app. Uninstalling or clearing app data removes your study work. For an in-place update, use an APK signed with the same key.
+The first launch extracts and verifies the bundled scripture database in private app storage. Allow space for the extracted database as well as the APK. Updating to a changed corpus temporarily requires space for both extracted copies. Notes and highlights live in a separate, private SQLite database. Reading preferences and location are local to this app. Uninstalling or clearing app data removes your study work. For an in-place update, use an APK signed with the same key.
 
 ## Rebuild
 
@@ -40,7 +40,8 @@ Android reads its app version from the desktop project's root `package.json`. Gr
 Use Node 22.13 or later, JDK 21, and an Android SDK with platform 36. Set `ANDROID_HOME` to the SDK directory and `JAVA_HOME` to the JDK directory. Start in the repository root.
 
 ```sh
-# Only needed when resources/bible.sqlite is missing or needs rebuilding.
+# Prepare the offline library from the pinned edition data.
+git submodule update --init --recursive
 npm ci
 npm run db:build
 

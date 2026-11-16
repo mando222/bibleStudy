@@ -1,4 +1,4 @@
-import type { ChapterRef, SourceWord, Verse, VerseToken } from './types'
+import type { ChapterRef, SourceWitness, SourceWord, Verse, VerseToken } from './types'
 
 /** First bundled alignment that verifies lexical spans and independent KJV witnesses. */
 export const SOURCE_WORD_ALIGNMENT_VERSION = '1'
@@ -141,6 +141,48 @@ export function presetForm(source: Pick<SourceWord, 'strongs' | 'language' | 'te
   if (/^[\p{Script=Latin}\p{M}ʾʿʼ‘’']+$/u.test(form) && /\p{Script=Latin}/u.test(form)) return form
 }
 
+/** The old corpus identifies a Berean row by its sort number. Packs identify the witness,
+ * its pinned revision and the occurrence separately from the address in the English edition. */
+export function validSourceWitness(source: SourceWord, translation: string): boolean {
+  if (source.translation === undefined) {
+    return source.edition === 'BSB' && /^[1-9]\d*(?:\.\d+)?$/.test(source.rowId) &&
+      ((translation === 'BSB' && source.evidence === 'aligned') ||
+       (translation === 'KJV' && source.evidence === 'corroborated'))
+  }
+  const ref = source.sourceRef
+  return source.translation === translation && !!source.edition.trim() && !!source.sourceRevision?.trim() &&
+    !!source.citation?.trim() && !!source.rowId?.trim() && !!ref?.book && Number.isSafeInteger(ref.chapter) &&
+    ref.chapter > 0 && Number.isSafeInteger(ref.verse) && ref.verse > 0 &&
+    (ref.position === undefined || (Number.isSafeInteger(ref.position) && ref.position >= 0)) &&
+    (source.evidence === 'aligned' || source.evidence === 'corroborated')
+}
+
+export function sameSourceOccurrence(a: SourceWord, b: SourceWord): boolean {
+  if (a.language !== b.language || a.strongs !== b.strongs) return false
+  if (!a.sourceRevision || !b.sourceRevision) {
+    return a.sourceRevision === b.sourceRevision && a.edition === b.edition && a.rowId === b.rowId &&
+      a.book === b.book && a.chapter === b.chapter && a.verse === b.verse && a.text === b.text
+  }
+  const matches = (x: SourceWitness | SourceWord, y: SourceWitness | SourceWord) => x.edition === y.edition &&
+    x.sourceRevision === y.sourceRevision && x.rowId === y.rowId && !!x.sourceRef && !!y.sourceRef &&
+    x.sourceRef.book === y.sourceRef.book && x.sourceRef.chapter === y.sourceRef.chapter &&
+    x.sourceRef.verse === y.sourceRef.verse && x.sourceRef.position === y.sourceRef.position
+  if (matches(a, b)) return a.text.normalize('NFC') === b.text.normalize('NFC')
+  return [a, ...(a.correspondences ?? [])].some(x =>
+    [b, ...(b.correspondences ?? [])].some(y => matches(x, y)))
+}
+
+export function sourceAnchorId(source: SourceWord): string {
+  return source.edition !== 'BSB' && source.sourceRevision
+    ? encodeURIComponent(JSON.stringify([source.edition, source.sourceRevision, source.language, source.rowId, source.sourceRef]))
+    : source.language + ':' + source.rowId
+}
+
+export function sourceLocation(source: SourceWord | SourceWitness): string {
+  const r = ('book' in source ? source.sourceRef ?? source : source.sourceRef)
+  return `${source.edition} · ${r.book} ${r.chapter}:${r.verse} · row ${source.rowId}`
+}
+
 /** Each displayed span carries the exact published text used by copy and citations. */
 export function restoredVerseSegments(verse: Verse, ref: ChapterRef, enabled: boolean, terms: SourceWordTerms = {},
   sourceFormIds: readonly string[] = []): VerseSegment[] {
@@ -150,16 +192,15 @@ export function restoredVerseSegments(verse: Verse, ref: ChapterRef, enabled: bo
     return [{ original: verse.text, display: verse.text }]
   }
   const replacements = new Map<number, { end: number; part: VerseSegment }>()
-  const evidence = ref.translation === 'BSB' ? 'aligned' : ref.translation === 'KJV' ? 'corroborated' : undefined
-  if (enabled && evidence) {
+  if (enabled) {
     const exactIds = new Set(sourceFormIds)
     for (let end = 0; end < tokens.length; end++) {
       const token = tokens[end]
       const source = token.sourceWord
       if (!source || token.derived || !token.strongs || !/^[GH][1-9]\d*$/.test(token.strongs) ||
-          source.strongs !== token.strongs || source.edition !== 'BSB' || source.evidence !== evidence ||
+          source.strongs !== token.strongs || !validSourceWitness(source, ref.translation) ||
           source.book !== ref.book || source.chapter !== ref.chapter || source.verse !== verse.verse ||
-          !/^[1-9]\d*(?:\.\d+)?$/.test(source.rowId) || source.endPosition !== end) continue
+          source.endPosition !== end) continue
       const exact = exactIds.has(token.strongs)
       if (!exact && !termEnabled(token.strongs, terms)) continue
       const start = source.startPosition
@@ -183,6 +224,13 @@ export function restoredVerseSegments(verse: Verse, ref: ChapterRef, enabled: bo
           !!source.morph?.trim() && !source.morph.includes('|')
         if (preset || independent) restored = source.text
         else annotation = source.text
+      }
+      // Migrated Berean alignments retain their reviewed name/term boundaries.
+      // Other packs explicitly certify which spans can replace an English word.
+      const reviewedTerm = !source.translation || source.preservePreset
+      if (!reviewedTerm && !source.canReplaceAlone) {
+        restored = located.term
+        annotation = exact && !divineName ? source.text : preset
       }
       const display = located.before + restored + located.after
       replacements.set(start, { end, part: { token, original, display,
