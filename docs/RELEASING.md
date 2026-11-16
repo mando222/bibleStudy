@@ -38,6 +38,7 @@ This document is the source of truth for **anyone (including Claude) cutting a r
    npm test
    npm run db:build        # data-pipeline assertions must pass
    npm run test:release-db
+   npm run test:smoke
    ```
 
 3. **Write the changelog.** Add a new section to [`CHANGELOG.md`](../CHANGELOG.md) at the top

@@ -174,11 +174,20 @@ export async function runSmokeTest(): Promise<void> {
       }
     ],
     [
-      'Concordance finds verses in an INFERRED translation',
+      'Concordance distinguishes inferred lookups and cited English occurrences',
       () => {
-        const c = getConcordance('G26', { translation: 'ASV', limit: 5 })
-        if (c.translation !== 'ASV' || !c.derived || c.hits.length === 0) {
-          throw new Error(`ASV concordance returned ${c.hits.length} hits from ${c.translation}`)
+        const inferred = getConcordance('G26', { translation: 'YLT', limit: 5 })
+        if (inferred.translation !== 'YLT' || !inferred.derived || !inferred.hits.length ||
+            inferred.hits.some(hit => hit.tagEvidence !== 'inferred')) {
+          throw new Error('Expected inferred YLT hits for G26')
+        }
+        for (const translation of ['WEB', 'ASV']) {
+          const result = getConcordance('G1145', { translation, book: 'John' })
+          const hit = result.hits.find(hit => hit.chapter === 11 && hit.verse === 35)
+          if (result.translation !== translation || result.derived || !hit ||
+              hit.tagEvidence === 'inferred' || !hit.snippet.includes('{{wept}}')) {
+            throw new Error(`Expected ${translation} John 11:35 to identify its attested wording for G1145`)
+          }
         }
       }
     ],

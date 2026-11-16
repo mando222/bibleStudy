@@ -18,6 +18,7 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "test": "vitest run",
     "test:release-db": "vitest run test/db.test.ts test/apparatus.test.ts test/sweteInterlinear.test.ts test/studySearch.test.ts test/assistantSources.test.ts test/sourceWordIntegrity.test.ts test/restoredWordWording.test.ts test/wordFrequency.test.ts test/editionOccurrenceReader.test.ts test/editionPackIntegrity.test.ts test/lexiconDirectory.test.ts test/atlasCatalog.test.ts test/mappedPeople.test.ts test/passageStudy.test.ts",
+    "test:smoke": "electron-vite build && electron . --smoke-test",
     "test:watch": "vitest",
     "db:build": "cross-env NODE_NO_WARNINGS=1 NODE_OPTIONS=--experimental-sqlite tsx data-pipeline/build.ts",
     "dist": "electron-vite build && electron-builder",
