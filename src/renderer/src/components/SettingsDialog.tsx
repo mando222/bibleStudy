@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import { defaultTextPreference, textEditionLabels, type TextPreference } from '@shared/textPreference'
+import ThemeSelect from './ThemeSelect'
 import { useAppStore } from '@/store/useAppStore'
 
 const groups = [
@@ -45,6 +46,7 @@ function PreferredTextSettings({ children }: { children?: ReactNode }): JSX.Elem
         <button type="button" aria-label="Close settings" onClick={() => setOpen(false)}
           className="rounded px-2 py-1 text-muted hover:bg-elevated">✕</button>
       </header>
+      {import.meta.env.VITE_STUDY_MOBILE !== 'true' && <ThemeSelect className="flex items-center justify-between gap-3 py-3 text-sm" />}
       {children && <details className="border-b border-line py-3"><summary className="cursor-pointer font-medium">Translations, backups and updates</summary>{children}</details>}
       <h3 className="mt-3 font-medium">Preferred text order</h3>
       <p className="mt-1 text-sm text-muted">

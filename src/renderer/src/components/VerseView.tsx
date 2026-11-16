@@ -61,7 +61,7 @@ export default function VerseView({ v, translation, book, chapter, literary = fa
       className="reader-marker select-none align-super text-[0.6em] text-accent mr-0.5" />}
   </>
   const renderParts = (pieces: VerseSegment[]) => (
-    <span style={bg}>
+    <span style={bg} data-highlight={highlight?.color}>
       {pieces.map((part, index) => {
         const { original, display, before = '', after = '', annotation, token } = part
         const linked = token?.strongs ? token : undefined
@@ -84,6 +84,7 @@ export default function VerseView({ v, translation, book, chapter, literary = fa
             data-aligned-english={annotation && !comparisonLink ? '' : undefined}
             title={token?.derived ? 'Inferred word mapping' : undefined}
             data-restored-word={comparisonLink ? '' : undefined}
+            data-selected-word={linked && selected === linked.strongs ? '' : undefined}
             data-source-row={comparisonLink && source ? sourceAnchorId(source) : undefined}
             aria-haspopup={comparisonLink ? 'dialog' : undefined}
             aria-description={comparisonLink && word ? `${translation} ${annotation ? 'aligned phrase' : 'wording'}: ${word.published}. ${touch ? 'Tap to compare translations.' : 'Down Arrow explores translations. Enter opens the lexicon.'}` : undefined}

@@ -45,7 +45,8 @@ export function useVerseNavigation(
         // Scrolling the individual column keeps a parallel jump from moving its horizontal strip.
         container.current.scrollTop += el.getBoundingClientRect().top - container.current.getBoundingClientRect().top - 12
       } else {
-        el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        const instant = useAppStore.getState().theme === 'eink' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+        el.scrollIntoView({ block: 'center', behavior: instant ? 'instant' : 'smooth' })
       }
       el.classList.add('verse-flash')
       window.setTimeout(() => el.classList.remove('verse-flash'), 1600)

@@ -103,3 +103,63 @@ body {
 .reader-marker::before {
   content: attr(data-label);
 }
+
+/* Deliberately separated gray levels remain legible on a limited-palette display.
+   An opaque paper background also avoids ghosting through overlapping panels. */
+:root.eink {
+  --bg: 255 255 255;
+  --panel: 255 255 255;
+  --elevated: 238 238 238;
+  --line: 102 102 102;
+  --ink: 0 0 0;
+  --muted: 34 34 34;
+  --faint: 68 68 68;
+  --accent: 0 0 0;
+  --accent-soft: 204 204 204;
+  --reader-gold: #222;
+  --hl-yellow: 238 238 238;
+  --hl-green: 221 221 221;
+  --hl-blue: 204 204 204;
+  --hl-pink: 187 187 187;
+  --hl-orange: 170 170 170;
+}
+
+.eink [data-scripture-passage][lang='en'] {
+  font-family: Roboto, system-ui, sans-serif;
+  font-weight: 500;
+  text-align: start;
+  hyphens: manual;
+}
+.eink [data-scripture-passage] [data-restored-word] {
+  font-weight: 700;
+  text-decoration: underline solid currentColor;
+  text-underline-offset: .17em;
+}
+.eink [data-scripture-passage] [data-selected-word] {
+  color: #fff;
+  background-color: #000;
+}
+.eink [data-verse] [data-highlight] {
+  border-block-end: 1px solid #444;
+}
+.eink mark { font-weight: 700; }
+.eink .frequency-color { --heat: #111; --heat-ink: #fff; }
+.eink .frequency-color[data-level='3'] { background: #aaa; }
+
+.eink .highlight-palette { flex-wrap: wrap; }
+.eink [data-highlight-swatch]::after {
+  content: attr(data-highlight-swatch);
+  text-transform: capitalize;
+}
+.eink .highlight-palette [data-highlight-swatch] {
+  width: auto;
+  padding-inline: .4rem;
+  font-size: .75rem;
+}
+.eink .reader-marker { color: #222; }
+.eink .verse-flash { outline: 2px solid #444; }
+.eink *, .eink *::before, .eink *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}

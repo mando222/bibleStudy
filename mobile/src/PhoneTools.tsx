@@ -8,6 +8,7 @@ import { readingEdition, useAppStore } from '@/store/useAppStore'
 import { useStudyQuery } from '@/hooks/useStudyQuery'
 import { readerChapter } from '@/lib/passage'
 import { studyStorageKey } from '@/lib/studyPreferences'
+import ThemeSelect from '@/components/ThemeSelect'
 import { HIGHLIGHT_COLORS, highlightVar } from '@/lib/highlights'
 import type { ReaderVerseAction } from '@/components/ReaderActions'
 import type { Bookmark, HistoryEntry, Note } from '@shared/types'
@@ -311,10 +312,7 @@ export function DisplaySettings({
           ))}
         </select>
       </label>
-      <label className="setting-row">
-        <span>Dark theme</span>
-        <input type="checkbox" checked={state.theme === 'dark'} onChange={state.toggleTheme} />
-      </label>
+      <ThemeSelect className="setting-row" />
       <label className="setting-row">
         <span>Show Strong’s numbers</span>
         <input type="checkbox" checked={state.strongsVisible} onChange={state.toggleStrongs} />
@@ -660,6 +658,7 @@ export function VerseActions({
           <button
             key={c}
             title={c + ' highlight'}
+            data-highlight-swatch={c}
             aria-label={c + ' highlight'}
             aria-pressed={highlight?.color === c}
             disabled={busy || !loaded}

@@ -167,3 +167,15 @@
 [role='dialog'][aria-label='Speaker and quotation guide'] .text-xs {
   font-size: var(--type-meta);
 }
+
+.eink .tabbar button[aria-current='page'] > span {
+  color: #fff;
+  background: #000;
+}
+.eink .phone .swatches [data-highlight-swatch] {
+  min-width: 44px;
+  min-height: 44px;
+  font-size: var(--type-meta);
+}
+.eink .phone-form .setting-row select { min-height: 44px; }
+.eink .phone .swatches span { border-color: #444; }

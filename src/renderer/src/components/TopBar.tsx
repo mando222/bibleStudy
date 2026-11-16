@@ -18,7 +18,7 @@ import {
 
 export default function TopBar(): JSX.Element {
   const theme = useAppStore((s) => s.theme)
-  const toggleTheme = useAppStore((s) => s.toggleTheme)
+  const setTheme = useAppStore((s) => s.setTheme)
   const strongsVisible = useAppStore((s) => s.strongsVisible)
   const toggleStrongs = useAppStore((s) => s.toggleStrongs)
   const restoring = useAppStore((s) => s.restoreSourceWords)
@@ -130,11 +130,11 @@ export default function TopBar(): JSX.Element {
       <HistoryPanel />
 
       <button
-        onClick={toggleTheme}
+        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
         className="p-2 rounded-md hover:bg-elevated text-muted"
-        title="Toggle light / dark"
+        title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
       >
-        {theme === 'light' ? <MoonIcon className="w-4 h-4" /> : <SunIcon className="w-4 h-4" />}
+        {theme !== 'dark' ? <MoonIcon className="w-4 h-4" /> : <SunIcon className="w-4 h-4" />}
       </button>
 
       <button type="button" title="Settings" aria-label="Settings" aria-haspopup="dialog"

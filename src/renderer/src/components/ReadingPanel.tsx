@@ -477,6 +477,7 @@ function ColumnPage({ translation, book, chapter, active, before, containerRef, 
           <PassageKeyboard
             aria-label={bookName + ' ' + chapter + ' · ' + translation}
             data-scripture-passage=""
+            lang={meta?.language === 'eng' ? 'en' : meta?.language}
             dir={rtl ? 'rtl' : 'ltr'}
             className={`text-scripture text-ink hyphens-auto ${
               // Anything that changes word widths mid-line — Strong's numbers, replacements —

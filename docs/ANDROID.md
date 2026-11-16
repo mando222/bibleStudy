@@ -15,6 +15,8 @@ The phone uses the desktop project's scripture library and restoration rules. In
 
 Search accepts English, Greek, Hebrew, and Strong’s numbers. In BSB, `shepherd` includes words such as *shepherds* and returns 114 verses in the current corpus. Searching `"shepherd"` with quotation marks returns 62. Set the order for comparing source texts in Settings. Each translation continues to use its own verified word links.
 
+On an e-ink display, open **Reading settings → Display theme → E-ink (high contrast)**. English scripture uses a medium-weight sans serif at your chosen size. Restored words have a solid underline and selected words appear in reverse contrast.
+
 ## Update on your phone
 
 Open **Settings (gear) → App updates**, or go to **Library → Files & settings → App updates**. Tap **Check now**, then **Download update** when a newer version appears. The app downloads the APK and shows its progress. If you see **Allow installation**, tap it, grant Open Bible Study permission in Android settings, and return. Tap **Install update** and confirm in Android.

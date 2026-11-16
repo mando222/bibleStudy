@@ -10,7 +10,7 @@ import type { SourceWordTerms } from '@shared/sourceWords'
 import { BOOK_BY_ID } from '@shared/books'
 import type { Edition, Translation, ChatCitation, SearchHit, SourceWord } from '@shared/types'
 
-export type Theme = 'light' | 'dark'
+export type Theme = 'light' | 'dark' | 'eink'
 export type StudyTab = 'lexicon' | 'notes' | 'search' | 'apparatus' | 'crossrefs'
 /** Far-right workspace tabs. 'bible' is the reader; the rest are their own full-window views. */
 export type Activity = 'bible' | 'genealogies' | 'timelines' | 'maps' | 'words' | 'learn'
@@ -80,7 +80,7 @@ interface AppState {
   clearAtlasTarget: () => void
   returnFromAtlas: () => void
   theme: Theme
-  toggleTheme: () => void
+  setTheme: (theme: Theme) => void
 
   // Far-right activity rail: which workspace is showing.
   activity: Activity
@@ -257,7 +257,7 @@ export const useAppStore = create<AppState>()(
           ...(range ? { book: range.book, chapter: range.chapter, referenceEdition: range.edition,
             activeVerse: range.firstVerse ?? null, scrollToVerse: range.firstVerse ?? null } : {}) }
       }),
-      toggleTheme: () => set({ theme: get().theme === 'light' ? 'dark' : 'light' }),
+      setTheme: (theme) => set({ theme }),
       activity: 'bible',
       setActivity: (activity) => set({ activity, profileOrigin: null, atlasTarget: null, atlasOrigin: null, focusPlaceId: null }),
       profileOrigin: null,

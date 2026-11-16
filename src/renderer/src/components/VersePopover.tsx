@@ -119,13 +119,16 @@ export default function VersePopover({
       className="fixed inset-auto m-0 w-64 max-w-[calc(100vw-1rem)] max-h-[calc(100vh-1rem)] overflow-y-auto rounded-lg border border-line bg-elevated text-ink shadow-xl p-0 backdrop:bg-transparent"
     >
       <div className="p-2">
-        <div className="flex items-center gap-1.5 px-1 pb-2">
+        <div className="highlight-palette flex items-center gap-1.5 px-1 pb-2">
           {HIGHLIGHT_COLORS.map((c) => (
             <button
               key={c}
               disabled={saving}
               onClick={() => void changeHighlight(c)}
               title={c}
+              aria-label={c + ' highlight'}
+              aria-pressed={highlight?.color === c}
+              data-highlight-swatch={c}
               className={`w-6 h-6 rounded-full border transition-transform hover:scale-110 ${
                 highlight?.color === c ? 'ring-2 ring-accent ring-offset-1 ring-offset-elevated' : 'border-line'
               }`}

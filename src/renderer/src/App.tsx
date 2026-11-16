@@ -4,6 +4,7 @@ import { readerChapter } from '@/lib/passage'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import { useAppStore, type Activity } from '@/store/useAppStore'
 import { useEditions } from '@/hooks/useInterlinear'
+import { useTheme } from '@/hooks/useTheme'
 import TopBar from '@/components/TopBar'
 import UpdateBanner from '@/components/UpdateBanner'
 import NavPanel from '@/components/NavPanel'
@@ -25,7 +26,7 @@ import LearnView from '@/components/LearnView'
 const activityNames: Record<Activity, string> = { bible: 'Bible', words: 'Words', timelines: 'Timeline', genealogies: 'People', maps: 'Atlas', learn: 'Languages' }
 
 export default function App(): JSX.Element {
-  const theme = useAppStore((s) => s.theme)
+  useTheme()
   const setTranslations = useAppStore((s) => s.setTranslations)
   const activity = useAppStore((s) => s.activity)
   const profileOrigin = useAppStore(s => s.profileOrigin)
@@ -51,10 +52,6 @@ export default function App(): JSX.Element {
   const canonical = readerChapter(book, chapter, activeVerse, edition, 'KJV')
   const historyBook = canonical?.book
   const historyChapter = canonical?.chapter
-
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark')
-  }, [theme])
 
   // Record each chapter the reader visits, for the History & bookmarks menu.
   useEffect(() => {

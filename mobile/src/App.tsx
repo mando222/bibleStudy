@@ -29,6 +29,7 @@ import PassageInspector from '@/components/PassageInspector'
 import OriginalVerseComparison from '@/components/OriginalVerseComparison'
 import { ComparisonContent } from '@/components/RestoredWordComparison'
 import { ReaderActions, type ReaderVerseAction, type ReaderWordAction } from '@/components/ReaderActions'
+import { useTheme } from '@/hooks/useTheme'
 import SettingsDialog from '@/components/SettingsDialog'
 import SourceWordSettings from '@/components/SourceWordSettings'
 import {
@@ -170,7 +171,7 @@ export default function App() {
     edition = useAppStore(readingEdition),
     interlinear = useAppStore((s) => s.interlinear)
   const parallels = useAppStore((s) => s.parallels),
-    theme = useAppStore((s) => s.theme),
+    theme = useTheme(),
     selected = useAppStore((s) => s.selectedStrongs)
   const labels = useAppStore(s => s.translations)
   const editionLabel = labels.find(item => item.id === primary)?.abbrev ?? primary
@@ -236,8 +237,6 @@ export default function App() {
     }
   }, [attempt])
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark')
-    document.documentElement.style.colorScheme = theme
     if (Capacitor.isNativePlatform())
       void SystemBars.setStyle({
         style: theme === 'dark' ? SystemBarsStyle.Dark : SystemBarsStyle.Light
