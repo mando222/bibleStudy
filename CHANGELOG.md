@@ -14,9 +14,14 @@ Group changes under: **Added** (new features), **Changed** (changes to existing 
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [0.6.2] - 2026-11-16
+
 ### Added
 
-- Click or tap the current passage title to jump to a verse, read a whole chapter, or select a range across chapters. You can also type a reference such as **1 Jn 4:7–12**. The picker lists the chapters and verses available in your edition, including imported translations.
+- On desktop and Android, click or tap the current passage title to choose a verse, read a whole chapter, or enter a reference such as **1 Jn 4:7–12**. The picker lists the books, chapters, and verses recorded in your edition, including imported translations.
+- Choose **Select range** to mark a passage while keeping the surrounding verses in view. **End in another chapter** lets you extend the selection. Parallel translations mark corresponding verses where the editions can be matched. **Clear range** removes the temporary marks.
 
 ## [0.6.1] - 2026-11-16
 
