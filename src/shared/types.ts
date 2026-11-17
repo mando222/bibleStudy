@@ -602,6 +602,7 @@ export interface BibleApi {
   version(): Promise<string>
   listTranslations(): Promise<Translation[]>
   listReadingChapters(edition: string, interlinear: boolean): Promise<ReadingChapter[]>
+  listReadingVerses(ref: ChapterRef, interlinear: boolean): Promise<number[]>
   getChapter(ref: ChapterRef): Promise<ChapterContent>
   getComparisonVerse(ref: VerseRef): Promise<Verse | null>
   getStrongs(id: string): Promise<StrongsEntry | null>

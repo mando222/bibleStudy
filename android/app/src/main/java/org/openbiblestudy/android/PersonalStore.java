@@ -391,6 +391,9 @@ final class PersonalStore implements AutoCloseable {
                         p.getString("translation"));
             case "importChapter":
                 return imports.chapter(p);
+            case "importVerseNumbers":
+                return array(db, "SELECT verse FROM imported_verses WHERE translation_id=? AND book_id=? AND chapter=? ORDER BY verse",
+                        p.getString("translation"), p.getString("book"), p.getInt("chapter"));
             case "importVerse":
                 return one(
                         db,

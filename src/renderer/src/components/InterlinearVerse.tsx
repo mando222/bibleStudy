@@ -14,6 +14,7 @@ export default function InterlinearVerse({
   lines = [],
   onSelectVerse,
   verseNumbers = true,
+  inRange,
   showParses = false,
   swete = false,
   sourceIssue
@@ -25,6 +26,7 @@ export default function InterlinearVerse({
   lines?: { id: string; text: string; ref?: string }[]
   onSelectVerse?: () => void
   verseNumbers?: boolean
+  inRange?: boolean
   showParses?: boolean
   swete?: boolean
   sourceIssue?: string
@@ -46,7 +48,8 @@ export default function InterlinearVerse({
   }
 
   return (
-    <div className="mb-4 group/verse" data-verse={v.verse} tabIndex={-1}>
+    <div className="mb-4 group/verse" data-verse={v.verse} tabIndex={-1}
+      data-navigation-range={inRange || undefined} aria-description={inRange ? 'In selected passage' : undefined}>
       <div dir={rtl ? 'rtl' : 'ltr'} className="relative flex flex-wrap gap-x-2.5 gap-y-3 items-start">
         <button type="button" data-passage-action="" data-verse-action="" tabIndex={-1} onClick={onSelectVerse} aria-label={`Select verse ${v.verse}`} title="Select verse"
           className={`reader-marker text-xs font-sans font-semibold text-accent/70 tabular-nums ${verseNumbers ? 'pt-1.5' : 'absolute top-1 -start-5 rounded px-1 opacity-0 group-hover/verse:opacity-100 focus-visible:opacity-100'}`}

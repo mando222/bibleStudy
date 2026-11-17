@@ -104,6 +104,17 @@ const NAME_INDEX: Record<string, string> = (() => {
   return idx
 })()
 
+/** Book names, OSIS/USFM codes and familiar abbreviations all work in the navigator. */
+export function matchingBooks(input: string): string[] {
+  const q = norm(input)
+  if (!q) return input.trim() ? [] : BOOKS.map(b => b.id)
+  const ids = new Set(BOOKS.filter(b => norm(b.name).includes(q)).map(b => b.id))
+  for (const [alias, id] of Object.entries(NAME_INDEX)) {
+    if (alias.startsWith(q)) ids.add(id)
+  }
+  return [...ids]
+}
+
 // Capture a candidate book phrase (optional leading 1/2/3, then up to 3 words) directly before a
 // "chapter:verse". The phrase is resolved in code — shedding leading non-book words — which handles
 // numbered ("1 Corinthians") and multi-word ("Song of Solomon") names and any spacing.
@@ -117,6 +128,16 @@ export interface ScripturePassage {
   lastVerse?: number
 }
 
+export function passageLabel(ref: ScripturePassage): string {
+  let label = (BOOK_BY_ID[ref.book]?.name ?? ref.book) + ' ' + ref.chapter
+  if (ref.firstVerse != null) label += ':' + ref.firstVerse
+  if (ref.chapter !== ref.lastChapter) {
+    label += '–' + ref.lastChapter
+    if (ref.lastVerse != null) label += ':' + ref.lastVerse
+  } else if (ref.lastVerse != null && ref.lastVerse !== ref.firstVerse) label += '–' + ref.lastVerse
+  return label
+}
+
 // Named references in study questions may be an entire chapter, a verse range or a single verse.
 const bookNames = [...new Set([...BOOKS.flatMap(b => [b.name, b.id, b.usfm]), ...Object.keys(ABBREV)])]
   .sort((a, b) => b.length - a.length)
@@ -128,10 +149,9 @@ const PASSAGE_RE = new RegExp(
 const LOCATION_RE = new RegExp('^' + PASSAGE_RE.source + '$', 'i')
 
 export function typedPassage(input: string, edition: string | ((book: string) => string)): (ScripturePassage & { edition: string }) | undefined {
-  const text = input.trim()
+  const text = input.trim().replace(/\s*:\s*/g, ':')
   const match = LOCATION_RE.exec(text)
-  // The navigator opens a single location. Ranges in prose remain handled by namedPassages.
-  if (!match || match[4]) return undefined
+  if (!match) return undefined
   const source = typeof edition === 'string' ? edition : edition(NAME_INDEX[norm(match[1])])
   const ref = namedPassages(text, source)[0]
   return ref && { ...ref, edition: source }
@@ -141,14 +161,14 @@ export function namedPassages(text: string, edition = 'KJV'): ScripturePassage[]
   const passages: ScripturePassage[] = []
   for (const [, name, ch, v, end, endV] of text.matchAll(PASSAGE_RE)) {
     const book = NAME_INDEX[norm(name)]
-    const singleChapterVerse = BOOK_BY_ID[book].chapters === 1 && !v && Number(ch) !== 1
+    const singleChapterVerse = BOOK_BY_ID[book].chapters === 1 && !v && (Number(ch) !== 1 || (end && !endV))
     const chapter = singleChapterVerse ? 1 : Number(ch)
     const firstVerse = singleChapterVerse ? Number(ch) : v ? Number(v) : undefined
     const lastChapter = endV || (end && firstVerse == null) ? Number(end) : chapter
     const lastVerse = endV ? Number(endV) : firstVerse != null && end ? Number(end) : firstVerse
-    const chapters = edition === 'LXX' && book === 'Ps' ? 151 : BOOK_BY_ID[book].chapters
+    const chapters = edition.startsWith('imp_') ? Infinity : edition === 'LXX' && book === 'Ps' ? 151 : BOOK_BY_ID[book].chapters
     if (chapter > 0 && lastChapter >= chapter && lastChapter <= chapters &&
-        (!firstVerse || lastChapter > chapter || (lastVerse ?? firstVerse) >= firstVerse)) {
+        (firstVerse == null || lastChapter > chapter || (lastVerse ?? firstVerse) >= firstVerse)) {
       passages.push({ book, chapter, firstVerse, lastChapter, lastVerse })
     }
   }

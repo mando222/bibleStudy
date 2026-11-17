@@ -11,6 +11,11 @@ interface GuideSection {
 
 export const APP_GUIDE: GuideSection[] = [
   {
+    title: "Go to a verse or passage",
+    keywords: "find jump navigate passage picker specific verse chapter range reference",
+    body: "Click the current book and chapter in the top toolbar. Choose a verse, use the book and chapter buttons to browse, or type a reference such as 1 Jn 4:7–12 and press Enter. To mark several verses, choose Select range, then the first and last verse. Use End in another chapter for a longer passage. Clear range removes the temporary mark."
+  },
+  {
     title: "Turn on Strong's numbers",
     keywords: "strongs number lexicon original word define definition dictionary tag",
     body: "Click the Strong's toggle (the superscript-number icon) in the top toolbar to show Strong's numbers over each tagged word. Select a tagged word or its number to open the dictionary and concordance. A dotted underline identifies an inferred link. The selected word’s details show the source form and its evidence when that translation has a verified link for the occurrence."

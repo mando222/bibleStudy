@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { afterAll, describe, expect, it, vi } from 'vitest'
-import { bibleDb, getInterlinear } from '../src/main/db/bible'
+import { bibleDb, getInterlinear, listReadingChapters, listReadingVerses } from '../src/main/db/bible'
 import { sweteEditionLabel, sweteReadingIssue } from '../src/shared/lxxIntegrity'
 
 vi.mock('node:sqlite', () => createRequire(import.meta.url)('node:sqlite'))
@@ -17,6 +17,15 @@ it('distinguishes Greek forms from Roman numerals and identifies Theodotion in D
 
 describe.skipIf(!existsSync('resources/bible.sqlite'))('bundled Swete interlinear', () => {
   afterAll(() => bibleDb()?.close())
+
+  it('offers the recorded superscription and verses of Psalm 151 in each reading mode', () => {
+    for (const interlinear of [true, false]) {
+      const actual = listReadingVerses({ translation: 'LXX', book: 'Ps', chapter: 151 }, interlinear)
+      expect(actual).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
+      expect(listReadingChapters('LXX', interlinear)).toContainEqual({ book: 'Ps', chapter: 151, firstVerse: 0 })
+    }
+    expect(listReadingVerses({ translation: 'KJV', book: 'Ps', chapter: 151 }, false)).toEqual([])
+  })
 
   it('keeps the Greek form, transliteration and separately mapped translation, without inferred NT analysis', () => {
     const first = getInterlinear('Gen', 1, 'LXX', ['KJV'], true).verses.find(v => v.verse === 1)!

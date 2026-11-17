@@ -31,6 +31,10 @@ public final class ModuleImportTest {
             String id = store.imports.importFile(module, "encoded.bbl", books, store).getString("id");
             JSONObject ref = new JSONObject().put("translation", id).put("book", "Gen").put("chapter", 1);
             JSONArray verses = store.imports.chapter(ref).getJSONArray("verses");
+            JSONArray numbers = (JSONArray) store.handle("importVerseNumbers", ref);
+            assertEquals(verses.length(), numbers.length());
+            for (int index = 0; index < verses.length(); index++)
+                assertEquals(verses.getJSONObject(index).getInt("verse"), numbers.getJSONObject(index).getInt("verse"));
             assertEquals("I am the Α and the Ω.", verses.getJSONObject(0).getString("text"));
             String second = "Α & Ω & café <said> λόγος &lt;.";
             assertEquals(second, verses.getJSONObject(1).getString("text"));

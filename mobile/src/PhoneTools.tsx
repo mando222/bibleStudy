@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from 'react'
-import { BOOK_BY_ID, BOOKS, BOOKS_CHRONO } from '@shared/books'
-import { openPassage, readerPassage } from '@/lib/openPassage'
+import { BOOK_BY_ID } from '@shared/books'
 import { chooseColumn, readingFeatures, type ReadingFeature } from '@shared/readingDisplay'
 import { mapPassage } from '@shared/passageMapping'
 import { studyDataCredits } from '@shared/dataCredits'
 import { readingEdition, useAppStore } from '@/store/useAppStore'
 import { useStudyQuery } from '@/hooks/useStudyQuery'
-import { readerChapter } from '@/lib/passage'
 import { studyStorageKey } from '@/lib/studyPreferences'
 import ThemeSelect from '@/components/ThemeSelect'
 import { HIGHLIGHT_COLORS, highlightVar } from '@/lib/highlights'
@@ -92,112 +90,6 @@ export function PhoneSheet({
       </div>}
       <div className="sheet-content">{children}</div>
     </dialog>
-  )
-}
-export function PassagePicker({ close }: { close: () => void }) {
-  const s = useAppStore.getState()
-  const current = readerChapter(s.book, s.chapter, s.activeVerse, s.referenceEdition || s.primary, readingEdition(s))
-  const [book, setBook] = useState(current?.book ?? s.book)
-  const [chapter, setChapter] = useState(current?.chapter ?? s.chapter)
-  const [verse, setVerse] = useState('')
-  const [search, setSearch] = useState('')
-  const [issue, setIssue] = useState('')
-  const [busy, setBusy] = useState(false)
-  const chrono = useAppStore((st) => st.chronological)
-  const ref = readerPassage(search)
-  const edition = ref?.edition ?? readingEdition(s, book)
-  const chapterCount = book === 'Ps' && edition === 'LXX' ? 151 : BOOK_BY_ID[book].chapters
-  const open = async () => {
-    const b = ref?.book ?? book,
-      c = ref?.chapter ?? chapter
-    const requested = ref ? ref.firstVerse : verse ? Number(verse) : undefined
-    setBusy(true)
-    setIssue('')
-    try {
-      if (search.trim() && !ref) { setIssue('Enter a reference such as John 3:16.'); return }
-      await openPassage({ book: b, chapter: c, firstVerse: requested ?? undefined }, edition)
-      close()
-    } catch (e) {
-      setIssue(e instanceof Error ? e.message : 'Could not open this passage.')
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <form
-      className="phone-form"
-      onSubmit={(e) => {
-        e.preventDefault()
-        void open()
-      }}
-    >
-      <label>
-        Go to a reference
-        <input placeholder="e.g. John 3:16" value={search} onChange={(e) => { setSearch(e.target.value); setIssue('') }} />
-      </label>
-      <div className="phone-pair">
-        <label>
-          Book
-          <select
-            value={book}
-            onChange={(e) => {
-              setBook(e.target.value)
-              setChapter(1)
-              setVerse('')
-              setSearch('')
-            }}
-          >
-            {(chrono ? BOOKS_CHRONO : BOOKS).map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Chapter
-          <select
-            value={chapter}
-            onChange={(e) => {
-              setChapter(Number(e.target.value))
-              setVerse('')
-              setSearch('')
-            }}
-          >
-            {Array.from({ length: chapterCount }, (_, i) => (
-              <option key={i + 1}>{i + 1}</option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <label>
-        Verse
-        <input
-          type="number"
-          min="1"
-          inputMode="numeric"
-          placeholder="Beginning of chapter"
-          value={verse}
-          onChange={(e) => {
-            setVerse(e.target.value)
-            setSearch('')
-          }}
-        />
-      </label>
-      <label className="setting-row">
-        <span>Chronological book order</span>
-        <input type="checkbox" checked={chrono} onChange={s.toggleChronological} />
-      </label>
-      {search.trim() && !ref && <p role="status">Enter a valid reference for {edition}, such as John 3:16.</p>}
-      {issue && (
-        <p className="status" role="alert">
-          {issue}
-        </p>
-      )}
-      <button className="phone-button primary" disabled={busy || (!!search && !ref)}>
-        Open passage
-      </button>
-    </form>
   )
 }
 export function EditionPicker() {

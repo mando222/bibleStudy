@@ -127,11 +127,22 @@ export function listTranslations(): Translation[] {
   }))
 }
 
+function readingSource(edition: string, interlinear: boolean) {
+  return interlinear || greekNtEditions.has(edition)
+    ? 'original_tokens WHERE edition = ?' : 'verses WHERE translation_id = ?'
+}
+
 /** Enumerate recorded chapters, including partial editions and edition-specific numbering. */
 export function listReadingChapters(edition: string, interlinear: boolean): ReadingChapter[] {
-  const source = interlinear || ['NA', 'TR', 'BYZ'].includes(edition)
-    ? 'original_tokens WHERE edition = ?' : 'verses WHERE translation_id = ?'
+  const source = readingSource(edition, interlinear)
   return required().prepare(`SELECT book_id AS book, chapter, MIN(verse) AS firstVerse FROM ${source} GROUP BY book_id, chapter`).all(edition) as ReadingChapter[]
+}
+
+/** Exact reader addresses, including superscriptions and gaps in an edition. */
+export function listReadingVerses(ref: ChapterRef, interlinear: boolean): number[] {
+  const source = readingSource(ref.translation, interlinear)
+  return required().prepare(`SELECT DISTINCT verse FROM ${source} AND book_id = ? AND chapter = ? ORDER BY verse`)
+    .all(ref.translation, ref.book, ref.chapter).map(row => Number(row.verse))
 }
 
 export function getChapter(ref: ChapterRef): ChapterContent {

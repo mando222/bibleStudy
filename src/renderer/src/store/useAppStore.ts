@@ -2,6 +2,7 @@ import { studyStorageKey } from '../lib/studyPreferences'
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { mapPassage } from '@shared/passageMapping'
+import type { ScripturePassage } from '@shared/refs'
 import { chooseColumn, plainDisplay, overrideDisplay, type DisplayFlags, type DisplayOverrides, type ReadingFeature } from '@shared/readingDisplay'
 import type { StudyRange } from '@shared/passageStudy'
 import { defaultTextPreference, normalizeTextPreference, type NtText, type OtText, type TextPreference } from '@shared/textPreference'
@@ -16,6 +17,7 @@ export type StudyTab = 'lexicon' | 'notes' | 'search' | 'apparatus' | 'crossrefs
 export type Activity = 'bible' | 'genealogies' | 'timelines' | 'maps' | 'words' | 'learn'
 type AtlasTarget = { kind: 'passage'; passage: StudyRange } | { kind: 'person'; personId: number }
 export type StudyInspector = { mode: 'context' | 'compare'; range: StudyRange }
+export type NavigationRange = Required<ScripturePassage> & { edition: string; interlinear: boolean }
 
 /** Which sub-module of the Learn (Greek & Hebrew) activity is showing. */
 export type LearnModule = 'alphabet' | 'flashcards' | 'drills' | 'grammar'
@@ -196,7 +198,9 @@ interface AppState {
   toggleChronological: () => void
   scrollToVerse: number | null
   readerVisit: number
-  goToVerse: (book: string, chapter: number, verse: number, sourceEdition?: string) => void
+  navigationRange: NavigationRange | null
+  clearNavigationRange: () => void
+  goToVerse: (book: string, chapter: number, verse: number, sourceEdition?: string, end?: { chapter: number; verse: number }) => void
   focusVerse: (book: string, chapter: number, verse: number, sourceEdition: string) => void
   openSearchHit: (hit: SearchHit) => void
   clearScroll: () => void
@@ -254,7 +258,7 @@ export const useAppStore = create<AppState>()(
         const range = origin?.passage
         return { activity: origin?.activity ?? 'bible', atlasOrigin: null, atlasTarget: null,
           focusPlaceId: null, focusPersonId: origin?.personId ?? null,
-          ...(range ? { book: range.book, chapter: range.chapter, referenceEdition: range.edition,
+          ...(range ? { book: range.book, chapter: range.chapter, referenceEdition: range.edition, navigationRange: null,
             activeVerse: range.firstVerse ?? null, scrollToVerse: range.firstVerse ?? null } : {}) }
       }),
       setTheme: (theme) => set({ theme }),
@@ -275,7 +279,7 @@ export const useAppStore = create<AppState>()(
         if (!selected.length) selected.push(translations[0].id)
         const primary = selected[0]
         const lostSource = state.referenceEdition.startsWith('imp_') && !available.has(state.referenceEdition)
-        return { translations, primary, parallels: selected, ...(lostSource ? { referenceEdition: primary } : {}) }
+        return { translations, primary, parallels: selected, ...(lostSource ? { referenceEdition: primary, navigationRange: null } : {}) }
       }),
 
       aboutOpen: false,
@@ -401,18 +405,24 @@ export const useAppStore = create<AppState>()(
       toggleChronological: () => set({ chronological: !get().chronological }),
       scrollToVerse: null,
       readerVisit: 0,
-      goToVerse: (book, chapter, verse, sourceEdition = 'KJV') => {
+      navigationRange: null,
+      clearNavigationRange: () => set({ navigationRange: null }),
+      goToVerse: (book, chapter, verse, sourceEdition = 'KJV', end) => {
         const s = get()
         const edition = readingEdition(s, book)
         const available = mapPassage({ book, chapter, verse }, sourceEdition, edition)
         const showSource = !available && s.translations.some((t) => t.id === sourceEdition)
         set({
           readerVisit: s.readerVisit + 1, book, chapter, referenceEdition: sourceEdition, activeVerse: verse, scrollToVerse: verse, activity: 'bible', studyInspector: null,
+          navigationRange: end && (end.chapter > chapter || (end.chapter === chapter && end.verse > verse))
+            ? { book, chapter, firstVerse: verse, lastChapter: end.chapter, lastVerse: end.verse, edition: sourceEdition, interlinear: s.interlinear }
+            : null,
           ...(showSource ? { primary: sourceEdition, parallels: chooseColumn(s.parallels, 0, sourceEdition), interlinear: false } : {})
         })
       },
       focusVerse: (book, chapter, verse, referenceEdition) =>
-        set({ book, chapter, referenceEdition, activeVerse: verse, scrollToVerse: null, studyInspector: null }),
+        set(s => ({ book, chapter, referenceEdition, activeVerse: verse, scrollToVerse: null, studyInspector: null,
+          navigationRange: s.navigationRange?.book === book ? s.navigationRange : null })),
       openSearchHit: (hit) => {
         const s = get()
         const translation = hit.translation ?? s.primary
@@ -423,13 +433,13 @@ export const useAppStore = create<AppState>()(
           : { interlinear: false, primary: translation, parallels: [translation, ...s.parallels.slice(1).filter((id) => id !== translation)] }
         set({
           readerVisit: s.readerVisit + 1, ...reader, book: hit.book, chapter: hit.chapter, referenceEdition: edition ?? translation,
-          activeVerse: hit.verse, scrollToVerse: hit.verse, activity: 'bible', studyInspector: null
+          activeVerse: hit.verse, scrollToVerse: hit.verse, activity: 'bible', studyInspector: null, navigationRange: null
         })
       },
       clearScroll: () => set({ scrollToVerse: null }),
 
       goTo: (book, chapter, edition) => set({
-        book, chapter, referenceEdition: edition ?? readingEdition(get(), book), activeVerse: null, scrollToVerse: null, activity: 'bible', studyInspector: null
+        book, chapter, referenceEdition: edition ?? readingEdition(get(), book), activeVerse: null, scrollToVerse: null, activity: 'bible', studyInspector: null, navigationRange: null
       }),
       setPrimary: (id) => get().setParallels([id, ...get().parallels.slice(1)]),
       setParallels: (items) => {
@@ -443,7 +453,7 @@ export const useAppStore = create<AppState>()(
           (!ids.includes(reference) && reference.startsWith('imp_'))
         )
         set({ parallels: ids, primary: ids[0], referenceEdition: independent ? ids[0] : reference,
-          ...(independent ? { activeVerse: null, scrollToVerse: null } : {}),
+          ...(independent ? { activeVerse: null, scrollToVerse: null, navigationRange: null } : {}),
           ...(inspector && (!ids.includes(inspector.range.edition) || (inspector.mode === 'compare' && ids.length < 2)) ? { studyInspector: null } : {}) })
       },
       selectStrongs: (id, occurrence) => {

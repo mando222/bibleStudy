@@ -8,6 +8,7 @@ export const bundledLibrary = {
   listTranslations: bible.listTranslations,
   listEditions: bible.listEditions,
   listReadingChapters: bible.listReadingChapters,
+  listReadingVerses: bible.listReadingVerses,
   getChapter: bible.getChapter,
   getComparisonVerse: bible.getComparisonVerse,
   getStrongs: bible.getStrongs,

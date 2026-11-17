@@ -17,12 +17,13 @@ export function useVerseNavigation(
   const chapter = useAppStore((s) => s.chapter)
   const sourceEdition = useAppStore((s) => s.referenceEdition || s.primary)
   const activeVerse = useAppStore((s) => s.activeVerse)
+  const visit = useAppStore(s => s.readerVisit)
   const pending = useRef<{ key: string; verse: number } | null>(null)
   const target = verse == null ? null : mapPassage({ book, chapter, verse }, sourceEdition, rendered.translation)
   // Store navigation can arrive before the parent commits its new column props.
   const localVerse = target?.book === rendered.book && target.chapter === rendered.chapter ? target.verse : null
   const passage = JSON.stringify([rendered.translation, rendered.book, rendered.chapter])
-  const key = JSON.stringify([passage, book, chapter, sourceEdition, activeVerse])
+  const key = JSON.stringify([passage, book, chapter, sourceEdition, activeVerse, visit])
   const clearScroll = useAppStore((s) => s.clearScroll)
 
   useEffect(() => {
@@ -45,8 +46,9 @@ export function useVerseNavigation(
         // Scrolling the individual column keeps a parallel jump from moving its horizontal strip.
         container.current.scrollTop += el.getBoundingClientRect().top - container.current.getBoundingClientRect().top - 12
       } else {
-        const instant = useAppStore.getState().theme === 'eink' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-        el.scrollIntoView({ block: 'center', behavior: instant ? 'instant' : 'smooth' })
+        const state = useAppStore.getState()
+        const instant = state.theme === 'eink' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+        el.scrollIntoView({ block: state.navigationRange ? 'start' : 'center', behavior: instant ? 'instant' : 'smooth' })
       }
       el.classList.add('verse-flash')
       window.setTimeout(() => el.classList.remove('verse-flash'), 1600)

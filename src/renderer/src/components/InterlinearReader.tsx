@@ -3,6 +3,7 @@ import type { InterlinearContent } from '@shared/types'
 import { chapterKey, useChapterStream } from '@/hooks/useChapterStream'
 import { useEditions, useInterlinear } from '@/hooks/useInterlinear'
 import { useVerseNavigation } from '@/hooks/useVerseNavigation'
+import { useNavigationRange } from '@/hooks/useNavigationRange'
 import { originalTextEdition, useAppStore } from '@/store/useAppStore'
 import { readerViewKey, recordPosition, restorePosition, type ReadingPosition } from '@/lib/readingPosition'
 import { readerChapter } from '@/lib/passage'
@@ -186,6 +187,7 @@ function InterlinearChapter({ book, chapter, effective, stack, labels, parses, a
   const swete = effective === 'LXX'
   const testament = BOOK_BY_ID[book]?.testament
   const { data, loading, error } = useInterlinear(book, chapter, effective, stack, parses && !swete)
+  const marked = useNavigationRange(book, chapter, effective, true, data?.verses)
   useLayoutEffect(() => {
     if (active && data) onReady(data)
   }, [data, active, parses])
@@ -227,6 +229,7 @@ function InterlinearChapter({ book, chapter, effective, stack, labels, parses, a
               </p>}
               <InterlinearVerse
                 v={{ verse: v.verse, text: '', tokens: v.tokens }}
+                inRange={marked.has(v.verse)}
                 onSelectVerse={() => onSelect(v.verse)}
                 verseNumbers={verseNumbers}
                 rtl={data.direction === 'rtl'}

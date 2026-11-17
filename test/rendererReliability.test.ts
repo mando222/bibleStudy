@@ -74,6 +74,64 @@ describe('reader position', () => {
       setItem: (key: string, value: string) => values.set(key, value) })
   })
 
+  it('marks a cross-chapter selection at each edition’s native verses and clears it without moving the reader', async () => {
+    HTMLElement.prototype.scrollIntoView = vi.fn()
+    const verses = (ns: number[]) => ns.map(verse => ({ verse, text: String(verse), tokens: [] }))
+    Object.assign(window.api, {
+      getChapter: async ({ translation, chapter }: VerseRef) => ({
+        verses: verses(translation === 'GNV' && chapter === 3 ? [30, 31, 32, 33] : [1, 2, 3, 4, 5])
+      }),
+      listReadingVerses: async ({ chapter }: VerseRef) => chapter === 3 ? [30, 31, 32, 33] : [1, 2],
+      listHighlights: async () => [], listNotes: async () => []
+    })
+    useAppStore.setState({ primary: 'GNV', parallels: ['GNV', 'KJV', 'imp_local'] })
+    useAppStore.getState().goToVerse('Dan', 3, 32, 'GNV', { chapter: 4, verse: 1 })
+    await act(async () => root.render(createElement(ReadingPanel)))
+    const marked = (id: string) => [...host.querySelectorAll<HTMLElement>(`[data-reader-scroll="${id}"] [data-navigation-range]`)].map(el => Number(el.dataset.verse))
+    expect(marked('GNV')).toEqual([32, 33])
+    expect(marked('KJV')).toEqual([2, 3, 4])
+    expect(marked('imp_local')).toEqual([])
+    await act(async () => useAppStore.getState().focusVerse('Dan', 4, 1, 'GNV'))
+    expect(marked('GNV')).toEqual([1])
+    expect(host.querySelector('[aria-label="Selected passage"]')?.textContent).toContain('Daniel 3:32–4:1')
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Clear passage range"]')!.click())
+    expect(marked('KJV')).toEqual([])
+    expect(useAppStore.getState()).toMatchObject({ chapter: 4, activeVerse: 1, navigationRange: null })
+  })
+
+  it('keeps an omitted source verse unmarked in a parallel translation and handles a new single-verse jump', async () => {
+    HTMLElement.prototype.scrollIntoView = vi.fn()
+    const native = [35, 36, 38, 39]
+    Object.assign(window.api, {
+      getChapter: async ({ translation }: VerseRef) => ({ verses: (translation === 'BSB' ? native : [...native, 37])
+        .map(verse => ({ verse, text: String(verse), tokens: [] })) }),
+      listReadingVerses: async () => native, listHighlights: async () => [], listNotes: async () => []
+    })
+    useAppStore.setState({ primary: 'BSB', parallels: ['BSB', 'KJV'] })
+    useAppStore.getState().goToVerse('Acts', 8, 36, 'BSB', { chapter: 8, verse: 38 })
+    await act(async () => root.render(createElement(ReadingPanel)))
+    const peer = host.querySelector('[data-reader-scroll="KJV"]')!
+    expect(peer.querySelector('[data-verse="37"]')).toBeTruthy()
+    expect([...peer.querySelectorAll<HTMLElement>('[data-navigation-range]')].map(el => Number(el.dataset.verse))).toEqual([36, 38])
+    await act(async () => useAppStore.getState().goToVerse('Acts', 8, 36, 'BSB'))
+    expect(host.querySelector('[data-navigation-range]')).toBeNull()
+  })
+
+  it('marks only recorded native interlinear verses with verse numbers hidden', async () => {
+    HTMLElement.prototype.scrollIntoView = vi.fn()
+    Object.assign(window.api, {
+      listEditions: async () => [{ id: 'NA', name: 'Critical', testament: 'NT' }],
+      getInterlinear: async () => ({ direction: 'ltr', verses: [35, 36, 38, 39].map(verse => ({ verse, tokens: [] })) })
+    })
+    useAppStore.setState({ interlinear: true, interlinearEdition: 'NA',
+      displayDefaults: { ...useAppStore.getState().displayDefaults, verseNumbers: false } })
+    useAppStore.getState().goToVerse('Acts', 8, 36, 'NA', { chapter: 8, verse: 38 })
+    await act(async () => root.render(createElement(ReadingPanel)))
+    const marks = [...host.querySelectorAll<HTMLElement>('[data-interlinear-reader] [data-navigation-range]')]
+    expect(marks.map(el => Number(el.dataset.verse))).toEqual([36, 38])
+    expect(marks[0].querySelector('[data-verse-action]')?.getAttribute('data-label')).toBe('⋯')
+  })
+
   it('bookmarks the scrolled verse and restores it after the reader remounts', async () => {
     const addBookmark = vi.fn().mockResolvedValue(undefined)
     const rows = [1, 23, 24].map(verse => ({ verse, text: 'Verse ' + verse, tokens: [] }))

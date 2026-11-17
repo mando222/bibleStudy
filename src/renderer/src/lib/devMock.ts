@@ -53,14 +53,20 @@ export async function installDevMock(): Promise<void> {
   const notes: Note[] = []
   let hid = 1
   let nid = 1
+  const readingData = (edition: string, interlinear: boolean) =>
+    interlinear || ['NA', 'TR', 'BYZ'].includes(edition) ? data.interlinear : data.chapters
 
   const mock: BibleApi = {
     version: async () => '0.0.0-dev',
     listTranslations: async () => data.translations as never,
-    listReadingChapters: async edition => Object.keys(data.chapters).filter(k => k.startsWith(edition + '/')).map(k => {
-      const [, book, chapter] = k.split('/')
-      return { book, chapter: Number(chapter), firstVerse: data.chapters[k].verses[0]?.verse ?? 1 }
-    }),
+    listReadingChapters: async (edition, interlinear) => Object.entries(readingData(edition, interlinear))
+      .filter(([key, value]) => key.startsWith(edition + '/') && value.verses.length)
+      .map(([key, value]) => {
+        const [, book, chapter] = key.split('/')
+        return { book, chapter: Number(chapter), firstVerse: value.verses[0].verse }
+      }),
+    listReadingVerses: async (ref, interlinear) => readingData(ref.translation, interlinear)
+      [`${ref.translation}/${ref.book}/${ref.chapter}`]?.verses.map(v => v.verse) ?? [],
     getChapter: async (ref) =>
       data.chapters[`${ref.translation}/${ref.book}/${ref.chapter}`] ??
       ({

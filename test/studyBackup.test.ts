@@ -101,6 +101,21 @@ describe('study storage', () => {
     expect(user.listHighlights({ translation: replacement.id, book: 'Gen', chapter: 1 })).toEqual([])
   })
 
+  it('lists a partial imported chapter using its actual verse numbers in order', () => {
+    const path = moduleFile('partial-numbers')
+    const db = new DatabaseSync(path)
+    try { db.exec("INSERT INTO Bible VALUES(1,1,7,'Seven'),(1,1,3,'Three'),(1,3,6,'Six')") }
+    finally { db.close() }
+    const { id: translation } = user.importFromSqlite(path)
+    try {
+      expect(user.importedChapters(translation)).toEqual([
+        { book: 'Gen', chapter: 1, firstVerse: 1 }, { book: 'Gen', chapter: 3, firstVerse: 6 }
+      ])
+      expect(user.importedVerses({ translation, book: 'Gen', chapter: 1 })).toEqual([1, 3, 7])
+      expect(user.importedVerses({ translation, book: 'Gen', chapter: 2 })).toEqual([])
+    } finally { user.deleteImported(translation) }
+  })
+
   it('restores annotations, modules, learning, bookmarks, external Markdown, AI documents and reader settings', () => {
     user.addBookmark({ name: 'Opening', book: 'John', chapter: 1, verse: 1 })
     user.reviewCard('G3056', 'greek', 4)

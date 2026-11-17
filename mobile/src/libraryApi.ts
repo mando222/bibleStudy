@@ -43,6 +43,9 @@ export const libraryApi: CorpusApi = {
   listReadingChapters(edition, interlinear) {
     return edition.startsWith('imp_') ? importedLibrary.chapters(edition) : bundledQueries.listReadingChapters(edition, interlinear)
   },
+  listReadingVerses(ref, interlinear) {
+    return ref.translation.startsWith('imp_') ? importedLibrary.verses(ref) : bundledQueries.listReadingVerses(ref, interlinear)
+  },
   getChapter(ref) {
     if (ref.translation.startsWith('imp_')) return importedLibrary.chapter(ref)
     // The native original-text reader includes source readings, attestations and paired forms.

@@ -15,12 +15,13 @@ interface Props extends ChapterRef {
   speakers?: boolean
   headings?: boolean
   verseNumbers?: boolean
+  inRange?: boolean
   highlight?: Highlight
   hasNote?: boolean
   onOpenMenu: (verse: number, e: React.MouseEvent) => void
 }
 
-export default function VerseView({ v, translation, book, chapter, literary = false, speakers = false, headings = literary, verseNumbers = true, highlight, hasNote, onOpenMenu }: Props): JSX.Element {
+export default function VerseView({ v, translation, book, chapter, literary = false, speakers = false, headings = literary, verseNumbers = true, inRange, highlight, hasNote, onOpenMenu }: Props): JSX.Element {
   const strongsVisible = useAppStore(s => s.strongsVisible)
   const selectStrongs = useAppStore(s => s.selectStrongs)
   const selected = useAppStore(s => s.selectedStrongs)
@@ -51,6 +52,7 @@ export default function VerseView({ v, translation, book, chapter, literary = fa
   const reviewed = useMemo(() => speakers ? getReviewedSpeakers(translation, book, chapter, v.verse) : [],
     [speakers, translation, book, chapter, v.verse])
   const verseControls = <>
+    {inRange && <span aria-hidden="true" className="passage-range-tick" />}
     <sup className={`select-none align-super text-[0.62em] font-sans font-semibold text-accent/70 ${verseNumbers ? 'mr-0.5' : 'relative inline-block w-0'}`}>
       <button type="button" data-verse-action="" data-passage-action="" tabIndex={-1} onClick={e => onOpenMenu(v.verse, e)}
         aria-label={`Verse ${v.verse}, highlight or add a note`} title="Highlight or add a note"
@@ -137,7 +139,8 @@ export default function VerseView({ v, translation, book, chapter, literary = fa
     </span>
   )
   return (
-    <span className="verse group/verse" tabIndex={-1} data-verse={v.verse}>
+    <span className="verse group/verse" tabIndex={-1} data-verse={v.verse}
+      data-navigation-range={inRange || undefined} aria-description={inRange ? 'In selected passage' : undefined}>
       {literary || speakers || v.layout?.some(m => m.kind === 'superscription' || (headings && m.kind === 'heading')) ? <LiteraryVerse groups={groups} location={{ translation, book, chapter, verse: v.verse }}
         text={v.text} reviewed={reviewed} verseControls={verseControls} renderParts={renderParts} /> :
         <>{verseControls}{renderParts(parts)}</>}{' '}

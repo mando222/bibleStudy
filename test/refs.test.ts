@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseScriptureRefs, typedPassage } from '../src/shared/refs'
+import { matchingBooks, parseScriptureRefs, typedPassage } from '../src/shared/refs'
 
 describe('parseScriptureRefs', () => {
   const one = (s: string): ReturnType<typeof parseScriptureRefs>[number] => {
@@ -64,4 +64,17 @@ it('opens the extra Swete psalm only in its native edition and requires the enti
   expect(typedPassage('John 3:16 stray text', 'BSB')).toBeUndefined()
   expect(typedPassage('before John 3:16', 'BSB')).toBeUndefined()
   expect(typedPassage('1 Jn 2:1', 'BSB')).toMatchObject({ book: '1John', chapter: 2, firstVerse: 1 })
+})
+
+it('accepts native verse and chapter ranges including a superscription or a single-chapter book', () => {
+  expect(typedPassage('1 Jn 4:7–12', 'KJV')).toMatchObject({ book: '1John', chapter: 4, firstVerse: 7, lastChapter: 4, lastVerse: 12 })
+  expect(typedPassage('1 Jn 4 : 19 – 5:2', 'NA')).toMatchObject({ firstVerse: 19, lastChapter: 5, lastVerse: 2 })
+  expect(typedPassage('Jude 1–4', 'KJV')).toMatchObject({ chapter: 1, firstVerse: 1, lastChapter: 1, lastVerse: 4 })
+  expect(typedPassage('Ps 151:0–1', 'LXX')).toMatchObject({ firstVerse: 0, lastVerse: 1 })
+  expect(typedPassage('John 3–5', 'KJV')).toMatchObject({ chapter: 3, lastChapter: 5, lastVerse: undefined })
+  expect(typedPassage('Ps 152:1', 'imp_example')).toMatchObject({ chapter: 152 })
+  expect(typedPassage('John 4:7–3', 'KJV')).toBeUndefined()
+  expect(typedPassage('John 4:7–3:10', 'KJV')).toBeUndefined()
+  expect(matchingBooks('1 Jn')).toEqual(['1John'])
+  expect(matchingBooks('John')).toEqual(expect.arrayContaining(['John','1John','2John','3John']))
 })

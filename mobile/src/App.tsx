@@ -26,6 +26,7 @@ import CrossRefsPanel from '@/components/CrossRefsPanel'
 import NotesPanel from '@/components/NotesPanel'
 import NotebookPanel from '@/components/NotebookPanel'
 import PassageInspector from '@/components/PassageInspector'
+import PassagePicker from '@/components/PassagePicker'
 import OriginalVerseComparison from '@/components/OriginalVerseComparison'
 import { ComparisonContent } from '@/components/RestoredWordComparison'
 import { ReaderActions, type ReaderVerseAction, type ReaderWordAction } from '@/components/ReaderActions'
@@ -55,7 +56,6 @@ import {
   BackupTools,
   DisplaySettings,
   EditionPicker,
-  PassagePicker,
   PhoneSheet,
   SavedPlaces,
   Tool,
@@ -469,6 +469,7 @@ export default function App() {
           ...reader,
           activeVerse: previousVerse,
           scrollToVerse: previousVerse,
+          navigationRange: null,
           activity: ['search', 'library', 'notebook'].includes(previous.page) ? 'bible' : previous.page as Activity,
           ...previous.word, studyInspector: previous.inspector
         })
@@ -591,7 +592,8 @@ export default function App() {
           <div className="reader-rail">
             <button
               className="passage-choice"
-              aria-label="Choose passage"
+              aria-label={'Choose passage · ' + bookName(readerBook) + ' ' + readerChapterNum}
+              aria-haspopup="dialog"
               onClick={() => openSheet('passage')}
             >
               <span>{bookTitle}</span>
@@ -823,7 +825,7 @@ export default function App() {
             sheet
           )}
         >
-          {sheet === 'passage' && <PassagePicker close={close} />}
+          {sheet === 'passage' && <PassagePicker onClose={close} />}
           {sheet === 'editions' && <EditionPicker />}
           {(sheet === 'settings' || sheet === 'files') && (
             <button type="button" className="link-row mb-2" onClick={() => openSheet('updates')}>

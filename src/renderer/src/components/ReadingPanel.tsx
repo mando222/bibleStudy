@@ -2,9 +2,11 @@ import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { readingEdition, useAppStore } from '@/store/useAppStore'
 import { mapChapterStart, mapPassage } from '@shared/passageMapping'
 import { BOOK_BY_ID } from '@shared/books'
+import { passageLabel } from '@shared/refs'
 import { chapterKey, useChapterStream } from '@/hooks/useChapterStream'
 import { useChapter } from '@/hooks/useChapter'
 import { useVerseNavigation } from '@/hooks/useVerseNavigation'
+import { useNavigationRange } from '@/hooks/useNavigationRange'
 import { useHighlights, useNotes } from '@/hooks/useUserData'
 import { activeChapter, readerViewKey, readPosition, recordPosition, restorePosition, type ReadingPosition } from '@/lib/readingPosition'
 import { publishedCopy, publishedSelection } from '@/lib/scriptureSelection'
@@ -28,6 +30,8 @@ export default function ReadingPanel(): JSX.Element {
 
   const referenceEdition = useAppStore((s) => s.referenceEdition || s.primary)
   const activeVerse = useAppStore((s) => s.activeVerse)
+  const range = useAppStore(s => s.navigationRange)
+  const clearRange = useAppStore(s => s.clearNavigationRange)
   const location = JSON.stringify([book, chapter, referenceEdition, activeVerse, parallels])
   const refs = useRef<(HTMLDivElement | null)[]>([])
   const reader = useRef<HTMLDivElement>(null)
@@ -121,6 +125,11 @@ export default function ReadingPanel(): JSX.Element {
 
   return (
     <div ref={reader} className="h-full flex flex-col bg-bg">
+      {range && <div className="shrink-0 flex flex-wrap items-center justify-between gap-x-3 px-3 py-1 bg-panel border-b border-line text-sm">
+        <span role="status" aria-label="Selected passage">{passageLabel(range)}
+          {' · '}{translations.find(t => t.id === range.edition)?.abbrev ?? range.edition}</span>
+        <button type="button" onClick={clearRange} className="min-h-8 [@media(pointer:coarse)]:min-h-11 text-accent hover:underline" aria-label="Clear passage range">Clear range</button>
+      </div>}
       <WordComparisonProvider location={JSON.stringify([location, interlinear])}>
       {!touch && !interlinear && scope && <ReadingTools range={{ edition: scopeEdition, book: scope.book, chapter: scope.chapter,
         ...(source.verse != null && scope.verse != null ? { firstVerse: scope.verse } : {}) }}/>}
@@ -354,6 +363,7 @@ function ColumnPage({ translation, book, chapter, active, before, containerRef, 
   containerRef: React.RefObject<HTMLDivElement>; enter: ReturnType<typeof useChapterStream>['enter']; onReady: (first?: number) => void
 }) {
   const { data, loading, error } = useChapter(translation, book, chapter)
+  const marked = useNavigationRange(book, chapter, translation, false, data?.verses)
   const meta = useAppStore((s) => s.translations.find((x) => x.id === translation))
   const strongsVisible = useAppStore((s) => s.strongsVisible)
   const sourceWords = useAppStore(s => s.restoreSourceWords)
@@ -489,6 +499,7 @@ function ColumnPage({ translation, book, chapter, active, before, containerRef, 
               <VerseView
                 key={v.verse}
                 v={v}
+                inRange={marked.has(v.verse)}
                 literary={display.literary} speakers={display.speakers} headings={display.headings} verseNumbers={display.verseNumbers}
                 translation={translation} book={book} chapter={chapter}
                 highlight={highlights.get(v.verse)}

@@ -34,6 +34,7 @@ async function checkpoint<T>(operation: () => Promise<T>): Promise<T> {
 export const importedLibrary = {
   list: () => call<Translation[]>('imports'),
   chapters: (translation: string) => call<ReadingChapter[]>('importChapters', { translation }),
+  verses: async (ref: ChapterRef) => (await call<{ verse: number }[]>('importVerseNumbers', ref)).map(row => row.verse),
   chapter: async (ref: ChapterRef): Promise<ChapterContent> => ({
     ...ref, bookName: BOOK_BY_ID[ref.book]?.name ?? ref.book,
     ...await call<Pick<ChapterContent, 'direction' | 'verses'>>('importChapter', ref)

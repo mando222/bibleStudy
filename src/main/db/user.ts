@@ -433,6 +433,11 @@ export function importedChapters(edition: string): ReadingChapter[] {
     .all(edition) as ReadingChapter[]
 }
 
+export function importedVerses(ref: ChapterRef): number[] {
+  return required().prepare('SELECT verse FROM imported_verses WHERE translation_id=? AND book_id=? AND chapter=? ORDER BY verse')
+    .all(ref.translation, ref.book, ref.chapter).map(row => Number(row.verse))
+}
+
 export function getImportedChapter(ref: ChapterRef): ChapterContent {
   const d = required()
   const meta = d

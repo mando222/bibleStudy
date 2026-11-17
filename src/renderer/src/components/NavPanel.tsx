@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { BOOKS, BOOKS_CHRONO, type BookMeta } from '@shared/books'
+import { matchingBooks } from '@shared/refs'
 import { openPassage, readerPassage } from '@/lib/openPassage'
+import { usePassageCatalog } from '@/hooks/usePassageCatalog'
 import { readerChapter } from '@/lib/passage'
 import { readingEdition, useAppStore } from '@/store/useAppStore'
 import { SearchIcon, ChevronRight } from './icons'
@@ -14,9 +16,19 @@ export default function NavPanel(): JSX.Element {
   const [openBook, setOpenBook] = useState<string | null>(book)
   const [filter, setFilter] = useState('')
 
+  const catalog = usePassageCatalog()
+  const chapters = useMemo(() => {
+    const grouped = new Map<string, number[]>()
+    for (const row of catalog.data ?? []) {
+      if (!grouped.has(row.book)) grouped.set(row.book, [])
+      grouped.get(row.book)!.push(row.chapter)
+    }
+    return grouped
+  }, [catalog.data])
   const q = filter.trim().toLowerCase()
   const source = chronological ? BOOKS_CHRONO : BOOKS
-  const matches = q ? source.filter((b) => b.name.toLowerCase().includes(q)) : source
+  const matching = q ? new Set(matchingBooks(q)) : null
+  const matches = source.filter(b => chapters.has(b.id) && (!matching || matching.has(b.id)))
   const ot = matches.filter((b) => b.testament === 'OT')
   const nt = matches.filter((b) => b.testament === 'NT')
 
@@ -35,7 +47,7 @@ export default function NavPanel(): JSX.Element {
   const verse = useAppStore((s) => s.activeVerse)
   const current = readerChapter(book, chapter, verse, sourceEdition, edition)
   useEffect(() => { setOpenBook(book) }, [book])
-  const rowProps = { edition, openBook, setOpenBook, current: current?.book ?? '', currentChapter: current?.chapter ?? 0, goTo }
+  const rowProps = { openBook, setOpenBook, current: current?.book ?? '', currentChapter: current?.chapter ?? 0, goTo }
   const segBtn = (active: boolean): string =>
     `flex-1 py-1 transition-colors ${
       active ? 'bg-accent-soft text-accent font-medium' : 'text-muted hover:bg-elevated'
@@ -56,7 +68,7 @@ export default function NavPanel(): JSX.Element {
           </div>
           {ref && <button disabled={opening} className="mt-2 text-sm text-accent" type="submit">Go to passage · {filter.trim()}</button>}
           {issue && <p role="alert" className="text-xs text-muted">{issue}</p>}
-          {!ref && !matches.length && <p role="status" className="mt-2 text-xs text-muted">No matching book or reference in {edition}. Try John 3:16.</p>}
+          {q && catalog.data && !ref && !matches.length && <p role="status" className="mt-2 text-xs text-muted">No matching book or reference in {edition}. Try John 3:16.</p>}
         </form>
         <div className="flex rounded-md border border-line overflow-hidden text-xs" title="Book order">
           <button onClick={() => chronological && toggleChronological()} className={segBtn(!chronological)}>
@@ -69,22 +81,24 @@ export default function NavPanel(): JSX.Element {
       </div>
 
       <nav className="flex-1 overflow-y-auto py-1">
+        {catalog.loading && <p className="px-3 text-sm text-muted" role="status">Loading books…</p>}
+        {catalog.error && <p className="px-3 text-sm" role="alert">Couldn’t load books. <button onClick={catalog.retry} className="underline">Retry</button></p>}
         {chronological ? (
           <>
             <SectionLabel>Chronological order</SectionLabel>
             {matches.map((b) => (
-              <BookRow key={b.id} b={b} {...rowProps} />
+              <BookRow key={b.id} b={b} chapters={chapters.get(b.id)!} {...rowProps} />
             ))}
           </>
         ) : (
           <>
             {ot.length > 0 && <SectionLabel>Old Testament</SectionLabel>}
             {ot.map((b) => (
-              <BookRow key={b.id} b={b} {...rowProps} />
+              <BookRow key={b.id} b={b} chapters={chapters.get(b.id)!} {...rowProps} />
             ))}
             {nt.length > 0 && <SectionLabel>New Testament</SectionLabel>}
             {nt.map((b) => (
-              <BookRow key={b.id} b={b} {...rowProps} />
+              <BookRow key={b.id} b={b} chapters={chapters.get(b.id)!} {...rowProps} />
             ))}
           </>
         )}
@@ -103,7 +117,7 @@ function SectionLabel({ children }: { children: React.ReactNode }): JSX.Element 
 
 interface RowProps {
   b: BookMeta
-  edition: string
+  chapters: number[]
   openBook: string | null
   setOpenBook: (id: string | null) => void
   current: string
@@ -111,9 +125,7 @@ interface RowProps {
   goTo: (book: string, chapter: number) => void
 }
 
-function BookRow({ b, edition, openBook, setOpenBook, current, currentChapter, goTo }: RowProps): JSX.Element {
-  // Swete includes Psalm 151 after the canonical 150.
-  const chapters = edition === 'LXX' && b.id === 'Ps' ? 151 : b.chapters
+function BookRow({ b, chapters, openBook, setOpenBook, current, currentChapter, goTo }: RowProps): JSX.Element {
   const open = openBook === b.id
   const isCurrent = current === b.id
   return (
@@ -130,7 +142,7 @@ function BookRow({ b, edition, openBook, setOpenBook, current, currentChapter, g
       </button>
       {open && (
         <div className="grid grid-cols-6 gap-1 px-3 pb-2 pt-0.5">
-          {Array.from({ length: chapters }, (_, i) => i + 1).map((c) => {
+          {chapters.map((c) => {
             const active = isCurrent && currentChapter === c
             return (
               <button

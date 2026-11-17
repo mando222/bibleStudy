@@ -14,7 +14,9 @@ Group changes under: **Added** (new features), **Changed** (changes to existing 
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- Click or tap the current passage title to jump to a verse, read a whole chapter, or select a range across chapters. You can also type a reference such as **1 Jn 4:7–12**. The picker lists the chapters and verses available in your edition, including imported translations.
 
 ## [0.6.1] - 2026-11-16
 

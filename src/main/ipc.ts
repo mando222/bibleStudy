@@ -24,6 +24,9 @@ export function registerIpc(): void {
   ipcMain.handle('bible:listReadingChapters', (_e, edition: string, interlinear: boolean) =>
     user.isImported(edition) ? user.importedChapters(edition) : bible.listReadingChapters(edition, interlinear)
   )
+  ipcMain.handle('bible:listReadingVerses', (_e, ref: ChapterRef, interlinear: boolean) =>
+    user.isImported(ref.translation) ? user.importedVerses(ref) : bible.listReadingVerses(ref, interlinear)
+  )
   ipcMain.handle('bible:getChapter', (_e, ref: ChapterRef) =>
     user.isImported(ref.translation) ? user.getImportedChapter(ref) : bible.getChapter(ref)
   )

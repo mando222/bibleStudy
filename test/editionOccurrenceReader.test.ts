@@ -3,7 +3,8 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, expect, it, vi } from 'vitest'
-import { bibleDb, getChapter, getComparisonVerse, getConcordance, getInterlinear, search } from '../src/main/db/bible'
+import { bibleDb, getChapter, getComparisonVerse, getConcordance, getInterlinear,
+  listReadingChapters, listReadingVerses, search } from '../src/main/db/bible'
 import { countSourceSpans } from '../src/main/db/sourceWordCoverage'
 import { restoredVerseSegments, publishedWording, sameSourceOccurrence } from '../src/shared/sourceWords'
 
@@ -43,6 +44,15 @@ beforeAll(() => {
   } finally { db.close() }
 })
 afterAll(() => { bibleDb()?.close(); rmSync(folder, { recursive: true, force: true }) })
+
+it('enumerates only recorded passages and counts each interlinear verse once', () => {
+  expect(listReadingChapters('WEB', false)).toEqual([{ book: 'John', chapter: 11, firstVerse: 35 }])
+  expect(listReadingVerses(ref, false)).toEqual([35, 36])
+  expect(listReadingVerses({ ...ref, chapter: 10 }, false)).toEqual([])
+  const greek = { ...ref, translation: 'BYZ' }
+  expect(listReadingVerses(greek, true)).toEqual([35])
+  expect(listReadingVerses(greek, false)).toEqual([35])
+})
 
 it('resolves evidence at each English occurrence and preserves the edition’s printed wording', () => {
   const [aligned, inferred] = getChapter(ref).verses

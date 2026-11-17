@@ -68,6 +68,19 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* The range marker sits beside a verse even when verse numbers are hidden. */
+.passage-range-tick {
+  display: inline-block;
+  border-inline-start: 3px solid rgb(var(--accent));
+  height: 0.88em;
+  margin-inline-end: 0.2em;
+  vertical-align: -0.03em;
+}
+[data-interlinear-reader] [data-navigation-range] {
+  border-inline-start: 3px solid rgb(var(--accent));
+  padding-inline-start: 0.35rem;
+}
+
 /* Brief flash when jumping to a verse from search/navigation */
 .verse-flash {
   animation: verseFlash 1.6s ease-out;
