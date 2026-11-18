@@ -97,19 +97,20 @@ dialog .bg-accent.text-white {
   height: 19px;
 }
 .appbar {
-  padding: env(safe-area-inset-top) max(11px, env(safe-area-inset-right)) 0
-    max(17px, env(safe-area-inset-left));
-  min-height: 44px;
+  padding: env(safe-area-inset-top) max(8px, env(safe-area-inset-right)) 0
+    max(8px, env(safe-area-inset-left));
+  min-height: 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 4px;
   flex: none;
   border-bottom: 1px solid rgb(var(--line) / 0.7);
   background: rgb(var(--panel));
 }
 .identity,
 .appbar-end,
-.reader-rail,
+.reader-controls,
 .chapter-steps,
 .tabbar,
 .tabbar button,
@@ -128,6 +129,7 @@ dialog .bg-accent.text-white {
 }
 .identity {
   gap: 9px;
+  flex: none;
   font-size: var(--type-control);
   font-weight: 650;
   letter-spacing: -0.025em;
@@ -161,23 +163,34 @@ dialog .bg-accent.text-white {
   min-height: 0;
   min-width: 0;
 }
-.reader-rail {
-  gap: 6px;
-  padding: 0 max(9px, env(safe-area-inset-right)) 0 max(19px, env(safe-area-inset-left));
-  min-height: 52px;
-  height: auto;
+.reader-controls {
+  container: reader-controls / inline-size;
+  flex: 1;
+  min-width: 0;
+  gap: 4px;
+}
+.appbar-end {
   flex: none;
-  border-bottom: 1px solid rgb(var(--line));
-  background: rgb(var(--bg));
+}
+.appbar .phone-icon {
+  width: 44px;
+  height: 44px;
+}
+.appbar .reader-tool-trigger {
+  width: auto;
+  min-width: 44px;
+  padding-inline: 6px;
+  color: rgb(var(--accent));
+  font-size: var(--type-label);
+  font-weight: 650;
 }
 .passage-choice {
   display: flex;
   align-items: center;
   gap: 5px;
   min-width: 0;
-  flex: 1;
   min-height: 44px;
-  text-align: start;
+  justify-content: center;
 }
 .passage-choice span,
 .workspace-title h1,
@@ -188,10 +201,16 @@ dialog .bg-accent.text-white {
   font-weight: 500;
 }
 .passage-choice span {
-  font-size: var(--type-subtitle);
+  font-size: var(--type-control);
+}
+.passage-choice .passage-book {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.passage-choice .passage-chapter {
+  flex: none;
+  font-variant-numeric: tabular-nums;
 }
 .passage-choice svg {
   width: 15px;
@@ -203,10 +222,12 @@ dialog .bg-accent.text-white {
 .edition-choice {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  max-width: 34%;
-  min-height: 42px;
+  justify-content: flex-start;
+  gap: 3px;
+  padding-inline: 4px;
+  flex: 1;
+  min-width: 44px;
+  min-height: 44px;
   color: rgb(var(--accent));
   font-size: var(--type-label);
   font-weight: 650;
@@ -221,6 +242,10 @@ dialog .bg-accent.text-white {
 }
 .edition-choice span {
   color: rgb(var(--muted));
+}
+.edition-choice[aria-expanded='true'] {
+  background: rgb(var(--accent-soft));
+  border-radius: 8px;
 }
 .reader-pane [data-reader-columns] {
   overflow-x: auto;
@@ -275,10 +300,16 @@ dialog .bg-accent.text-white {
   min-width: 14px;
   font-weight: 650;
 }
-.reader-pane [data-scripture-passage] [data-verse-action][data-label='⋯'] {
-  opacity: 0.65;
-  position: relative;
-  font-size: 8px;
+/* Touch readers use Tools → Verse actions when numbers are hidden. Keep the
+   zero-width markers available to a hardware keyboard, without sticky hover
+   revealing ellipses or invisible buttons intercepting taps on the passage. */
+.phone .reader-pane [data-verse-action][data-label='⋯'] {
+  opacity: 0;
+  pointer-events: none;
+}
+.phone .reader-pane [data-verse-action][data-label='⋯']:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 .reader-pane [data-scripture-passage] [role='button'] {
   user-select: text;
@@ -298,7 +329,7 @@ dialog .bg-accent.text-white {
 }
 .chapter-steps {
   flex: none;
-  min-height: 40px;
+  min-height: 44px;
   justify-content: space-between;
   padding: 0 max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left));
   border-top: 1px solid rgb(var(--line) / 0.55);
@@ -309,18 +340,24 @@ dialog .bg-accent.text-white {
   display: flex;
   align-items: center;
   gap: 3px;
-  min-height: 38px;
+  min-height: 44px;
   font-weight: 550;
 }
 .chapter-steps svg {
   width: 13px;
   height: 13px;
 }
-.chapter-steps > span {
-  font-size: var(--type-meta);
-  letter-spacing: 0.035em;
-  text-transform: uppercase;
-  color: rgb(var(--faint));
+.chapter-navigation {
+  display: grid;
+  grid-template-columns: minmax(max-content, 1fr) minmax(0, 2fr) minmax(max-content, 1fr);
+  gap: 4px;
+}
+.chapter-navigation > :last-child {
+  justify-content: end;
+}
+.chapter-navigation .passage-choice {
+  color: rgb(var(--ink));
+  gap: 4px;
 }
 .tabbar {
   flex: none;
@@ -463,6 +500,41 @@ dialog .bg-accent.text-white {
 .phone-sheet::backdrop {
   background: #19241d70;
 }
+.translation-popover {
+  position: fixed;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  color: rgb(var(--ink));
+  background: rgb(var(--panel));
+  border: 1px solid rgb(var(--line));
+  border-radius: 16px;
+  box-shadow: 0 8px 28px #0004;
+}
+.translation-popover::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: calc(var(--popover-arrow-left) - 6px);
+  width: 10px;
+  height: 10px;
+  background: rgb(var(--panel));
+  border-top: 1px solid rgb(var(--line));
+  border-left: 1px solid rgb(var(--line));
+  transform: rotate(45deg);
+}
+.translation-popover-content {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px;
+  border-radius: inherit;
+  font-size: var(--type-body);
+  line-height: 1.5;
+}
+.translation-popover button {
+  touch-action: manipulation;
+}
 .sheet-bar {
   display: flex;
   flex: none;
@@ -485,6 +557,9 @@ dialog .bg-accent.text-white {
 }
 .phone-sheet.roomy {
   max-height: 91dvh;
+}
+.phone-sheet[aria-label='Passage tools'] {
+  height: min(88dvh, 48rem);
 }
 .sheet-content .tools-list {
   padding: 0;
@@ -584,6 +659,231 @@ dialog .bg-accent.text-white {
   flex: 1;
   min-width: 0;
 }
+.parallel-remove {
+  flex: none;
+  min-height: 44px;
+  padding-inline: 10px;
+  font-size: var(--type-label);
+}
+.parallel-choices {
+  padding: 12px;
+  border: 1px solid rgb(var(--line));
+  border-radius: 12px;
+}
+.parallel-choices .section-label {
+  margin: 0;
+  font-size: var(--type-label);
+  letter-spacing: normal;
+  text-transform: none;
+}
+.translation-chips {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  gap: 8px;
+}
+.translation-chip {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 64px;
+  padding: 10px 12px;
+  border: 2px solid rgb(var(--line));
+  border-radius: 1.25rem;
+  background: rgb(var(--bg));
+  color: rgb(var(--ink));
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.translation-chip[aria-pressed='true'] {
+  border-color: rgb(var(--accent));
+  background: rgb(var(--accent-soft));
+}
+.translation-chip:active {
+  background: rgb(var(--accent-soft));
+}
+.translation-chip-abbrev {
+  font-size: var(--type-control);
+  font-weight: 650;
+  line-height: 1.3;
+}
+.translation-chip-name {
+  font-size: var(--type-label);
+  font-weight: 400;
+  line-height: 1.35;
+  color: rgb(var(--muted));
+}
+.translation-manage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding-block: 12px;
+  margin-top: 6px;
+  border-top: 1px solid rgb(var(--line));
+  color: rgb(var(--accent));
+  font-size: var(--type-control);
+  font-weight: 550;
+  text-align: start;
+}
+.translation-manage svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.passage-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.passage-tools-categories {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgb(var(--line));
+  border-radius: 12px;
+  background: rgb(var(--bg));
+}
+.phone .passage-tools-categories button[aria-pressed] {
+  min-height: 44px;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  font-size: var(--type-control);
+  font-weight: 600;
+}
+.passage-tools-categories button[aria-pressed='true'] {
+  border-color: rgb(var(--accent));
+  color: rgb(var(--accent));
+  background: rgb(var(--accent-soft));
+}
+.passage-tools-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgb(var(--line));
+  border-radius: 12px;
+  background: rgb(var(--bg));
+}
+.passage-tools-selection label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-size: var(--type-label);
+  color: rgb(var(--muted));
+}
+.passage-tools-choosers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.passage-tools-selection select {
+  min-height: 44px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 7px 10px;
+  border: 1px solid rgb(var(--line));
+  border-radius: 8px;
+  background: rgb(var(--panel));
+  color: rgb(var(--ink));
+  font-size: var(--type-control);
+}
+.passage-tools-reference {
+  color: rgb(var(--ink));
+  font-size: var(--type-control);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.passage-tools-preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  font-family: Georgia, 'Noto Serif', serif;
+  font-size: var(--type-body);
+  line-height: 1.5;
+}
+.passage-tools-preview.is-expanded {
+  display: block;
+  overflow: visible;
+}
+.eink .passage-tools-preview {
+  font-family: Roboto, 'Noto Sans', system-ui, sans-serif;
+  font-weight: 500;
+}
+.passage-tools-preview-toggle,
+.passage-tools-change-verse {
+  align-self: flex-start;
+  min-height: 44px;
+  color: rgb(var(--accent));
+  font-size: var(--type-label);
+}
+.passage-tools-quick-actions {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 8px;
+}
+.passage-tools-quick-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  min-height: 52px;
+  padding: 8px;
+  border: 1px solid rgb(var(--line));
+  border-radius: 10px;
+  background: rgb(var(--accent-soft));
+  color: rgb(var(--accent));
+  font-size: var(--type-label);
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: center;
+}
+.passage-tools-quick-actions svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.passage-tools-actions {
+  display: flex;
+  flex-direction: column;
+}
+.passage-tool-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 60px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgb(var(--line));
+  text-align: start;
+}
+.passage-tool-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 8px;
+  background: rgb(var(--accent-soft));
+  color: rgb(var(--accent));
+}
+.passage-tool-mark svg { width: 18px; height: 18px; }
+.passage-tool-text { min-width: 0; flex: 1; }
+.passage-tool-text strong { display: block; font-size: var(--type-control); font-weight: 600; }
+.passage-tool-text small { display: block; font-size: var(--type-label); color: rgb(var(--muted)); line-height: 1.4; }
+.passage-tool-row > svg { width: 16px; height: 16px; flex: none; color: rgb(var(--muted)); }
+.passage-tool-row:active { background: rgb(var(--accent-soft)); }
+.passage-tools-feedback,
+.passage-tools-empty { font-size: var(--type-label); line-height: 1.5; }
 .phone-details {
   padding: 7px 0;
   border-top: 1px solid rgb(var(--line));
@@ -827,7 +1127,6 @@ dialog .bg-accent.text-white {
   .reader-pane [data-reader-columns]:not([data-reader-columns='1']) > div {
     min-width: min(18rem, 48%);
   }
-  .reader-rail,
   .appbar {
     padding-inline: 24px;
   }
@@ -836,18 +1135,6 @@ dialog .bg-accent.text-white {
   .phone-sheet,
   .phone-sheet.roomy {
     max-height: 97dvh;
-  }
-  .appbar {
-    min-height: 36px;
-  }
-  .reader-rail {
-    min-height: 44px;
-  }
-  .chapter-steps {
-    min-height: 34px;
-  }
-  .chapter-steps button {
-    min-height: 31px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -875,11 +1162,30 @@ dialog .bg-accent.text-white {
   color: rgb(var(--faint));
 }
 .reader-mode {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 44px;
   min-height: 44px;
   padding-inline: 6px;
   color: rgb(var(--accent));
   font-size: var(--type-label);
   font-weight: 600;
+}
+.reader-mode-label {
+  white-space: nowrap;
+}
+.reader-mode-icon {
+  display: none;
+}
+.reader-mode-icon svg {
+  width: 20px;
+  height: 20px;
+}
+@container reader-controls (max-width: 12rem) {
+  .reader-mode-label { display: none; }
+  .reader-mode-icon { display: block; }
 }
 .interlinear-options summary {
   min-height: 44px;

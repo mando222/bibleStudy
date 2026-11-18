@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { App as AndroidApp } from '@capacitor/app'
 import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core'
-import { BOOK_BY_ID } from '@shared/books'
 import { mapPassage } from '@shared/passageMapping'
-import { editionDisplay } from '@shared/readingDisplay'
 import type { VerseRef } from '@shared/types'
 import { readingEdition, useAppStore, type Activity } from '@/store/useAppStore'
 import { useReadingSequence } from '@/hooks/useChapterStream'
@@ -47,8 +45,6 @@ import {
   NotebookIcon,
   BookmarkIcon,
   FileIcon,
-  LinkIcon,
-  CompareIcon,
   InterlinearIcon,
   PenIcon
 } from '@/components/icons'
@@ -56,14 +52,18 @@ import {
   BackupTools,
   DisplaySettings,
   EditionPicker,
+  ImportedTranslationManager,
+  ParallelPicker,
   PhoneSheet,
   SavedPlaces,
   Tool,
   VerseActions,
-  VersePicker,
   bookName
 } from './PhoneTools'
 import AndroidUpdates, { AndroidUpdateNotice } from './AndroidUpdates'
+import { TranslationPopover } from './TranslationPopover'
+import { PassageTools, type PassageToolAction } from './PassageTools'
+import { passageToolColumns } from './passageToolScope'
 import { Study } from './study'
 
 declare global {
@@ -75,6 +75,8 @@ type Page = Activity | 'library' | 'search' | 'notebook'
 type Sheet =
   | 'passage'
   | 'editions'
+  | 'parallels'
+  | 'imports'
   | 'settings'
   | 'saved'
   | 'files'
@@ -84,7 +86,6 @@ type Sheet =
   | 'context'
   | 'comparison'
   | 'verse'
-  | 'pickVerse'
   | 'originals'
   | 'variants'
   | 'refs'
@@ -104,6 +105,8 @@ const pageTitles: Record<Page, string> = {
 const sheetTitles: Record<Sheet, string> = {
   passage: 'Go to passage',
   editions: 'Translations',
+  parallels: 'Parallel translations',
+  imports: 'Imported translations',
   settings: 'Reading settings',
   saved: 'Bookmarks & history',
   files: 'Files & settings',
@@ -113,7 +116,6 @@ const sheetTitles: Record<Sheet, string> = {
   context: 'Passage study',
   comparison: 'Translation wording',
   verse: 'Verse',
-  pickVerse: 'Choose a verse',
   originals: 'Source texts',
   variants: 'Textual variants',
   refs: 'Cross-references',
@@ -170,19 +172,16 @@ export default function App() {
   const verse = useAppStore((s) => s.activeVerse),
     edition = useAppStore(readingEdition),
     interlinear = useAppStore((s) => s.interlinear)
-  const parallels = useAppStore((s) => s.parallels),
-    theme = useTheme(),
+  const theme = useTheme(),
     selected = useAppStore((s) => s.selectedStrongs)
   const labels = useAppStore(s => s.translations)
   const editionLabel = labels.find(item => item.id === primary)?.abbrev ?? primary
   const inspector = useAppStore((s) => s.studyInspector)
-  const chapterNumbers = useAppStore(
-    (s) => editionDisplay(s.displayDefaults, s.displayOverrides, edition).chapterNumbers
-  )
   const [page, setPage] = useState<Page>(activity),
     [sheets, setSheets] = useState<Sheet[]>([])
   const sheet = sheets.at(-1)
   const stack = useRef(sheets)
+  const editionTrigger = useRef<HTMLButtonElement>(null)
   const atlasSheets = useRef<Sheet[]>([])
   const profileSheets = useRef<Sheet[]>([])
   const [notebookVisited, setNotebookVisited] = useState(false)
@@ -214,7 +213,7 @@ export default function App() {
   const native = readerChapter(book, chapter, verse, referenceEdition, edition)
   const readerBook = native?.book ?? book,
     readerChapterNum = native?.chapter ?? chapter
-  const bookTitle = bookName(readerBook) + (chapterNumbers ? ' ' + readerChapterNum : '')
+  const bookTitle = bookName(readerBook) + ' ' + readerChapterNum
   const announce = (text: string) => {
     setNotice(text)
     clearTimeout(toastTimer.current)
@@ -265,6 +264,7 @@ export default function App() {
     const old = stack.current.at(-1)
     replaceSheets(stack.current.slice(0, -1))
     if (old === 'context') useAppStore.getState().inspectStudy(null)
+    if (old === 'parallels' && stack.current.includes('tools')) setVerseColumns(readingColumns())
   }, [replaceSheets])
   function navigate(next: Page) {
     close()
@@ -288,6 +288,7 @@ export default function App() {
   }
   function openSheet(next: Sheet) {
     if (page === 'bible' && !sheet) syncReadingAnchor()
+    if (next === 'tools') setVerseColumns(readingColumns())
     pushSheet(next)
   }
   useEffect(
@@ -306,7 +307,8 @@ export default function App() {
           replaceSheets(returning ? atlasSheets.current : [])
         }
         if (s.scrollToVerse !== null && s.readerVisit !== previous.readerVisit) {
-          const last = snapshot(previous, readPosition())
+          // A study tool may target a different verse than the reader's scroll anchor.
+          const last = snapshot(previous, originSheets.includes('tools') ? null : readPosition())
           const sheetsToRestore = originSheets.filter(x => !['passage', 'saved'].includes(x))
           if (originPage !== 'bible' || sheetsToRestore.length || last.book !== s.book ||
               last.chapter !== s.chapter || last.verse !== s.scrollToVerse ||
@@ -383,8 +385,8 @@ export default function App() {
     replaceSheets(profileSheets.current)
     profileSheets.current = []
   }
-  function context(mode: 'context' | 'compare', ref?: VerseRef, last?: number) {
-    syncReadingAnchor()
+  function context(ref?: VerseRef, last?: number) {
+    if (!ref) syncReadingAnchor()
     const s = useAppStore.getState()
     const range = ref
       ? {
@@ -400,10 +402,10 @@ export default function App() {
           chapter: s.chapter,
           firstVerse: s.activeVerse ?? undefined
         }
-    s.inspectStudy({ mode, range })
+    s.inspectStudy({ mode: 'context', range })
     pushSheet('context')
   }
-  function inspectSelection(mode: 'context' | 'compare') {
+  function inspectSelection() {
     const sel = window.getSelection()
     if (!sel?.rangeCount) return
     const range = sel.getRangeAt(0)
@@ -420,7 +422,7 @@ export default function App() {
     const [selectedBook, selectedChapter] = section?.dataset.flowChapter?.split('/') ?? []
     if (!area || !selectedBook || !selectedChapter) return
     sel.removeAllRanges()
-    context(mode, { book: selectedBook, chapter: Number(selectedChapter), verse: area.v1, translation: ed }, area.v2)
+    context({ book: selectedBook, chapter: Number(selectedChapter), verse: area.v1, translation: ed }, area.v2)
   }
   const back = useRef<() => void>(() => {})
   back.current = () => {
@@ -475,6 +477,9 @@ export default function App() {
         })
         setVerseItem(previous.verseItem)
         setWordItem(previous.wordItem)
+        if (previous.sheets.includes('tools')) {
+          setVerseColumns(passageToolColumns(useAppStore.getState(), []))
+        }
         setPage(previous.page)
         replaceSheets(previous.sheets)
       } finally {
@@ -514,23 +519,20 @@ export default function App() {
     useAppStore.getState().toggleInterlinear()
     navigate('bible')
   }
-  function chooseVerse() {
+  function readingColumns() {
     const source = useAppStore.getState()
-    const sourceEdition = source.referenceEdition || source.primary
     const cols = Array.from(surface.current?.querySelectorAll<HTMLElement>('[data-reader-scroll]') ?? [])
-    const choices = cols.map(col => {
-      const translation = col.dataset.readerScroll!
-      const selectedRef = source.activeVerse == null ? null : mapPassage(
-        { book: source.book, chapter: source.chapter, verse: source.activeVerse }, sourceEdition, translation)
-      return { translation, book: col.dataset.readerBook!, chapter: Number(col.dataset.readerChapter),
-        verse: Number(col.dataset.readerAnchor) || selectedRef?.verse }
-    })
-    if (interlinear) {
-      const ref = readerChapter(source.book, source.chapter, source.activeVerse, sourceEdition, source.primary)
-      if (ref) choices.push({ translation: source.primary, ...ref, verse: 'verse' in ref ? Number(ref.verse) : undefined })
-    }
-    setVerseColumns(choices)
-    pushSheet('pickVerse')
+    return passageToolColumns(source, cols.map(col => ({
+      translation: col.dataset.readerScroll!, book: col.dataset.readerBook!,
+      chapter: Number(col.dataset.readerChapter),
+      verse: col.dataset.readerAnchor == null ? undefined : Number(col.dataset.readerAnchor)
+    })))
+  }
+  function studyVerse(action: PassageToolAction, item: ReaderVerseAction) {
+    useAppStore.getState().focusVerse(item.book, item.chapter, item.verse, item.translation)
+    setVerseItem(item)
+    if (action === 'context') context(item)
+    else pushSheet(action === 'notes' ? 'verse' : action === 'chapterNotes' ? 'notes' : action)
   }
   const actions = {
     openLexicon: () => pushSheet('word'),
@@ -560,13 +562,43 @@ export default function App() {
   }
   return (
     <div className="phone" style={{ '--reading-size': (size / 16) + 'rem' } as CSSProperties}>
-      <header className="appbar">
-        <div className="identity">
-          <span className="brand-icon">
-            <BookIcon />
-          </span>
-          <span>Open Bible Study</span>
-        </div>
+      <header className="appbar" aria-label="Open Bible Study">
+        {page === 'bible' && passageOrigin && passageOrigin !== 'bible' ? (
+          <button className="phone-icon" aria-label={'Back to ' + pageTitles[passageOrigin]}
+            title={'Back to ' + pageTitles[passageOrigin]} onClick={() => back.current()}>
+            <ChevronRight className="rotate-180" />
+          </button>
+        ) : page !== 'bible' ? (
+          <div className="identity">
+            <span className="brand-icon" aria-hidden="true"><BookIcon /></span>
+            <span>Open Bible Study</span>
+          </div>
+        ) : null}
+        {page === 'bible' && <div className="reader-controls" role="group" aria-label="Reading tools">
+          <button
+            ref={editionTrigger}
+            className="edition-choice"
+            title={'Reading translation · ' + (labels.find(item => item.id === primary)?.name ?? editionLabel)}
+            aria-label={'Reading translation · ' + editionLabel}
+            aria-haspopup="dialog"
+            aria-expanded={sheet === 'editions'}
+            aria-controls={sheet === 'editions' ? 'reading-translations' : undefined}
+            onClick={() => stack.current.at(-1) === 'editions' ? popSheet() : openSheet('editions')}
+          >
+            <span className="edition-name">{editionLabel}</span>
+            <span aria-hidden="true">⌄</span>
+          </button>
+          <button className="reader-mode" onClick={toggleInterlinear}
+            title={interlinear ? 'Return to translation' : 'Switch to interlinear'}
+            aria-label={interlinear ? 'Return to translation' : 'Switch to interlinear'}>
+            <span className="reader-mode-label">{interlinear ? 'Translation' : 'Interlinear'}</span>
+            <span className="reader-mode-icon" aria-hidden="true">{interlinear ? <BookIcon /> : <InterlinearIcon />}</span>
+          </button>
+          <button className="phone-icon reader-tool-trigger" aria-label="Passage tools" title="Passage tools"
+            onClick={() => openSheet('tools')}>
+            Tools
+          </button>
+        </div>}
         <div className="appbar-end">
           <button
             className="phone-icon"
@@ -589,38 +621,6 @@ export default function App() {
       <AndroidUpdateNotice openUpdates={() => openSheet('updates')} />
       <div className="surface" ref={surface}>
         <div hidden={page !== 'bible'} className="phone-reader">
-          <div className="reader-rail">
-            <button
-              className="passage-choice"
-              aria-label={'Choose passage · ' + bookName(readerBook) + ' ' + readerChapterNum}
-              aria-haspopup="dialog"
-              onClick={() => openSheet('passage')}
-            >
-              <span>{bookTitle}</span>
-              <ChevronRight />
-            </button>
-            <button
-              className="edition-choice"
-              title={'Translations and parallels · ' + parallels.join(' / ')}
-              aria-label={'Translations and parallels · ' + parallels.join(' / ')}
-              onClick={() => openSheet('editions')}
-            >
-              <span className="edition-name">{editionLabel}{parallels.length > 1 && ' +' + (parallels.length - 1)}</span>
-              <span aria-hidden="true">⌄</span>
-            </button>
-            <button className="reader-mode" onClick={toggleInterlinear}
-              aria-label={interlinear ? 'Return to translation' : 'Switch to interlinear'}>
-              {interlinear ? 'Translation' : 'Interlinear'}
-            </button>
-            <button
-              className="phone-icon"
-              aria-label="Passage tools"
-              title="Passage tools"
-              onClick={() => openSheet('tools')}
-            >
-              <ColumnsIcon />
-            </button>
-          </div>
           {catalogError ? (
             <div className="screen-pad" role="alert">
               {catalogError} <button onClick={() => retry((n) => n + 1)}>Retry</button>
@@ -645,7 +645,7 @@ export default function App() {
               </ReaderActions.Provider>
             </div>
           )}
-          {selection ? (
+          {selection && (
             <div className="chapter-steps">
               <button
                 onPointerDown={(e) => e.preventDefault()}
@@ -657,17 +657,9 @@ export default function App() {
               >
                 Copy
               </button>
-              {selectionInChapter && <button onPointerDown={(e) => e.preventDefault()} onClick={() => inspectSelection('context')}>
+              {selectionInChapter && <button onPointerDown={(e) => e.preventDefault()} onClick={inspectSelection}>
                 Context
               </button>}
-              {selectionInChapter && parallels.length > 1 && (
-                <button
-                  onPointerDown={(e) => e.preventDefault()}
-                  onClick={() => inspectSelection('compare')}
-                >
-                  Compare layout
-                </button>
-              )}
               <button
                 onPointerDown={(e) => e.preventDefault()}
                 onClick={() => Study.shareText({ text: selection }).catch((e) => announce(String(e)))}
@@ -675,21 +667,23 @@ export default function App() {
                 Share
               </button>
             </div>
-          ) : (
-            <div className="chapter-steps">
-              <button aria-label="Previous chapter" disabled={!adjacent(-1)} onClick={() => step(-1)}>
-                <ChevronRight className="rotate-180" />
-                Previous
-              </button>
-              {passageOrigin && passageOrigin !== 'bible'
-                ? <button onClick={() => back.current()}>Back to {pageTitles[passageOrigin]}</button>
-                : <span>{(BOOK_BY_ID[readerBook].testament === 'OT' ? 'Old' : 'New') + ' Testament'}</span>}
-              <button aria-label="Next chapter" disabled={!adjacent(1)} onClick={() => step(1)}>
-                Next
-                <ChevronRight />
-              </button>
-            </div>
           )}
+          <nav className="chapter-steps chapter-navigation" aria-label="Chapter navigation">
+            <button aria-label="Previous chapter" disabled={!adjacent(-1)} onClick={() => step(-1)}>
+              <ChevronRight className="rotate-180" />
+              Previous
+            </button>
+            <button className="passage-choice" aria-label={'Choose passage · ' + bookTitle}
+              title={bookTitle} aria-haspopup="dialog" onClick={() => openSheet('passage')}>
+              <span className="passage-book">{bookName(readerBook)}</span>
+              <span className="passage-chapter">{readerChapterNum}</span>
+              <ChevronRight />
+            </button>
+            <button aria-label="Next chapter" disabled={!adjacent(1)} onClick={() => step(1)}>
+              Next
+              <ChevronRight />
+            </button>
+          </nav>
         </div>
         {notebookVisited && (
           <section hidden={page !== 'notebook'} className="work-page page-notebook">
@@ -810,7 +804,16 @@ export default function App() {
           </button>
         ))}
       </nav>
-      {sheets.map((sheet, depth) => (
+      {sheets.map((sheet, depth) => {
+        if (sheet === 'editions' && page === 'bible' && editionTrigger.current) {
+          // Keep the stack entry while import management is open; Back restores this picker.
+          if (depth !== sheets.length - 1) return null
+          return <TranslationPopover key={depth + sheet} id="reading-translations"
+            anchor={editionTrigger.current} onClose={popSheet}>
+            <EditionPicker onChoose={close} onManageImports={() => pushSheet('imports')} />
+          </TranslationPopover>
+        }
+        return (
         <PhoneSheet
           key={depth + sheet}
           back={depth > 0 ? popSheet : undefined}
@@ -821,12 +824,15 @@ export default function App() {
           }
           close={close}
           header={sheet !== 'comparison'}
-          roomy={['word', 'context', 'verse', 'settings', 'variants', 'files'].includes(
+          roomy={['word', 'context', 'verse', 'settings', 'variants', 'files', 'tools'].includes(
             sheet
           )}
         >
-          {sheet === 'passage' && <PassagePicker onClose={close} />}
-          {sheet === 'editions' && <EditionPicker />}
+          {sheet === 'passage' && <PassagePicker openChapterOnPick onClose={close} />}
+          {sheet === 'editions' && <EditionPicker onChoose={close} onManageImports={() => pushSheet('imports')} />}
+          {sheet === 'parallels' && <ParallelPicker onManageImports={() => pushSheet('imports')}
+            onDisplay={() => pushSheet('settings')} />}
+          {sheet === 'imports' && <ImportedTranslationManager />}
           {(sheet === 'settings' || sheet === 'files') && (
             <button type="button" className="link-row mb-2" onClick={() => openSheet('updates')}>
               App updates <ChevronRight aria-hidden="true" />
@@ -851,33 +857,14 @@ export default function App() {
           {sheet === 'saved' && <SavedPlaces close={close} />}
           {sheet === 'files' && <BackupTools />}
           {sheet === 'tools' && (
-            <div className="tools-list">
-              <Tool icon={PenIcon} label="Verse actions" detail="Choose a verse to annotate, highlight, copy or share" onClick={chooseVerse} />
-              <Tool
-                icon={InterlinearIcon}
-                label={interlinear ? 'Return to translation' : 'Interlinear'}
-                detail="Word-by-word Greek and Hebrew"
-                onClick={toggleInterlinear}
-              />
-              <Tool icon={ColumnsIcon} label="Parallel translations" onClick={() => pushSheet('editions')} />
-              <Tool icon={BookIcon} label="Passage context" onClick={() => context('context')} />
-              {parallels.length > 1 && (
-                <Tool icon={ColumnsIcon} label="Compare layout" onClick={() => context('compare')} />
-              )}
-              <Tool icon={LinkIcon} label="Cross-references" onClick={() => pushSheet('refs')} />
-              <Tool icon={CompareIcon} label="Textual variants" onClick={() => pushSheet('variants')} />
-              <Tool icon={PenIcon} label={'Verse notes · ' + bookName(readerBook) + ' ' + readerChapterNum} onClick={() => pushSheet('notes')} />
-              <Tool icon={SettingsIcon} label="Reading display" onClick={() => pushSheet('settings')} />
-            </div>
+            <PassageTools columns={verseColumns} interlinear={interlinear}
+              onStudy={studyVerse} onParallels={() => pushSheet('parallels')}
+              onInterlinear={toggleInterlinear} onDisplay={() => pushSheet('settings')} />
           )}
-          {sheet === 'pickVerse' && <VersePicker columns={verseColumns} onOpen={item => {
-            useAppStore.getState().focusVerse(item.book, item.chapter, item.verse, item.translation)
-            actions.verse(item)
-          }} />}
           {sheet === 'verse' && verseItem && (
             <VerseActions
               item={verseItem}
-              context={() => context('context', verseItem)}
+              context={() => context(verseItem)}
               showOriginals={() => pushSheet('originals')}
               showRefs={() => pushSheet('refs')}
             />
@@ -926,7 +913,7 @@ export default function App() {
           {sheet === 'context' && inspector && <PassageInspector inspector={inspector} />}
           {sheet === 'allNotes' && <NotesPanel initialScope="all" onNavigate={close} />}
           {sheet === 'notes' && <NotesPanel onNavigate={close} />}
-          {(['refs', 'variants'] as Sheet[]).includes(sheet) && imported ? (
+          {(['refs', 'variants'] as Sheet[]).includes(sheet) && referenceEdition.startsWith('imp_') ? (
             <p className="status">
               The verse numbering in this imported translation has no verified correspondence with the study
               references. You can highlight its verses in this edition.
@@ -938,7 +925,8 @@ export default function App() {
             </>
           )}
         </PhoneSheet>
-      ))}
+        )
+      })}
       <SettingsDialog />
       <SourceWordSettings />
       {notice && (

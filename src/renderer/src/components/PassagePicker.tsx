@@ -62,7 +62,11 @@ function ChoiceGrid({ options, names, prefix = '', label, choose }: {
   </div>
 }
 
-export default function PassagePicker({ onClose, focusSearchOnOpen = false }: { onClose: () => void; focusSearchOnOpen?: boolean }) {
+export default function PassagePicker({ onClose, focusSearchOnOpen = false, openChapterOnPick = false }: {
+  onClose: () => void
+  focusSearchOnOpen?: boolean
+  openChapterOnPick?: boolean
+}) {
   const [current] = useState(currentLocation)
   const [book, setBook] = useState(current?.book ?? useAppStore.getState().book)
   const [chapter, setChapter] = useState(current?.chapter ?? 1)
@@ -118,8 +122,10 @@ export default function PassagePicker({ onClose, focusSearchOnOpen = false }: { 
   const lookupError = catalog.error ? catalog : firstVerses.error ? firstVerses : lastVerses.error ? lastVerses : null
   const checking = catalog.loading || firstVerses.loading || lastVerses.loading
   const name = BOOK_BY_ID[book]?.name ?? book
+  const opensChapter = openChapterOnPick && !range
+  const chapterTitle = opensChapter ? 'Open a chapter' : start ? 'Choose the ending chapter' : 'Choose a chapter'
   const title = search ? (typed ? 'Matching passage' : 'Matching books') :
-    browsing === 'books' ? 'Choose a book' : browsing === 'chapters' ? (start ? 'Choose the ending chapter' : 'Choose a chapter') :
+    browsing === 'books' ? 'Choose a book' : browsing === 'chapters' ? chapterTitle :
       !range ? 'Choose a verse' : start ? 'Choose the last verse' : 'Choose the first verse'
 
   // A pending open may outlive its sheet if the user dismisses it while the database is loading.
@@ -162,6 +168,14 @@ export default function PassagePicker({ onClose, focusSearchOnOpen = false }: { 
       pending.current = null
     }
   }
+  function chooseChapter(next: number) {
+    if (opensChapter) {
+      void open({ book, chapter: next, lastChapter: next })
+      return
+    }
+    setChapter(next)
+    goToStep('verses')
+  }
   function chooseVerse(verse: number) {
     if (range && !start) {
       focusChoices.current = true
@@ -193,7 +207,7 @@ export default function PassagePicker({ onClose, focusSearchOnOpen = false }: { 
     }
     if (browsing === 'chapters') return <ChoiceGrid label="Available chapters" prefix="Chapter"
       options={chapters.map(c => ({ value: c, current: current?.book === book && current.chapter === c, disabled: !!start && c < start.chapter }))}
-      choose={c => { setChapter(Number(c)); goToStep('verses') }} />
+      choose={c => chooseChapter(Number(c))} />
 
     return <>
       <div className="passage-picker-actions">

@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from 'react'
+import { useEffect, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from 'react'
 import { BOOK_BY_ID } from '@shared/books'
 import { chooseColumn, readingFeatures, type ReadingFeature } from '@shared/readingDisplay'
 import { mapPassage } from '@shared/passageMapping'
 import { studyDataCredits } from '@shared/dataCredits'
 import { readingEdition, useAppStore } from '@/store/useAppStore'
-import { useStudyQuery } from '@/hooks/useStudyQuery'
 import { studyStorageKey } from '@/lib/studyPreferences'
 import ThemeSelect from '@/components/ThemeSelect'
 import { HIGHLIGHT_COLORS, highlightVar } from '@/lib/highlights'
@@ -92,17 +91,136 @@ export function PhoneSheet({
     </dialog>
   )
 }
-export function EditionPicker() {
+function setReadingColumns(ids: string[]) {
+  const state = useAppStore.getState()
+  state.setParallels(ids)
+  if (state.interlinear) state.toggleInterlinear()
+}
+
+export function EditionPicker({ onChoose, onManageImports }: {
+  onChoose: () => void
+  onManageImports: () => void
+}) {
   const editions = useAppStore((s) => s.translations),
     columns = useAppStore((s) => s.parallels)
-  const set = (ids: string[]) => {
-    const s = useAppStore.getState()
-    s.setParallels(ids)
-    if (s.interlinear) s.toggleInterlinear()
+  return (
+    <div className="phone-form">
+      <div className="translation-chips" role="group" aria-label="Installed translations">
+        {editions.map((edition) => (
+          <button type="button" key={edition.id} className="translation-chip"
+            aria-label={`${edition.name} (${edition.abbrev})`}
+            aria-pressed={columns[0] === edition.id}
+            onClick={() => {
+              setReadingColumns(chooseColumn(useAppStore.getState().parallels, 0, edition.id))
+              onChoose()
+            }}>
+            <strong className="translation-chip-abbrev">
+              {edition.abbrev}{columns[0] === edition.id && <span aria-hidden="true"> ✓</span>}
+            </strong>
+            <small className="translation-chip-name">{edition.name}</small>
+          </button>
+        ))}
+      </div>
+      <button type="button" className="link-row translation-manage" onClick={onManageImports}>
+        Manage imported translations <ChevronRight />
+      </button>
+    </div>
+  )
+}
+
+export function ParallelPicker({ onManageImports, onDisplay }: {
+  onManageImports?: () => void
+  onDisplay?: () => void
+}) {
+  const editions = useAppStore((s) => s.translations),
+    columns = useAppStore((s) => s.parallels)
+  const [adding, setAdding] = useState(false)
+  const picker = useRef<HTMLDivElement>(null),
+    addButton = useRef<HTMLButtonElement>(null),
+    addedEdition = useRef<string>()
+  const available = editions.filter((t) => !columns.includes(t.id))
+  useEffect(() => {
+    if (!addedEdition.current) return
+    const index = columns.indexOf(addedEdition.current)
+    addedEdition.current = undefined
+    if (index >= 0) picker.current?.querySelectorAll<HTMLSelectElement>('select')[index]?.focus()
+  }, [columns])
+  function addEdition(id: string) {
+    const current = useAppStore.getState()
+    if (current.parallels.length >= 4 || current.parallels.includes(id) || !current.translations.some(t => t.id === id)) return
+    addedEdition.current = id
+    setReadingColumns([...current.parallels, id])
+    setAdding(false)
   }
+  return (
+    <div ref={picker} className="phone-form">
+      {columns.map((id, i) => (
+        <div className="edition-row" key={i}>
+          <label>
+            {i === 0 ? 'Reading translation' : 'Comparison ' + i}
+            <select
+              aria-label={i === 0 ? 'Reading translation' : 'Comparison ' + i}
+              value={id}
+              onChange={(e) => setReadingColumns(chooseColumn(useAppStore.getState().parallels, i, e.target.value))}
+            >
+              {editions.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} ({t.abbrev})
+                </option>
+              ))}
+            </select>
+          </label>
+          {columns.length > 1 && (
+            <button
+              type="button"
+              className="phone-button parallel-remove"
+              aria-label={'Remove ' + (editions.find(t => t.id === id)?.abbrev ?? id)}
+              onClick={() => setReadingColumns(useAppStore.getState().parallels.filter(column => column !== id))}
+            >
+              Remove
+            </button>
+          )}
+        </div>
+      ))}
+      {columns.length < 4 && available.length > 0 && <>
+        <button ref={addButton} type="button" className="phone-button" aria-expanded={adding}
+          onClick={() => setAdding(!adding)}>
+          Add parallel translation
+        </button>
+        {adding && <div className="phone-form parallel-choices">
+          <p className="section-label">Choose a translation to compare</p>
+          <div className="translation-chips" role="group" aria-label="Available parallel translations">
+            {available.map(edition => <button type="button" key={edition.id} className="translation-chip"
+              aria-label={`Add ${edition.name} (${edition.abbrev})`} onClick={() => addEdition(edition.id)}>
+              <strong className="translation-chip-abbrev">{edition.abbrev}</strong>
+              <small className="translation-chip-name">{edition.name}</small>
+            </button>)}
+          </div>
+          <button type="button" className="phone-button" onClick={() => {
+            setAdding(false)
+            addButton.current?.focus()
+          }}>Cancel</button>
+        </div>}
+      </>}
+      {columns.length >= 4 && <p className="status">Four translations are open. Remove one to add another.</p>}
+      {onDisplay && <>
+        <button type="button" className="link-row translation-manage" onClick={onDisplay}>
+          Reading display <ChevronRight />
+        </button>
+        <p className="status">Choose literary layout, headings, and numbering for all translations or an individual edition.</p>
+      </>}
+      {onManageImports && <button type="button" className="link-row translation-manage" onClick={onManageImports}>
+        Manage imported translations <ChevronRight />
+      </button>}
+    </div>
+  )
+}
+
+export function ImportedTranslationManager() {
+  const editions = useAppStore((s) => s.translations)
   const [feedback, setFeedback] = useState(''),
     [busy, setBusy] = useState(false)
-  const add = editions.find((t) => !columns.includes(t.id))
+  const imported = editions.filter((edition) => edition.language === 'imported')
   async function manage(remove?: string) {
     setBusy(true)
     setFeedback('')
@@ -122,60 +240,22 @@ export function EditionPicker() {
   }
   return (
     <div className="phone-form">
-      {columns.map((id, i) => (
-        <div className="edition-row" key={i}>
-          <label>
-            {i === 0 ? 'Reading translation' : 'Parallel ' + i}
-            <select
-              aria-label={i === 0 ? 'Translation' : 'Parallel translation ' + i}
-              value={id}
-              onChange={(e) => set(chooseColumn(columns, i, e.target.value))}
-            >
-              {editions.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({t.abbrev})
-                </option>
-              ))}
-            </select>
-          </label>
-          {columns.length > 1 && (
-            <button
-              className="phone-icon remove"
-              aria-label={'Remove ' + id}
-              onClick={() => set(columns.filter((_, j) => j !== i))}
-            >
-              ×
-            </button>
-          )}
+      <button type="button" className="phone-button" disabled={busy} onClick={() => void manage()}>
+        Import a Bible module…
+      </button>
+      {imported.length === 0 && <p>No imported translations installed.</p>}
+      {imported.map((edition) => (
+        <div key={edition.id} className="setting-row">
+          {edition.name}
+          <button type="button" aria-label={'Remove ' + edition.name}
+            onClick={() => {
+              if (window.confirm('Remove ' + edition.name + ' from this device?')) void manage(edition.id)
+            }} disabled={busy}>
+            Remove
+          </button>
         </div>
       ))}
-      {columns.length < 4 && add && (
-        <button className="phone-button" onClick={() => set([...columns, add.id])}>
-          Add parallel translation
-        </button>
-      )}
-      <details className="phone-details">
-        <summary>Manage imported translations</summary>
-        <button className="phone-button" disabled={busy} onClick={() => void manage()}>
-          Import a Bible module…
-        </button>
-        {editions
-          .filter((t) => t.language === 'imported')
-          .map((t) => (
-            <div key={t.id} className="setting-row">
-              {t.name}
-              <button
-                onClick={() => {
-                  if (window.confirm('Remove ' + t.name + ' from this device?')) void manage(t.id)
-                }}
-                disabled={busy}
-              >
-                Remove
-              </button>
-            </div>
-          ))}
-        {feedback && <p role="status">{feedback}</p>}
-      </details>
+      {feedback && <p role="status">{feedback}</p>}
     </div>
   )
 }
@@ -423,34 +503,6 @@ export function BackupTools() {
     </div>
   )
 }
-export function VersePicker({ columns, onOpen }: {
-  columns: { translation: string; book: string; chapter: number; verse?: number }[]
-  onOpen: (item: ReaderVerseAction) => void
-}) {
-  const [choice, setChoice] = useState(0)
-  const [picked, setPicked] = useState<number>()
-  const ref = columns[choice]
-  const { data, error, loading, retry } = useStudyQuery(useCallback(() =>
-    window.api.getChapter({ translation: ref.translation, book: ref.book, chapter: ref.chapter }),
-    [ref?.translation, ref?.book, ref?.chapter]), !!ref)
-  const rows = data?.verses ?? []
-  const row = rows.find(v => v.verse === (picked ?? ref?.verse)) ?? rows[0]
-  return <div className="phone-form">
-    {columns.length > 1 && <label>Translation<select value={choice} onChange={e => { setChoice(Number(e.target.value)); setPicked(undefined) }}>
-      {columns.map((column, i) => <option key={column.translation} value={i}>{column.translation}</option>)}
-    </select></label>}
-    {ref && <label>{bookName(ref.book)} {ref.chapter} · {ref.translation}
-      <select aria-label="Choose verse" disabled={!rows.length} value={row?.verse ?? ''} onChange={e => setPicked(Number(e.target.value))}>
-        {rows.map(v => <option key={v.verse} value={v.verse}>Verse {v.verse}</option>)}
-      </select></label>}
-    {row && <p data-study-scripture="" dir={data?.direction} className="text-sm">{row.text}</p>}
-    {error ? <p role="alert">{error} <button onClick={retry}>Retry</button></p> :
-      loading ? <p role="status">Loading verses…</p> : !row && <p>No corresponding verse text is available in the selected translation.</p>}
-    <button className="phone-button primary" disabled={!row} onClick={() =>
-      row && onOpen({ ...ref, verse: row.verse, text: row.text, notes: [] })}>Open verse actions</button>
-  </div>
-}
-
 export function VerseActions({
   item,
   context,

@@ -14,7 +14,17 @@ Group changes under: **Added** (new features), **Changed** (changes to existing 
 
 ## [Unreleased]
 
-_Nothing yet._
+### Changed
+
+- On Android, tapping a chapter number in the passage picker opens the reader at that chapter’s first recorded verse. When selecting a range, tapping a chapter lets you choose the verse where the range starts or ends.
+- Android’s reader uses one top toolbar for translations, interlinear reading, passage tools, bookmarks, and settings. The passage selector sits between Previous and Next and always shows the chapter, including when chapter numbers are hidden in the text. A back arrow returns to the study view that opened the passage.
+- The Android translation selector sits at the left of the reader toolbar and opens installed editions as tappable bubbles directly beneath the button. Tap the button again to close it, or choose a translation. The selected edition is marked, and imported-translation management is at the bottom. Parallel columns have their own controls in Passage tools.
+- Android Passage tools now identifies the verse and translation being studied, with an inline verse selector and direct note, highlight, copy, and share actions. Study tools and reading controls are grouped separately, and source-text comparison is easier to reach. Adding a parallel column now lets you choose its edition before changing the reader. Parallel reading uses the existing layout and display options, with a direct Reading display link in the translation picker; the phone no longer has a separate Compare layout action.
+
+### Fixed
+
+- Hiding verse numbers on Android now leaves the passage clear of dotted verse-action markers. Verse actions remain available from Tools, and hardware keyboard users can still focus the inline controls.
+- Returning from a related passage on Android restores the verse and translation being studied in Passage tools. A selected bundled translation also keeps its cross-references and textual variants available when an imported edition is open beside it.
 
 ## [0.6.2] - 2026-11-16
 

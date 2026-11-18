@@ -82,9 +82,6 @@
 .phone .reader-pane [data-scripture-passage] [data-verse-action] {
   font-size: max(var(--type-meta), calc(var(--reading-size) * .64));
 }
-.phone .reader-pane [data-scripture-passage] [data-verse-action][data-label='⋯'] {
-  font-size: var(--type-meta);
-}
 .phone :is(.reader-pane [data-reader-scroll] details, .phone-form blockquote cite) {
   font-size: var(--type-label);
 }
