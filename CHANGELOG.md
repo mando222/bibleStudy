@@ -14,9 +14,15 @@ Group changes under: **Added** (new features), **Changed** (changes to existing 
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [0.6.4] - 2026-11-17
+
 ### Changed
 
-- **Android navigation.** Tools focuses on the current passage; Library contains reference collections, the notebook, and all saved notes and highlights. Backups and app updates now live under Settings, while bookmarks and translation selection keep their toolbar shortcuts. Reading display opens only reading controls, and chapter notes stay scoped to the selected chapter.
+- **Clearer Android navigation.** Tools focuses on the passage you are reading. Library contains the Atlas, People, Timeline, Languages, Notebook, and all saved notes and highlights, with duplicate shortcuts removed.
+- **Settings and files.** Backups, export, source credits, and app updates are under the settings gear. Bookmarks and translation selection keep their toolbar shortcuts.
+- **Focused study panels.** Reading display opens only reading controls. Chapter notes stay scoped to the selected chapter; the Library's notes view shows your saved annotations across the Bible. Back returns to the panel you came from.
 
 ## [0.6.3] - 2026-11-17
 
