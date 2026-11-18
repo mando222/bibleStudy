@@ -11,8 +11,13 @@ import AllAnnotations from './AllAnnotations'
 import { draftNeedsReview, readNoteDraft, type NoteDraft } from '@/lib/noteDraft'
 import NoteDraftReview from './NoteDraftReview'
 
-export default function NotesPanel({ initialScope = 'chapter', onNavigate }: { initialScope?: 'chapter' | 'all'; onNavigate?: () => void }) {
-  const [scope, setScope] = useState(initialScope)
+export default function NotesPanel({ initialScope = 'chapter', fixedScope, onNavigate }: {
+  initialScope?: 'chapter' | 'all'
+  fixedScope?: 'chapter' | 'all'
+  onNavigate?: () => void
+}) {
+  const [selectedScope, setScope] = useState(initialScope)
+  const scope = fixedScope ?? selectedScope
   const sourceBook = useAppStore(s => s.book)
   const sourceChapter = useAppStore(s => s.chapter)
   const sourceEdition = useAppStore(s => s.referenceEdition || s.primary)
@@ -21,13 +26,15 @@ export default function NotesPanel({ initialScope = 'chapter', onNavigate }: { i
   const native = readerChapter(sourceBook, sourceChapter, verse, sourceEdition, edition)
   const book = native?.book ?? sourceBook
   const chapter = native?.chapter ?? sourceChapter
+  const chapterLabel = (BOOK_BY_ID[book]?.name ?? book) + ' ' + chapter + ' · ' + edition
   return <div>
-    <div className="flex flex-wrap gap-2 mb-3">
+    {fixedScope === 'chapter' && <p className="mb-3 text-sm text-muted">{chapterLabel}</p>}
+    {!fixedScope && <div className="flex flex-wrap gap-2 mb-3">
       {(['chapter', 'all'] as const).map(value => <button key={value} aria-pressed={scope === value}
         onClick={() => setScope(value)} className={'rounded border px-2 py-1 text-xs ' + (scope === value ? 'border-accent text-accent' : 'border-line text-muted')}>
-        {value === 'all' ? 'All notes & highlights' : (BOOK_BY_ID[book]?.name ?? book) + ' ' + chapter + ' · ' + edition}
+        {value === 'all' ? 'All notes & highlights' : chapterLabel}
       </button>)}
-    </div>
+    </div>}
     {scope === 'all' ? <AllAnnotations onNavigate={onNavigate} /> :
       native || edition.startsWith('imp_') ? <ChapterNotes key={[book, chapter, edition].join(':')} book={book} chapter={chapter} edition={edition} /> :
         <p className="text-sm text-muted">No verified passage correspondence for this chapter in {edition}.</p>}

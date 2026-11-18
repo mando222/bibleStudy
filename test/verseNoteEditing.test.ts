@@ -90,6 +90,49 @@ it('recovers a chapter-note draft across switching scopes and removes it only on
   expect(button('Resume draft')).toBeUndefined()
 })
 
+it('locks chapter notes to the displayed native chapter while retaining its reference and editor', async () => {
+  useAppStore.setState({ book: 'Ps', chapter: 9, activeVerse: 22, referenceEdition: 'LXX', primary: 'BSB', parallels: ['BSB'] })
+  const listNotes = vi.fn().mockResolvedValue([{ ...note, book: 'Ps', chapter: 10 }])
+  const listAnnotations = vi.fn()
+  Object.assign(window.api, { listNotes, listAnnotations })
+  await act(async () => root.render(createElement(NotesPanel, { initialScope: 'all', fixedScope: 'chapter' })))
+  expect(host.querySelector('p')?.textContent).toBe('Psalms 10 · BSB')
+  expect(button('Psalms 10 · BSB')).toBeUndefined()
+  expect(button('All notes & highlights')).toBeUndefined()
+  expect(host.querySelector('[aria-label="All saved notes and highlights"]')).toBeNull()
+  expect(listNotes).toHaveBeenCalledWith({ book: 'Ps', chapter: 10 })
+  expect(listAnnotations).not.toHaveBeenCalled()
+  await click('Edit')
+  expect(host.querySelector('textarea')?.value).toBe('Saved note')
+})
+
+it('locks the saved collection to all notes and preserves passage navigation', async () => {
+  const listNotes = vi.fn(), onNavigate = vi.fn()
+  const listAnnotations = vi.fn().mockResolvedValue({ notes: [{ ...note, book: 'Rom', chapter: 5, verse: 8 }], highlights: [] })
+  Object.assign(window.api, { listNotes, listAnnotations })
+  await act(async () => root.render(createElement(NotesPanel, { fixedScope: 'all', onNavigate })))
+  const collection = host.querySelector('[aria-label="All saved notes and highlights"]')!
+  expect(collection).not.toBeNull()
+  expect(button('John 1 · KJV')).toBeUndefined()
+  expect(button('All notes & highlights')).toBeUndefined()
+  expect(listAnnotations).toHaveBeenCalledOnce()
+  expect(listNotes).not.toHaveBeenCalled()
+  const saved = [...collection.querySelectorAll('button')].find(button => button.textContent?.includes('Romans 5:8'))!
+  await act(async () => saved.click())
+  expect(useAppStore.getState()).toMatchObject({ book: 'Rom', chapter: 5, activeVerse: 8, referenceEdition: 'KJV' })
+  expect(onNavigate).toHaveBeenCalledOnce()
+})
+
+it('keeps an initially global panel switchable when no scope lock is supplied', async () => {
+  await act(async () => root.render(createElement(NotesPanel, { initialScope: 'all' })))
+  expect(host.querySelector('[aria-label="All saved notes and highlights"]')).not.toBeNull()
+  expect(button('All notes & highlights').getAttribute('aria-pressed')).toBe('true')
+  await click('John 1 · KJV')
+  expect(host.querySelector('[aria-label="All saved notes and highlights"]')).toBeNull()
+  expect(button('John 1 · KJV').getAttribute('aria-pressed')).toBe('true')
+  expect(button('Edit')).toBeDefined()
+})
+
 it.each(['desktop', 'phone'])('%s requires review when a different editor saved the same note after a draft', async platform => {
   let stored = { ...note }
   Object.assign(window.api, {

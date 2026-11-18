@@ -35,18 +35,10 @@ import {
   BookIcon,
   SearchIcon,
   WordsIcon,
-  ColumnsIcon,
   SettingsIcon,
   ChevronRight,
-  MapPinIcon,
-  TimelineIcon,
-  GenealogyIcon,
-  LearnIcon,
-  NotebookIcon,
   BookmarkIcon,
-  FileIcon,
-  InterlinearIcon,
-  PenIcon
+  InterlinearIcon
 } from '@/components/icons'
 import {
   BackupTools,
@@ -56,13 +48,13 @@ import {
   ParallelPicker,
   PhoneSheet,
   SavedPlaces,
-  Tool,
   VerseActions,
   bookName
 } from './PhoneTools'
 import AndroidUpdates, { AndroidUpdateNotice } from './AndroidUpdates'
 import { TranslationPopover } from './TranslationPopover'
 import { PassageTools, type PassageToolAction } from './PassageTools'
+import { LibraryHome } from './LibraryHome'
 import { passageToolColumns } from './passageToolScope'
 import { Study } from './study'
 
@@ -78,6 +70,7 @@ type Sheet =
   | 'parallels'
   | 'imports'
   | 'settings'
+  | 'display'
   | 'saved'
   | 'files'
   | 'updates'
@@ -107,9 +100,10 @@ const sheetTitles: Record<Sheet, string> = {
   editions: 'Translations',
   parallels: 'Parallel translations',
   imports: 'Imported translations',
-  settings: 'Reading settings',
+  settings: 'Settings',
+  display: 'Reading display',
   saved: 'Bookmarks & history',
-  files: 'Files & settings',
+  files: 'Backups & files',
   updates: 'App updates',
   tools: 'Passage tools',
   word: 'Word study',
@@ -119,7 +113,7 @@ const sheetTitles: Record<Sheet, string> = {
   originals: 'Source texts',
   variants: 'Textual variants',
   refs: 'Cross-references',
-  notes: 'Verse notes',
+  notes: 'Chapter notes',
   allNotes: 'All notes & highlights'
 }
 const libraryPages: Page[] = ['library', 'maps', 'genealogies', 'timelines', 'learn', 'notebook']
@@ -610,8 +604,8 @@ export default function App() {
           </button>
           <button
             className="phone-icon"
-            title="Reading settings"
-            aria-label="Reading settings"
+            title="Settings"
+            aria-label="Settings"
             onClick={() => openSheet('settings')}
           >
             <SettingsIcon />
@@ -727,56 +721,7 @@ export default function App() {
               {workspace === 'maps' && <MapsView />}
               {workspace === 'timelines' && <TimelinesView />}
               {workspace === 'learn' && <LearnView />}
-              {workspace === 'library' && (
-                <div className="library-list">
-                  <h2 className="section-label">Explore Scripture</h2>
-                  <Tool
-                    icon={MapPinIcon}
-                    label="Atlas"
-                    detail="Places, passages, and journeys"
-                    onClick={() => navigate('maps')}
-                  />
-                  <Tool
-                    icon={GenealogyIcon}
-                    label="People"
-                    detail="Families, ancestry, and verse references"
-                    onClick={() => navigate('genealogies')}
-                  />
-                  <Tool
-                    icon={TimelineIcon}
-                    label="Timeline"
-                    detail="Events in biblical history"
-                    onClick={() => navigate('timelines')}
-                  />
-                  <Tool
-                    icon={LearnIcon}
-                    label="Languages"
-                    detail="Greek and Hebrew lessons, vocabulary, and drills"
-                    onClick={() => navigate('learn')}
-                  />
-                  <h2 className="section-label">My study</h2>
-                  <Tool
-                    icon={NotebookIcon}
-                    label="Notebook"
-                    detail="Write and organize Markdown notes"
-                    onClick={() => navigate('notebook')}
-                  />
-                  <Tool icon={PenIcon} label="All notes & highlights" onClick={() => openSheet('allNotes')} />
-                  <Tool icon={PenIcon} label={'Verse notes · ' + bookName(readerBook) + ' ' + readerChapterNum} onClick={() => openSheet('notes')} />
-                  <Tool
-                    icon={BookmarkIcon}
-                    label="Bookmarks & history"
-                    onClick={() => openSheet('saved')}
-                  />
-                  <Tool icon={ColumnsIcon} label="Translations" onClick={() => openSheet('editions')} />
-                  <Tool
-                    icon={FileIcon}
-                    label="Files & settings"
-                    detail="Backups, export, and app information"
-                    onClick={() => openSheet('files')}
-                  />
-                </div>
-              )}
+              {workspace === 'library' && <LibraryHome onNavigate={navigate} onAnnotations={() => openSheet('allNotes')} />}
             </div>
           </RetainedView>
         ))}
@@ -824,22 +769,25 @@ export default function App() {
           }
           close={close}
           header={sheet !== 'comparison'}
-          roomy={['word', 'context', 'verse', 'settings', 'variants', 'files', 'tools'].includes(
+          roomy={['word', 'context', 'verse', 'settings', 'display', 'variants', 'files', 'tools'].includes(
             sheet
           )}
         >
           {sheet === 'passage' && <PassagePicker openChapterOnPick onClose={close} />}
           {sheet === 'editions' && <EditionPicker onChoose={close} onManageImports={() => pushSheet('imports')} />}
           {sheet === 'parallels' && <ParallelPicker onManageImports={() => pushSheet('imports')}
-            onDisplay={() => pushSheet('settings')} />}
+            onDisplay={() => pushSheet('display')} />}
           {sheet === 'imports' && <ImportedTranslationManager />}
-          {(sheet === 'settings' || sheet === 'files') && (
-            <button type="button" className="link-row mb-2" onClick={() => openSheet('updates')}>
+          {sheet === 'settings' && <>
+            <button type="button" className="link-row mb-2" onClick={() => pushSheet('files')}>
+              Backups & files <ChevronRight aria-hidden="true" />
+            </button>
+            <button type="button" className="link-row mb-2" onClick={() => pushSheet('updates')}>
               App updates <ChevronRight aria-hidden="true" />
             </button>
-          )}
+          </>}
           {sheet === 'updates' && <AndroidUpdates />}
-          {sheet === 'settings' && (
+          {(sheet === 'settings' || sheet === 'display') && (
             <DisplaySettings
               size={size}
               changeSize={(n) => {
@@ -859,7 +807,7 @@ export default function App() {
           {sheet === 'tools' && (
             <PassageTools columns={verseColumns} interlinear={interlinear}
               onStudy={studyVerse} onParallels={() => pushSheet('parallels')}
-              onInterlinear={toggleInterlinear} onDisplay={() => pushSheet('settings')} />
+              onInterlinear={toggleInterlinear} onDisplay={() => pushSheet('display')} />
           )}
           {sheet === 'verse' && verseItem && (
             <VerseActions
@@ -911,8 +859,8 @@ export default function App() {
             </>
           )}
           {sheet === 'context' && inspector && <PassageInspector inspector={inspector} />}
-          {sheet === 'allNotes' && <NotesPanel initialScope="all" onNavigate={close} />}
-          {sheet === 'notes' && <NotesPanel onNavigate={close} />}
+          {sheet === 'allNotes' && <NotesPanel fixedScope="all" onNavigate={close} />}
+          {sheet === 'notes' && <NotesPanel fixedScope="chapter" onNavigate={close} />}
           {(['refs', 'variants'] as Sheet[]).includes(sheet) && referenceEdition.startsWith('imp_') ? (
             <p className="status">
               The verse numbering in this imported translation has no verified correspondence with the study

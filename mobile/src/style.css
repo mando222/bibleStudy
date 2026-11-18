@@ -428,6 +428,15 @@ dialog .bg-accent.text-white {
   max-width: 48rem;
   padding: 3px 17px 18px;
 }
+.library-description {
+  margin: 4px 0 16px;
+  color: rgb(var(--muted));
+  font-size: var(--type-label);
+  line-height: 1.5;
+}
+.library-list .section-label {
+  font-size: var(--type-meta);
+}
 .tool-row {
   width: 100%;
   min-height: 50px;

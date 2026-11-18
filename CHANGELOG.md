@@ -14,7 +14,9 @@ Group changes under: **Added** (new features), **Changed** (changes to existing 
 
 ## [Unreleased]
 
-_Nothing yet._
+### Changed
+
+- **Android navigation.** Tools focuses on the current passage; Library contains reference collections, the notebook, and all saved notes and highlights. Backups and app updates now live under Settings, while bookmarks and translation selection keep their toolbar shortcuts. Reading display opens only reading controls, and chapter notes stay scoped to the selected chapter.
 
 ## [0.6.3] - 2026-11-17
 
